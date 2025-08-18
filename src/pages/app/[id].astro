@@ -75,9 +75,10 @@ for (const f of ipaFiles) {
         <div class="meta" style="color:#666;font-size:13px;">iOS {v.minimum_os_version || '—'} · {v.release_date ? new Date(v.release_date).toISOString().slice(0,10) : '—'}</div>
         <div>
           {(filesByVersionId.get(v.id) || []).map((f: any) => {
-            const url = `/api/manifest?ipa_id=${f.id}`;
+            const origin = new URL(Astro.request.url).origin;
+            const manifestUrl = `${origin}/api/manifest?ipa_id=${f.id}`;
             return (
-              <a class="install" style="display:inline-block;margin-right:8px;" href={`itms-services://?action=download-manifest&url=${url}`}>Install</a>
+              <a class="install" style="display:inline-block;margin-right:8px;" href={`itms-services://?action=download-manifest&url=${manifestUrl}`}>Install</a>
             );
           })}
         </div>

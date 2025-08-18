@@ -59,7 +59,7 @@ export const GET: APIRoute = async (ctx) => {
             app.icon_url
               ? {
                   kind: 'display-image',
-                  needsShine: false,
+                  'needs-shine': false,
                   url: app.icon_url,
                 }
               : undefined,
@@ -78,7 +78,7 @@ export const GET: APIRoute = async (ctx) => {
     return new Response(xml, {
       status: 200,
       headers: {
-        'Content-Type': 'application/xml',
+        'Content-Type': 'application/octet-stream',
         'Cache-Control': 'public, max-age=600',
       },
     });
