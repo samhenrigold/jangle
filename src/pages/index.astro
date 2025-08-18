@@ -1,16 +1,121 @@
 ---
+import { getSupabaseClient } from '../lib/supabase';
 
+// SSR search parameters
+const url = new URL(Astro.request.url);
+const q = url.searchParams.get('q') || '';
+const genreId = url.searchParams.get('genre');
+const sort = url.searchParams.get('sort') || 'versions'; // versions | first_date | name
+const page = Number(url.searchParams.get('page') || '1');
+const pageSize = Math.min(50, Number(url.searchParams.get('per_page') || '20'));
+const offset = (page - 1) * pageSize;
+
+const supabase = getSupabaseClient();
+
+// Fetch genres for filter sidebar
+const { data: genres } = await supabase.rpc('get_genres_with_counts');
+
+// Fetch total count and list using server functions
+const countArgs: Record<string, any> = {
+  p_genre_id: genreId ? Number(genreId) : null,
+  p_search_query: q ? q.split(/\s+/).map((t) => `${t}:*`).join(' & ') : null,
+};
+const { data: totalCountArr } = await supabase.rpc('get_apps_count', countArgs);
+const total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
+
+const rpcArgs = {
+  p_limit: pageSize,
+  p_offset: offset,
+  p_genre_id: countArgs.p_genre_id,
+  p_ascending: false,
+  p_search_query: countArgs.p_search_query,
+};
+
+let list;
+if (sort === 'first_date') {
+  const { data } = await supabase.rpc('get_apps_sorted_by_first_version_date', rpcArgs);
+  list = data || [];
+} else if (sort === 'name') {
+  // Fall back: select by name when needed
+  const { data } = await supabase
+    .from('apps')
+    .select('*')
+    .order('display_name', { ascending: true })
+    .limit(pageSize)
+    .range(offset, offset + pageSize - 1);
+  list = data || [];
+} else {
+  const { data } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
+  list = data || [];
+}
+
+const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 ---
 
 <html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Jangle — Legacy App Archive</title>
+    <style>
+      body { font-family: -apple-system, system-ui, sans-serif; margin: 0; }
+      header { padding: 12px 16px; border-bottom: 1px solid #ddd; }
+      main { display: grid; grid-template-columns: 220px 1fr; gap: 16px; padding: 16px; }
+      form.search { display: flex; gap: 8px; }
+      input, select, button { font: inherit; padding: 8px; }
+      ul { list-style: none; padding: 0; margin: 0; }
+      li.app { display: grid; grid-template-columns: 48px 1fr auto; gap: 12px; padding: 8px; border-bottom: 1px solid #eee; align-items: center; }
+      .icon { width: 48px; height: 48px; background: #f3f3f3; border-radius: 8px; overflow: hidden; }
+      .meta { color: #666; font-size: 13px; }
+      nav.pagination { display: flex; gap: 8px; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <form class="search" method="get" action="/">
+        <input type="text" name="q" value={q} placeholder="Search apps, bundle id, developer" />
+        <select name="genre">
+          <option value="">All genres</option>
+          {genres && genres.map((g: any) => (
+            <option value={g.id} selected={String(g.id) === String(genreId)}>{g.genre_name} ({g.app_count})</option>
+          ))}
+        </select>
+        <select name="sort">
+          <option value="versions" selected={sort==='versions'}>Most versions</option>
+          <option value="first_date" selected={sort==='first_date'}>Oldest first release</option>
+          <option value="name" selected={sort==='name'}>Name A-Z</option>
+        </select>
+        <button type="submit">Search</button>
+      </form>
+    </header>
+    <main>
+      <aside>
+        <div class="meta">Total results: {Number(total) || 0}</div>
+      </aside>
+      <section>
+        <ul>
+          {list.map((a: any) => (
+            <li class="app">
+              <div class="icon">{a.icon_url && <img src={a.icon_url} alt="" width="48" height="48" />}</div>
+              <div>
+                <div><a href={`/app/${a.id}`}>{a.display_name || a.bundle_id}</a></div>
+                <div class="meta">{a.developer_artist_name} · {a.bundle_id}</div>
+              </div>
+              <div class="meta">{a.version_count ?? ''}</div>
+            </li>
+          ))}
+        </ul>
+        <nav class="pagination">
+          {page > 1 && (
+            <a href={`/?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page-1}&per_page=${pageSize}`}>Prev</a>
+          )}
+          <span>Page {page} / {totalPages}</span>
+          {page < totalPages && (
+            <a href={`/?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page+1}&per_page=${pageSize}`}>Next</a>
+          )}
+        </nav>
+      </section>
+    </main>
+  </body>
 </html>

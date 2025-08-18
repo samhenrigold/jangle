@@ -1,0 +1,88 @@
+---
+import { getSupabaseClient } from '../../lib/supabase';
+
+const { id } = Astro.params;
+const supabase = getSupabaseClient();
+
+// App details
+const { data: appData } = await supabase
+  .from('apps')
+  .select('*, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
+  .eq('id', id)
+  .single();
+
+if (!appData) {
+  return Astro.redirect('/');
+}
+
+// Versions with IPA links (assuming you have a table mapping)
+const { data: versions } = await supabase
+  .from('app_versions')
+  .select('id, version_string, build_number, minimum_os_version, release_date')
+  .eq('app_id', id)
+  .order('release_date', { ascending: false })
+  .limit(200);
+
+// Fetch IPA files for these versions
+const versionIds = (versions || []).map((v: any) => v.id);
+let ipaFiles: any[] = [];
+if (versionIds.length) {
+  const { data } = await supabase
+    .from('ipa_files')
+    .select('id, app_version_id, filename, has_itunes_metadata, has_itunes_artwork')
+    .in('app_version_id', versionIds);
+  ipaFiles = data || [];
+}
+
+const filesByVersionId = new Map<number, any[]>();
+for (const f of ipaFiles) {
+  const arr = filesByVersionId.get(f.app_version_id) || [];
+  arr.push(f);
+  filesByVersionId.set(f.app_version_id, arr);
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{appData.display_name || appData.bundle_id} — Jangle</title>
+    <style>
+      body { font-family: -apple-system, system-ui, sans-serif; margin: 0; }
+      header { padding: 12px 16px; border-bottom: 1px solid #ddd; }
+      main { padding: 16px; max-width: 900px; margin: 0 auto; }
+      .version { border-bottom: 1px solid #eee; padding: 10px 0; }
+      .install { display: inline-block; margin-right: 8px; }
+      .meta { color: #666; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/">← Back</a>
+    </header>
+    <main>
+      <h1>{appData.display_name || appData.bundle_id}</h1>
+      <div class="meta">{appData.developers?.artist_name} · {appData.bundle_id}</div>
+      <p>{appData.copyright}</p>
+
+      <h2>Versions</h2>
+      {(versions || []).map((v: any) => (
+        <div class="version">
+          <div><strong>{v.version_string}</strong> ({v.build_number})</div>
+          <div class="meta">iOS {v.minimum_os_version || '—'} · {v.release_date ? new Date(v.release_date).toISOString().slice(0,10) : '—'}</div>
+          <div>
+            {(filesByVersionId.get(v.id) || []).map((f: any) => {
+              const url = `/api/manifest?ipa_id=${f.id}`;
+              return (
+                <a class="install" href={`itms-services://?action=download-manifest&url=${encodeURIComponent(url)}`}>Install</a>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </main>
+  </body>
+  
+</html>
+
+
