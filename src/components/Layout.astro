@@ -1,0 +1,28 @@
+---
+const { title = 'Jangle' } = Astro.props;
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+    <style>
+      body { font-family: -apple-system, system-ui, sans-serif; margin: 0; }
+      header { padding: 12px 16px; border-bottom: 1px solid #ddd; }
+      main { padding: 16px; }
+      a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/">Jangle</a>
+    </header>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>
+
+

@@ -1,0 +1,25 @@
+---
+const { q = '', genreId = '', sort = 'versions', genres = [] } = Astro.props;
+---
+<form class="search" method="get" action="/">
+  <input type="text" name="q" value={q} placeholder="Search apps, bundle id, developer" />
+  <select name="genre">
+    <option value="">All genres</option>
+    {genres.map((g: any) => (
+      <option value={g.id} selected={String(g.id) === String(genreId)}>{g.genre_name} ({g.app_count})</option>
+    ))}
+  </select>
+  <select name="sort">
+    <option value="versions" selected={sort==='versions'}>Most versions</option>
+    <option value="first_date" selected={sort==='first_date'}>Oldest first release</option>
+    <option value="name" selected={sort==='name'}>Name A-Z</option>
+  </select>
+  <button type="submit">Search</button>
+</form>
+
+<style>
+  .search { display: flex; gap: 8px; }
+  input, select, button { font: inherit; padding: 8px; }
+</style>
+
+

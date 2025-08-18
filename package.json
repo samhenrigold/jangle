@@ -9,11 +9,13 @@
     "astro": "astro"
   },
   "dependencies": {
-    "astro": "^5.13.2",
     "@supabase/supabase-js": "^2.47.12",
+    "astro": "^5.13.2",
     "plist": "^3.1.0"
   },
   "devDependencies": {
-    "@astrojs/node": "^9.4.2"
+    "@astrojs/cloudflare": "^12.6.4",
+    "@astrojs/node": "^9.4.2",
+    "wrangler": "^4.31.0"
   }
 }

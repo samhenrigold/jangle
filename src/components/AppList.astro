@@ -1,0 +1,26 @@
+---
+const { list = [] } = Astro.props;
+---
+<ul>
+  {list.map((a: any) => (
+    <li class="app">
+      <div class="icon">{a.icon_url && <img src={a.icon_url} alt="" width="48" height="48" />}</div>
+      <div>
+        <div><a href={`/app/${a.id}`}>{a.display_name || a.bundle_id}</a></div>
+        <div class="meta">{a.developer_artist_name} · {a.bundle_id}</div>
+      </div>
+      <div class="meta">{a.version_count ?? ''}</div>
+    </li>
+  ))}
+  {list.length === 0 && <li>No results</li>}
+</ul>
+
+<style>
+  ul { list-style: none; padding: 0; margin: 0; }
+  li.app { display: grid; grid-template-columns: 48px 1fr auto; gap: 12px; padding: 8px; border-bottom: 1px solid #eee; align-items: center; }
+  .icon { width: 48px; height: 48px; background: #f3f3f3; border-radius: 8px; overflow: hidden; }
+  .meta { color: #666; font-size: 13px; }
+  a { color: inherit; }
+</style>
+
+
