@@ -3,49 +3,37 @@ import plist from 'plist';
 import { getSupabaseClient } from '../../lib/supabase';
 import { generateIpaDownloadUrl } from '../../lib/urls';
 
-// Generates a manifest.plist for itms-services based on an IPA file record
 export const GET: APIRoute = async (ctx) => {
   try {
-    const url = new URL(ctx.request.url);
-    const ipaId = url.searchParams.get('ipa_id');
+    const ipaId = ctx.params.ipa_id;
     if (!ipaId) {
       return new Response('Missing ipa_id', { status: 400 });
     }
 
     const supabase = getSupabaseClient(ctx.locals?.runtime?.env as any);
 
-    // Get IPA record and joined app/app_version for metadata
     const { data: ipa } = await supabase
       .from('ipa_files')
       .select('id, filename, info_plist_path, archive_item_id, app_version_id')
       .eq('id', ipaId)
       .single();
-
-    if (!ipa) {
-      return new Response('IPA not found', { status: 404 });
-    }
+    if (!ipa) return new Response('IPA not found', { status: 404 });
 
     const { data: version } = await supabase
       .from('app_versions')
       .select('id, app_id, version_string')
       .eq('id', ipa.app_version_id)
       .single();
-
-    if (!version) {
-      return new Response('Version not found', { status: 404 });
-    }
+    if (!version) return new Response('Version not found', { status: 404 });
 
     const { data: app } = await supabase
       .from('apps')
       .select('bundle_id, display_name, icon_url')
       .eq('id', version.app_id)
       .single();
+    if (!app) return new Response('App not found', { status: 404 });
 
-    if (!app) {
-      return new Response('App not found', { status: 404 });
-    }
-
-    // Build the full upstream IPA URL
+    // Build full upstream IPA URL
     let iaItemId: string | undefined;
     if (ipa.archive_item_id) {
       const { data: item } = await supabase
@@ -66,16 +54,9 @@ export const GET: APIRoute = async (ctx) => {
       items: [
         {
           assets: [
-            {
-              kind: 'software-package',
-              url: ipaUrl,
-            },
+            { kind: 'software-package', url: ipaUrl },
             app.icon_url
-              ? {
-                  kind: 'display-image',
-                  'needs-shine': false,
-                  url: app.icon_url,
-                }
+              ? { kind: 'display-image', 'needs-shine': false, url: app.icon_url }
               : undefined,
           ].filter(Boolean),
           metadata: {
@@ -92,7 +73,7 @@ export const GET: APIRoute = async (ctx) => {
     return new Response(xml, {
       status: 200,
       headers: {
-        'Content-Type': 'application/octet-stream',
+        'Content-Type': 'text/xml',
         'Cache-Control': 'public, max-age=600',
       },
     });

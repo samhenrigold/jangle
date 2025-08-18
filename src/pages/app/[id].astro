@@ -76,7 +76,7 @@ for (const f of ipaFiles) {
         <div>
           {(filesByVersionId.get(v.id) || []).map((f: any) => {
             const origin = new URL(Astro.request.url).origin;
-            const manifestUrl = `${origin}/api/manifest?ipa_id=${f.id}`;
+            const manifestUrl = `${origin}/manifest/${f.id}.plist`;
             return (
               <a class="install" style="display:inline-block;margin-right:8px;" href={`itms-services://?action=download-manifest&url=${manifestUrl}`}>Install</a>
             );
