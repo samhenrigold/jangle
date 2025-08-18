@@ -44,9 +44,8 @@ export const GET: APIRoute = async (ctx) => {
       return new Response('App not found', { status: 404 });
     }
 
-    // Construct a public IPA URL. If you store an absolute IA URL in filename, use directly.
-    // If filename is a relative path, you may need a proxy. For now, assume filename is a full URL.
-    const ipaUrl = url.origin + `/api/proxy?ipa_id=${ipa.id}`;
+    // Use the raw upstream IPA URL directly (no proxy)
+    const ipaUrl = ipa.filename;
 
     const manifest = {
       items: [
