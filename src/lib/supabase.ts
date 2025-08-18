@@ -10,20 +10,11 @@ function readEnv(candidates: string[]): string | undefined {
 }
 
 const SUPABASE_URL_KEYS = [
-  'SUPABASE_URL',
-  'NEXT_PUBLIC_SUPABASE_URL',
-  'VITE_SUPABASE_URL',
   'SUPABASE_PROJECT_URL',
 ];
 
 const SUPABASE_ANON_KEYS = [
-  'SUPABASE_ANON_KEY',
-  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-  'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY',
-  'VITE_SUPABASE_ANON_KEY',
-  'SUPABASE_PUBLIC_ANON_KEY',
   'SUPABASE_PUBLISHABLE_KEY',
-  'SUPABASE_KEY',
 ];
 
 export function getSupabaseClient() {

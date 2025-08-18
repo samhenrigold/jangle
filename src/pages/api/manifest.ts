@@ -3,15 +3,15 @@ import plist from 'plist';
 import { getSupabaseClient } from '../../lib/supabase';
 
 // Generates a manifest.plist for itms-services based on an IPA file record
-export const GET: APIRoute = async ({ request }) => {
+export const GET: APIRoute = async (ctx) => {
   try {
-    const url = new URL(request.url);
+    const url = new URL(ctx.request.url);
     const ipaId = url.searchParams.get('ipa_id');
     if (!ipaId) {
       return new Response('Missing ipa_id', { status: 400 });
     }
 
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseClient(ctx.locals?.runtime?.env as any);
 
     // Get IPA record and joined app/app_version for metadata
     const { data: ipa } = await supabase
