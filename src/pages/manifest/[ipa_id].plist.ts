@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import plist from 'plist';
+import { buildItmsManifestPlist } from '../../lib/manifest';
 import { getSupabaseClient } from '../../lib/supabase';
 import { generateIpaDownloadUrl } from '../../lib/urls';
 
@@ -10,7 +10,7 @@ export const GET: APIRoute = async (ctx) => {
       return new Response('Missing ipa_id', { status: 400 });
     }
 
-    const supabase = getSupabaseClient(ctx.locals?.runtime?.env as any);
+    const supabase = getSupabaseClient((ctx.locals as any)?.runtime?.env);
 
     const { data: ipa } = await supabase
       .from('ipa_files')
@@ -69,7 +69,13 @@ export const GET: APIRoute = async (ctx) => {
       ],
     } as any;
 
-    const xml = plist.build(manifest);
+    const xml = buildItmsManifestPlist({
+      bundleId: app.bundle_id,
+      title: app.display_name || app.bundle_id,
+      version: version.version_string || '1.0',
+      ipaUrl: ipaUrl,
+      iconUrl: app.icon_url,
+    });
     return new Response(xml, {
       status: 200,
       headers: {

@@ -4,7 +4,7 @@ import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 
 const { id } = Astro.params;
-const supabase = getSupabaseClient(Astro.locals?.runtime?.env as any);
+const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
 
 // App details
 const appCacheKey = `app:${id}`;
