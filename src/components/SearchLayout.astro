@@ -1,0 +1,21 @@
+---
+import '../styles/global.css';
+import SearchNavigation from './SearchNavigation.astro';
+const { title = 'Jangle', activeTab = 'search', searchQuery = '' } = Astro.props;
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <SearchNavigation activeTab={activeTab} searchQuery={searchQuery} />
+    
+    <main class="site-main">
+      <slot />
+    </main>
+  </body>
+</html>
