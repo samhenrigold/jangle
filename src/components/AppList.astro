@@ -1,19 +1,17 @@
 ---
 const { list = [] } = Astro.props;
 ---
-<ul>
+<ul class="applist">
   {list.map((a: any) => (
-    <li class="app" style="display:grid;grid-template-columns:48px 1fr auto;gap:12px;padding:8px;border-bottom:1px solid #eee;align-items:center;">
-      <div class="icon" style="width:48px;height:48px;background:#f3f3f3;border-radius:8px;overflow:hidden;">{a.icon_url && <img src={a.icon_url} alt="" width="48" height="48" />}</div>
-      <div>
-        <div><a href={`/app/${a.id}`}>{a.display_name || a.bundle_id}</a></div>
-        <div class="meta" style="color:#666;font-size:13px;">{a.developer_artist_name} · {a.bundle_id}</div>
+    <li class="app">
+      <div class="icon">{a.icon_url && <img src={a.icon_url} alt="" width="48" height="48" />}</div>
+      <div class="info">
+        <div><a href={`/app/${a.app_store_id ? a.app_store_id : a.id}`}>{a.display_name || a.bundle_id}</a></div>
+        <div class="meta">{a.developer_artist_name} · {a.bundle_id}</div>
       </div>
-      <div class="meta" style="color:#666;font-size:13px;">{a.version_count ?? ''}</div>
+      <div class="count">{a.version_count ?? ''}</div>
+      <div style="clear:both"></div>
     </li>
   ))}
   {list.length === 0 && <li>No results</li>}
 </ul>
-
-
-

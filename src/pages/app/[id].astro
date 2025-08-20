@@ -6,17 +6,65 @@ import { cacheGet, cacheSet } from '../../lib/cache';
 const { id } = Astro.params;
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
 
-// App details
-const appCacheKey = `app:${id}`;
-let appData = cacheGet<any>(appCacheKey);
+// App details: prefer App Store ID in the URL, then bundle_id, fallback to internal DB id
+const rawParam = id as string;
+const isNumeric = /^\d+$/.test(rawParam);
+const looksLikeBundleId = /\./.test(rawParam);
+
+let appData = undefined as any;
+
+// 1) Try by App Store ID or internal ID when numeric (single round-trip)
+if (isNumeric) {
+  const cacheKey = `appByNumeric:${rawParam}`;
+  const cached = cacheGet<any>(cacheKey);
+  if (cached) {
+    appData = cached;
+  } else {
+    const { data } = await supabase
+      .from('apps')
+      .select('*, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
+      .or(`app_store_id.eq.${rawParam},id.eq.${rawParam}`)
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      appData = data;
+      cacheSet(cacheKey, appData, 10 * 60 * 1000);
+    }
+  }
+}
+
+// 2) Try by bundle_id when it looks like a reverse-DNS ID
+if (!appData && looksLikeBundleId) {
+  const cacheByBundle = cacheGet<any>(`appByBundle:${rawParam}`);
+  if (cacheByBundle) {
+    appData = cacheByBundle;
+  } else {
+    const { data } = await supabase
+      .from('apps')
+      .select('*, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
+      .eq('bundle_id', rawParam)
+      .maybeSingle();
+    if (data) {
+      appData = data;
+      cacheSet(`appByBundle:${rawParam}`, appData, 10 * 60 * 1000);
+    }
+  }
+}
+
+// 3) Fallback to internal DB id
 if (!appData) {
-  const { data } = await supabase
-    .from('apps')
-    .select('*, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
-    .eq('id', id)
-    .single();
-  appData = data;
-  if (appData) cacheSet(appCacheKey, appData, 10 * 60 * 1000);
+  const cacheById = cacheGet<any>(`app:${rawParam}`);
+  if (cacheById) {
+    appData = cacheById;
+  } else {
+    const { data } = await supabase
+      .from('apps')
+      .select('*, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
+      .eq('id', rawParam)
+      .maybeSingle();
+    appData = data;
+    if (appData) cacheSet(`app:${rawParam}`, appData, 10 * 60 * 1000);
+  }
 }
 
 if (!appData) {
@@ -24,13 +72,13 @@ if (!appData) {
 }
 
 // Versions with IPA links (assuming you have a table mapping)
-const versionsCacheKey = `versions:${id}`;
+const versionsCacheKey = `versions:${appData.id}`;
 let versions = cacheGet<any[]>(versionsCacheKey);
 if (!versions) {
   const { data } = await supabase
     .from('app_versions')
     .select('id, version_string, build_number, minimum_os_version, release_date')
-    .eq('app_id', id)
+    .eq('app_id', appData.id)
     .order('release_date', { ascending: false })
     .limit(200);
   versions = data || [];

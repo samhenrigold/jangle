@@ -55,7 +55,7 @@ if (!list) {
   } else if (sort === 'name') {
     const { data } = await supabase
       .from('apps')
-      .select('*, developers!apps_developer_id_fkey(artist_name)')
+      .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, executable_name, developers!apps_developer_id_fkey(artist_name)')
       .order('display_name', { ascending: true })
       .range(offset, offset + pageSize - 1);
     list = (data || []).map((a: any) => ({
@@ -74,14 +74,14 @@ const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 ---
 
 <Layout title="Jangle — Legacy App Archive">
-  <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;">
-    <aside>
+  <div class="layout">
+    <div class="sidebar">
       <SearchForm q={q} genreId={genreId} sort={sort} genres={genres} />
-      <div class="meta" style="margin-top:10px;color:#666;font-size:13px;">Total results: {Number(total) || 0}</div>
-    </aside>
-    <section>
+      <div class="total">Total results: {Number(total) || 0}</div>
+    </div>
+    <div class="content">
       <AppList list={list} />
-      <nav class="pagination" style="display:flex;gap:8px;margin-top:12px;">
+      <div class="pagination">
         {page > 1 && (
           <a href={`/?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page-1}&per_page=${pageSize}`}>Prev</a>
         )}
@@ -89,7 +89,16 @@ const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
         {page < totalPages && (
           <a href={`/?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page+1}&per_page=${pageSize}`}>Next</a>
         )}
-      </nav>
-    </section>
+      </div>
+    </div>
+    <div style="clear:both"></div>
   </div>
+  <style>
+    .layout { padding: 0; margin: 0; }
+    .sidebar { float: left; width: 220px; padding: 0 16px; }
+    .content { overflow: hidden; padding: 0 16px; }
+    .total { margin-top: 10px; color: #666; font-size: 13px; }
+    .pagination { margin-top: 12px; }
+    .pagination a { margin-right: 8px; }
+  </style>
 </Layout>
