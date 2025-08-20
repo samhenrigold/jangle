@@ -35,10 +35,6 @@ const sortedGenres = (genres ?? []).sort((a: any, b: any) => {
 ---
 
 <Layout title="Categories — Jangle" activeTab="categories">
-  <div class="header">
-    <h1>Categories</h1>
-  </div>
-
   <div class="content">
     <div class="categories-grid">
       {sortedGenres.map((genre: any) => (
@@ -51,19 +47,6 @@ const sortedGenres = (genres ?? []).sort((a: any, b: any) => {
   </div>
 
   <style>
-    .header {
-      text-align: center;
-      margin-bottom: 40px;
-      padding: 20px 0;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .header h1 {
-      margin: 0 0 20px 0;
-      color: #333;
-      font-size: 32px;
-    }
-    
     .content {
       max-width: 1200px;
       margin: 0 auto;

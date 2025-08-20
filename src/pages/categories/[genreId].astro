@@ -1,8 +1,8 @@
 ---
-import { getSupabaseClient } from '../../../lib/supabase';
-import Layout from '../../../components/Layout.astro';
-import AppList from '../../../components/AppList.astro';
-import { cacheGet, cacheSet } from '../../../lib/cache';
+import { getSupabaseClient } from '../../lib/supabase';
+import Layout from '../../components/Layout.astro';
+import AppList from '../../components/AppList.astro';
+import { cacheGet, cacheSet } from '../../lib/cache';
 
 const { genreId } = Astro.params;
 const url = new URL(Astro.request.url);
@@ -61,11 +61,6 @@ const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 ---
 
 <Layout title={`${genre.genre_name} — Jangle`} activeTab="categories">
-  <div class="header">
-    <h1>{genre.genre_name}</h1>
-    <p class="subtitle">{total} apps in this category</p>
-  </div>
-
   <div class="content">
     <AppList list={list} />
     
@@ -83,25 +78,6 @@ const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   </div>
 
   <style>
-    .header {
-      text-align: center;
-      margin-bottom: 40px;
-      padding: 20px 0;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .header h1 {
-      margin: 0 0 10px 0;
-      color: #333;
-      font-size: 32px;
-    }
-    
-    .subtitle {
-      margin: 0 0 20px 0;
-      color: #666;
-      font-size: 16px;
-    }
-    
     .content {
       max-width: 1200px;
       margin: 0 auto;

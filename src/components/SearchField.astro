@@ -5,7 +5,7 @@ interface Props {}
 const {} = Astro.props;
 ---
 
-<form class="search-field" action="/search" method="get">
+<form class="search-field" action="/search" method="get" onsubmit="this.q.value = this.q.value.trim()">
   <div class="search-field-icon"></div>
   <input type="search" class="search-input" name="q" placeholder="Search" />
 </form>

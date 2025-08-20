@@ -99,82 +99,57 @@ if (q || genreId) {
 }
 ---
 
-<SearchLayout title="Search — Jangle" activeTab="search" searchQuery={q}>
-  <div class="header">
-    <h1>Search</h1>
-  </div>
-
-  <div class="layout">
-    <div class="sidebar">
+<SearchLayout title="Search — Jangle" searchQuery={q}>
+  <div class="content">
+    <div class="search-form-section">
       <SearchForm q={q} genreId={genreId} sort={sort} genres={sortedGenres} />
       {total > 0 && <div class="total">Total results: {total}</div>}
     </div>
-    <div class="content">
-      {!q && !genreId ? (
-        <div class="search-intro">
-          <h2>Find Apps</h2>
-          <p>Use the search form to find apps by name, bundle ID, or developer. You can also filter by genre and sort results.</p>
-        </div>
-      ) : (
-        <>
-          <h2>Search Results</h2>
-          {searchResults.length > 0 ? (
-            <>
-              <AppList list={searchResults} />
-              {totalPages > 1 && (
-                <div class="pagination">
-                  {page > 1 && (
-                    <a href={`/search?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page-1}&per_page=${pageSize}`}>Prev</a>
-                  )}
-                  <span>Page {page} / {totalPages}</span>
-                  {page < totalPages && (
-                    <a href={`/search?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page+1}&per_page=${pageSize}`}>Next</a>
-                  )}
-                </div>
-              )}
-            </>
-          ) : (
-            <div class="no-results">
-              <p>No apps found matching your search criteria.</p>
-              <p>Try adjusting your search terms or genre filter.</p>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-    <div style="clear:both"></div>
+    
+    {!q && !genreId ? (
+      <div class="search-intro">
+        <h2>Find Apps</h2>
+        <p>Use the search form to find apps by name, bundle ID, or developer. You can also filter by genre and sort results.</p>
+      </div>
+    ) : (
+      <>
+        {searchResults.length > 0 ? (
+          <>
+            <AppList list={searchResults} />
+            {totalPages > 1 && (
+              <div class="pagination">
+                {page > 1 && (
+                  <a href={`/search?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page-1}&per_page=${pageSize}`}>Prev</a>
+                )}
+                <span>Page {page} / {totalPages}</span>
+                {page < totalPages && (
+                  <a href={`/search?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page+1}&per_page=${pageSize}`}>Next</a>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <div class="no-results">
+            <p>No apps found matching your search criteria.</p>
+            <p>Try adjusting your search terms or genre filter.</p>
+          </div>
+        )}
+      </>
+    )}
   </div>
 
   <style>
-    .header {
-      text-align: center;
-      margin-bottom: 40px;
-      padding: 20px 0;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .header h1 {
-      margin: 0 0 20px 0;
-      color: #333;
-      font-size: 32px;
-    }
-    
-    .layout { 
-      padding: 0; 
-      margin: 0; 
+    .content { 
       max-width: 1200px;
       margin: 0 auto;
+      padding: 0 20px;
     }
     
-    .sidebar { 
-      float: left; 
-      width: 220px; 
-      padding: 0 16px; 
-    }
-    
-    .content { 
-      overflow: hidden; 
-      padding: 0 16px; 
+    .search-form-section {
+      margin-bottom: 20px;
+      padding: 20px;
+      background: #f8f8f8;
+      border-radius: 8px;
     }
     
     .total { 

@@ -39,11 +39,6 @@ const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 ---
 
 <Layout title="Top Charts — Jangle" activeTab="charts">
-  <div class="header">
-    <h1>Top Charts</h1>
-    <p class="subtitle">Apps with the most versions</p>
-  </div>
-
   <div class="content">
     <AppList list={topChartsApps} />
     
@@ -61,25 +56,6 @@ const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   </div>
 
   <style>
-    .header {
-      text-align: center;
-      margin-bottom: 40px;
-      padding: 20px 0;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .header h1 {
-      margin: 0 0 10px 0;
-      color: #333;
-      font-size: 32px;
-    }
-    
-    .subtitle {
-      margin: 0 0 20px 0;
-      color: #666;
-      font-size: 16px;
-    }
-    
     .content {
       max-width: 1200px;
       margin: 0 auto;
