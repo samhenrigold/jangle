@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
-const { title = 'Jangle' } = Astro.props;
+import TopNavigation from './TopNavigation.astro';
+const { title = 'Jangle', activeTab = 'featured' } = Astro.props;
 ---
 <!DOCTYPE html>
 <html lang="en">
@@ -11,9 +12,8 @@ const { title = 'Jangle' } = Astro.props;
     <title>{title}</title>
   </head>
   <body>
-    <div class="site-header">
-      <a href="/">Jangle</a>
-    </div>
+    <TopNavigation activeTab={activeTab} />
+    
     <main class="site-main">
       <slot />
     </main>

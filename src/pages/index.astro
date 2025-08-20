@@ -1,104 +1,55 @@
 ---
 import { getSupabaseClient } from '../lib/supabase';
 import Layout from '../components/Layout.astro';
-import SearchForm from '../components/SearchForm.astro';
 import AppList from '../components/AppList.astro';
 import { cacheGet, cacheSet } from '../lib/cache';
 
-// SSR search parameters
-const url = new URL(Astro.request.url);
-const q = url.searchParams.get('q') || '';
-const genreId = url.searchParams.get('genre');
-const sort = url.searchParams.get('sort') || 'versions'; // versions | first_date | name
-const page = Number(url.searchParams.get('page') || '1');
-const pageSize = Math.min(50, Number(url.searchParams.get('per_page') || '20'));
-const offset = (page - 1) * pageSize;
-
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
 
-// Fetch genres for filter sidebar
-const genresCacheKey = 'genres_with_counts';
-let genres = cacheGet<any[]>(genresCacheKey);
-if (!genres) {
-  const { data } = await supabase.rpc('get_genres_with_counts');
-  genres = data || [];
-  cacheSet(genresCacheKey, genres, 10 * 60 * 1000);
+// Featured: First 5 apps
+const featuredCacheKey = 'featured_apps';
+let featuredApps = cacheGet<any[]>(featuredCacheKey);
+if (!featuredApps) {
+  const { data } = await supabase
+    .from('apps')
+    .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, executable_name, developers!apps_developer_id_fkey(artist_name)')
+    .limit(5);
+  featuredApps = (data || []).map((a: any) => ({
+    ...a,
+    developer_artist_name: (a as any).developers?.artist_name,
+    version_count: undefined,
+  }));
+  cacheSet(featuredCacheKey, featuredApps, 10 * 60 * 1000);
 }
-
-// Fetch total count and list using server functions
-const countArgs: Record<string, any> = {
-  p_genre_id: genreId ? Number(genreId) : null,
-  p_search_query: q ? q.split(/\s+/).map((t) => `${t}:*`).join(' & ') : null,
-};
-const countCacheKey = `count:${genreId||''}:${q}`;
-let total = cacheGet<number>(countCacheKey);
-if (typeof total !== 'number') {
-  const { data: totalCountArr } = await supabase.rpc('get_apps_count', countArgs);
-  total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
-  cacheSet(countCacheKey, Number(total) || 0, 2 * 60 * 1000);
-}
-
-const rpcArgs = {
-  p_limit: pageSize,
-  p_offset: offset,
-  p_genre_id: countArgs.p_genre_id,
-  p_ascending: false,
-  p_search_query: countArgs.p_search_query,
-};
-
-const listCacheKey = `list:${sort}:${genreId||''}:${q}:${page}:${pageSize}`;
-let list = cacheGet<any[]>(listCacheKey);
-if (!list) {
-  if (sort === 'first_date') {
-    const { data } = await supabase.rpc('get_apps_sorted_by_first_version_date', rpcArgs);
-    list = data || [];
-  } else if (sort === 'name') {
-    const { data } = await supabase
-      .from('apps')
-      .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, executable_name, developers!apps_developer_id_fkey(artist_name)')
-      .order('display_name', { ascending: true })
-      .range(offset, offset + pageSize - 1);
-    list = (data || []).map((a: any) => ({
-      ...a,
-      developer_artist_name: (a as any).developers?.artist_name,
-      version_count: undefined,
-    }));
-  } else {
-    const { data } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
-    list = data || [];
-  }
-  cacheSet(listCacheKey, list, 60 * 1000);
-}
-
-const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 ---
 
-<Layout title="Jangle — Legacy App Archive">
-  <div class="layout">
-    <div class="sidebar">
-      <SearchForm q={q} genreId={genreId} sort={sort} genres={genres} />
-      <div class="total">Total results: {Number(total) || 0}</div>
-    </div>
-    <div class="content">
-      <AppList list={list} />
-      <div class="pagination">
-        {page > 1 && (
-          <a href={`/?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page-1}&per_page=${pageSize}`}>Prev</a>
-        )}
-        <span>Page {page} / {totalPages}</span>
-        {page < totalPages && (
-          <a href={`/?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page+1}&per_page=${pageSize}`}>Next</a>
-        )}
-      </div>
-    </div>
-    <div style="clear:both"></div>
+<Layout title="Jangle — Legacy App Archive" activeTab="featured">
+  <div class="header">
+    <h1>Featured Apps</h1>
   </div>
+
+  <div class="content">
+    <AppList list={featuredApps} />
+  </div>
+
   <style>
-    .layout { padding: 0; margin: 0; }
-    .sidebar { float: left; width: 220px; padding: 0 16px; }
-    .content { overflow: hidden; padding: 0 16px; }
-    .total { margin-top: 10px; color: #666; font-size: 13px; }
-    .pagination { margin-top: 12px; }
-    .pagination a { margin-right: 8px; }
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      padding: 20px 0;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .header h1 {
+      margin: 0 0 20px 0;
+      color: #333;
+      font-size: 32px;
+    }
+    
+    .content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
   </style>
 </Layout>

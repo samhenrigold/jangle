@@ -1,0 +1,116 @@
+---
+// No props needed for now, but interface ready for future expansion
+interface Props {}
+
+const {} = Astro.props;
+---
+
+<form class="search-field" action="/search" method="get">
+  <div class="search-field-icon"></div>
+  <input type="search" class="search-input" name="q" placeholder="Search" />
+</form>
+
+<style>
+  /* Search field for iPad - hidden by default */
+  .search-field {
+    display: none;
+  }
+
+  /* iPad and larger screens */
+  @media screen and (min-width: 768px) {
+    .search-field {
+      display: block;
+      width: 33.333%;
+      height: 26pt;
+      position: relative;
+      background-image: url('/UISearchField/UISearchFieldLeftSharp.png');
+      background-repeat: no-repeat;
+      background-size: 13pt 26pt;
+      background-position: left center;
+      box-sizing: border-box;
+      -webkit-box-ordinal-group: 3;
+    }
+    
+    .search-field::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 13pt;
+      right: 13pt;
+      height: 26pt;
+      background-image: url('/UISearchField/UISearchFieldMiddleSharp.png');
+      background-repeat: repeat-x;
+      background-size: 1pt 26pt;
+    }
+    
+    .search-field::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 13pt;
+      height: 26pt;
+      background-image: url('/UISearchField/UISearchFieldRightSharp.png');
+      background-repeat: no-repeat;
+      background-size: 13pt 26pt;
+      background-position: right center;
+    }
+    
+    .search-field-icon {
+      position: absolute;
+      top: 50%;
+      left: 8pt;
+      width: 12pt;
+      height: 12pt;
+      margin-top: -6pt;
+      background-image: url('/UISearchField/UISearchFieldIcon.png');
+      background-repeat: no-repeat;
+      background-size: 12pt 12pt;
+      z-index: 2;
+      pointer-events: none;
+    }
+    
+    .search-input {
+      position: absolute;
+      top: 0;
+      left: 25pt;
+      right: 13pt;
+      height: 26pt;
+      border: none;
+      background: transparent;
+      font-family: "Helvetica Neue", "Helvetica", sans-serif;
+      color: #000;
+      padding: 0 4pt;
+      z-index: 1;
+      box-sizing: border-box;
+      line-height: 26pt;
+      margin: 0;
+    }
+    
+    .search-input:focus {
+      outline: none;
+    }
+  }
+
+  @media only screen and (-webkit-min-device-pixel-ratio: 2) {
+    .search-field {
+      background-image: url('/UISearchField/UISearchFieldLeftSharp@2x.png');
+      background-size: 13pt 26pt;
+    }
+    
+    .search-field::before {
+      background-image: url('/UISearchField/UISearchFieldMiddleSharp@2x.png');
+      background-size: 1pt 26pt;
+    }
+    
+    .search-field::after {
+      background-image: url('/UISearchField/UISearchFieldRightSharp@2x.png');
+      background-size: 13pt 26pt;
+    }
+    
+    .search-field-icon {
+      background-image: url('/UISearchField/UISearchFieldIcon@2x.png');
+      background-size: 12pt 12pt;
+    }
+  }
+</style>

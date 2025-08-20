@@ -1,0 +1,108 @@
+---
+import { getSupabaseClient } from '../../lib/supabase';
+import Layout from '../../components/Layout.astro';
+import { cacheGet, cacheSet } from '../../lib/cache';
+
+const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+
+// Fetch genres for categories
+const genresCacheKey = 'genres_with_counts';
+let genres = cacheGet<any[]>(genresCacheKey);
+if (!genres) {
+  const { data } = await supabase.rpc('get_genres_with_counts');
+  genres = data || [];
+  cacheSet(genresCacheKey, genres, 10 * 60 * 1000);
+}
+
+// Group Game subgenres after the parent Games genre
+const sortedGenres = (genres ?? []).sort((a: any, b: any) => {
+  if (a.id === 6014) return -1;
+  if (b.id === 6014) return 1;
+  
+  if (a.genre_id && String(a.genre_id).startsWith('70')) {
+    if (b.genre_id && String(b.genre_id).startsWith('70')) {
+      return a.genre_name.localeCompare(b.genre_name);
+    }
+    return -1;
+  }
+  
+  if (b.genre_id && String(b.genre_id).startsWith('70')) {
+    return 1;
+  }
+  
+  return a.genre_name.localeCompare(b.genre_name);
+});
+---
+
+<Layout title="Categories — Jangle" activeTab="categories">
+  <div class="header">
+    <h1>Categories</h1>
+  </div>
+
+  <div class="content">
+    <div class="categories-grid">
+      {sortedGenres.map((genre: any) => (
+        <a href={`/categories/${genre.id}`} class="category-card">
+          <h3>{genre.genre_name}</h3>
+          <p>{genre.app_count} apps</p>
+        </a>
+      ))}
+    </div>
+  </div>
+
+  <style>
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      padding: 20px 0;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .header h1 {
+      margin: 0 0 20px 0;
+      color: #333;
+      font-size: 32px;
+    }
+    
+    .content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    
+    .categories-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 20px;
+      margin-top: 20px;
+    }
+    
+    .category-card {
+      display: block;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.2s ease;
+    }
+    
+    .category-card:hover {
+      border-color: #007AFF;
+      box-shadow: 0 2px 8px rgba(0, 122, 255, 0.1);
+      transform: translateY(-2px);
+    }
+    
+    .category-card h3 {
+      margin: 0 0 8px 0;
+      color: #333;
+      font-size: 18px;
+    }
+    
+    .category-card p {
+      margin: 0;
+      color: #666;
+      font-size: 14px;
+    }
+  </style>
+</Layout>

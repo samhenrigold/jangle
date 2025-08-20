@@ -1,0 +1,114 @@
+---
+import { getSupabaseClient } from '../../lib/supabase';
+import Layout from '../../components/Layout.astro';
+import AppList from '../../components/AppList.astro';
+import { cacheGet, cacheSet } from '../../lib/cache';
+
+const url = new URL(Astro.request.url);
+const page = Number(url.searchParams.get('page') || '1');
+const pageSize = Math.min(50, Number(url.searchParams.get('per_page') || '20'));
+const offset = (page - 1) * pageSize;
+
+const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+
+// Fetch top charts apps (sorted by most versions)
+const topChartsCacheKey = `topcharts:${page}:${pageSize}`;
+let topChartsApps = cacheGet<any[]>(topChartsCacheKey);
+if (!topChartsApps) {
+  const { data } = await supabase.rpc('get_apps_sorted_by_version_count', {
+    p_limit: pageSize,
+    p_offset: offset,
+    p_genre_id: null,
+    p_ascending: false,
+    p_search_query: null,
+  });
+  topChartsApps = data || [];
+  cacheSet(topChartsCacheKey, topChartsApps, 5 * 60 * 1000);
+}
+
+// Get total count for pagination
+const countCacheKey = 'topcharts_count';
+let total = cacheGet<number>(countCacheKey);
+if (typeof total !== 'number') {
+  const { data: totalCountArr } = await supabase.rpc('get_apps_count', { p_genre_id: null, p_search_query: null });
+  total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
+  cacheSet(countCacheKey, Number(total) || 0, 10 * 60 * 1000);
+}
+
+const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
+---
+
+<Layout title="Top Charts — Jangle" activeTab="charts">
+  <div class="header">
+    <h1>Top Charts</h1>
+    <p class="subtitle">Apps with the most versions</p>
+  </div>
+
+  <div class="content">
+    <AppList list={topChartsApps} />
+    
+    {totalPages > 1 && (
+      <div class="pagination">
+        {page > 1 && (
+          <a href={`/charts?page=${page-1}&per_page=${pageSize}`}>Prev</a>
+        )}
+        <span>Page {page} / {totalPages}</span>
+        {page < totalPages && (
+          <a href={`/charts?page=${page+1}&per_page=${pageSize}`}>Next</a>
+        )}
+      </div>
+    )}
+  </div>
+
+  <style>
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      padding: 20px 0;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .header h1 {
+      margin: 0 0 10px 0;
+      color: #333;
+      font-size: 32px;
+    }
+    
+    .subtitle {
+      margin: 0 0 20px 0;
+      color: #666;
+      font-size: 16px;
+    }
+    
+    .content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    
+    .pagination {
+      margin-top: 20px;
+      text-align: center;
+    }
+    
+    .pagination a {
+      margin: 0 8px;
+      padding: 8px 16px;
+      text-decoration: none;
+      color: #007AFF;
+      border: 1px solid #007AFF;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+    }
+    
+    .pagination a:hover {
+      background-color: #007AFF;
+      color: white;
+    }
+    
+    .pagination span {
+      margin: 0 16px;
+      color: #666;
+    }
+  </style>
+</Layout>

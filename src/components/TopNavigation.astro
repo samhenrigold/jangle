@@ -1,0 +1,75 @@
+---
+import SegmentedControl from './SegmentedControl.astro';
+import SearchButton from './SearchButton.astro';
+import SearchField from './SearchField.astro';
+
+const { activeTab = 'featured' } = Astro.props;
+---
+
+<nav class="top-nav">
+  <div class="nav-background"></div>
+  <div class="nav-content">
+    <SegmentedControl activeTab={activeTab} />
+    <SearchButton activeTab={activeTab} />
+    <SearchField />
+    <div class="spacer"></div>
+  </div>
+</nav>
+
+<style>
+  .top-nav {
+    position: relative;
+    height: 60px;
+    width: 100%;
+  }
+  
+  .nav-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('/UINavigationBar/UINavigationBarDefaultBackground.png');
+    background-repeat: repeat-x;
+    background-size: 1px 60px;
+  }
+  
+  .nav-content {
+    position: relative;
+    height: 100%;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-box-align: center;
+    -webkit-box-pack: center;
+  }
+  
+  /* Spacer for iPad layout - hidden by default */
+  .spacer {
+    display: none;
+  }
+  
+  /* iPad and larger screens */
+  @media screen and (min-width: 768px) {
+    .nav-content {
+      display: -webkit-box;
+      -webkit-box-orient: horizontal;
+      -webkit-box-align: center;
+      -webkit-box-pack: justify;
+      padding: 0 8px;
+    }
+    
+    .spacer {
+      display: block;
+      width: 33.333%;
+      height: 35px;
+      -webkit-box-ordinal-group: 1;
+    }
+  }
+
+  @media only screen and (-webkit-min-device-pixel-ratio: 2) {
+    .nav-background {
+      background: url('/UINavigationBar/UINavigationBarDefaultBackground@2x.png');
+      background-size: 1px 60px;
+    }
+  }
+</style>

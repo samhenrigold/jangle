@@ -1,0 +1,444 @@
+---
+interface Props {
+  activeTab?: string;
+  searchQuery?: string;
+}
+
+const { activeTab = 'search', searchQuery = '' } = Astro.props;
+---
+
+<nav class="top-nav">
+  <div class="nav-background"></div>
+  <div class="nav-content">
+    <!-- Mobile: Full-width search field -->
+    <form class="mobile-search-form" action="/search" method="get">
+      <div class="mobile-search-field">
+        <div class="search-field-icon"></div>
+        <input type="search" class="search-input" name="q" placeholder="Search" value={searchQuery} />
+      </div>
+    </form>
+    
+    <!-- iPad: Same layout as normal TopNavigation -->
+    <div class="spacer"></div>
+    <div class="segment-bar">
+      <a href="/" class={`segment-button ${activeTab === 'featured' ? 'active' : ''}`}>
+        <span class="segment-text">Featured</span>
+      </a>
+      <div class="segment-divider"></div>
+      <a href="/categories" class={`segment-button ${activeTab === 'categories' ? 'active' : ''}`}>
+        <span class="segment-text segment-text-long">Categories</span>
+      </a>
+      <div class="segment-divider"></div>
+      <a href="/charts" class={`segment-button ${activeTab === 'charts' ? 'active' : ''}`}>
+        <span class="segment-text">Top 25</span>
+      </a>
+      <div class="segment-divider"></div>
+      <a href="/search" class={`segment-button ${activeTab === 'search' ? 'active' : ''}`}>
+        <span class="segment-text">Search</span>
+      </a>
+    </div>
+    
+    <form class="ipad-search-form" action="/search" method="get">
+      <div class="search-field">
+        <div class="search-field-icon"></div>
+        <input type="search" class="search-input" name="q" placeholder="Search" value={searchQuery} />
+      </div>
+    </form>
+  </div>
+</nav>
+
+<style>
+  .top-nav {
+    position: relative;
+    height: 60px;
+    width: 100%;
+  }
+  
+  .nav-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('/UINavigationBar/UINavigationBarDefaultBackground.png');
+    background-repeat: repeat-x;
+    background-size: 1px 60px;
+  }
+  
+  .nav-content {
+    position: relative;
+    height: 100%;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-box-align: center;
+    -webkit-box-pack: center;
+  }
+  
+  /* Mobile search field - full width */
+  .mobile-search-form {
+    display: block;
+    width: 100%;
+    padding: 0 8px;
+  }
+  
+  .mobile-search-field {
+    display: block;
+    width: 100%;
+    height: 35px;
+    position: relative;
+    background-image: url('/UISearchField/UISearchFieldLeftSharp.png');
+    background-repeat: no-repeat;
+    background-size: 13px 35px;
+    background-position: left center;
+    box-sizing: border-box;
+  }
+  
+  .mobile-search-field::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 13px;
+    right: 13px;
+    height: 35px;
+    background-image: url('/UISearchField/UISearchFieldMiddleSharp.png');
+    background-repeat: repeat-x;
+    background-size: 1px 35px;
+  }
+  
+  .mobile-search-field::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 13px;
+    height: 35px;
+    background-image: url('/UISearchField/UISearchFieldRightSharp.png');
+    background-repeat: no-repeat;
+    background-size: 13px 35px;
+    background-position: right center;
+  }
+  
+  .search-field-icon {
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    width: 12px;
+    height: 12px;
+    margin-top: -6px;
+    background-image: url('/UISearchField/UISearchFieldIcon.png');
+    background-repeat: no-repeat;
+    background-size: 12px 12px;
+    z-index: 2;
+    pointer-events: none;
+  }
+  
+  .search-input {
+    position: absolute;
+    top: 0;
+    left: 25px;
+    right: 13px;
+    height: 35px;
+    border: none;
+    background: transparent;
+    font-family: "Helvetica Neue", "Helvetica", sans-serif;
+    color: #000;
+    padding: 0 4px;
+    z-index: 1;
+    box-sizing: border-box;
+    line-height: 35px;
+    margin: 0;
+  }
+  
+  .search-input:focus {
+    outline: none;
+  }
+  
+  /* Hide iPad elements on mobile */
+  .spacer,
+  .segment-bar,
+  .ipad-search-form {
+    display: none;
+  }
+  
+  /* iPad and larger screens */
+  @media screen and (min-width: 768px) {
+    .nav-content {
+      display: -webkit-box;
+      -webkit-box-orient: horizontal;
+      -webkit-box-align: center;
+      -webkit-box-pack: justify;
+      padding: 0 8px;
+    }
+    
+    /* Hide mobile search on iPad */
+    .mobile-search-form {
+      display: none;
+    }
+    
+    /* Show iPad elements */
+    .spacer {
+      display: block;
+      width: 33.333%;
+      height: 35px;
+      -webkit-box-ordinal-group: 1;
+    }
+    
+    .segment-bar {
+      display: -webkit-box;
+      -webkit-box-orient: horizontal;
+      -webkit-box-align: center;
+      -webkit-box-pack: center;
+      position: static;
+      margin: 0;
+      max-width: none;
+      width: 33.333%;
+      left: auto;
+      right: auto;
+      top: auto;
+      margin-top: 0;
+      margin-right: 8px;
+      -webkit-box-ordinal-group: 2;
+    }
+    
+    .ipad-search-form {
+      display: block;
+      -webkit-box-ordinal-group: 3;
+      width: 33.333%;
+    }
+    
+    .search-field {
+      display: block;
+      width: 100%;
+      height: 26px;
+      position: relative;
+      background-image: url('/UISearchField/UISearchFieldLeftSharp.png');
+      background-repeat: no-repeat;
+      background-size: 13px 26px;
+      background-position: left center;
+      box-sizing: border-box;
+    }
+    
+    .search-field::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 13px;
+      right: 13px;
+      height: 26px;
+      background-image: url('/UISearchField/UISearchFieldMiddleSharp.png');
+      background-repeat: repeat-x;
+      background-size: 1px 26px;
+    }
+    
+    .search-field::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 13px;
+      height: 26px;
+      background-image: url('/UISearchField/UISearchFieldRightSharp.png');
+      background-repeat: no-repeat;
+      background-size: 13px 26px;
+      background-position: right center;
+    }
+    
+    .ipad-search-form .search-input {
+      height: 26px;
+      line-height: 26px;
+    }
+  }
+  
+  /* Segment button styles for iPad */
+  .segment-button {
+    display: block;
+    text-decoration: none;
+    height: 30px;
+    line-height: 30px;
+    background-repeat: no-repeat;
+    background-size: auto 30px;
+    position: relative;
+    -webkit-box-flex: 1;
+    width: 25%;
+    min-width: 0;
+  }
+  
+  .segment-button:first-child {
+    background-image: url('/UISegmentBar/UISegmentBarButton/Left.png');
+    background-position: left center;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  
+  .segment-button:first-child::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 4px;
+    right: 0;
+    height: 30px;
+    background-image: url('/UISegmentBar/UISegmentBarButton/Middle.png');
+    background-repeat: repeat-x;
+    background-size: 2px 30px;
+  }
+  
+  .segment-button:not(:first-child):not(:last-child) {
+    background-image: url('/UISegmentBar/UISegmentBarButton/Middle.png');
+    background-repeat: repeat-x;
+    background-size: 2px 30px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  
+  .segment-button:last-child {
+    background-image: url('/UISegmentBar/UISegmentBarButton/Right.png');
+    background-position: right center;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  
+  .segment-button:last-child::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 4px;
+    height: 30px;
+    background-image: url('/UISegmentBar/UISegmentBarButton/Middle.png');
+    background-repeat: repeat-x;
+    background-size: 2px 30px;
+  }
+  
+  .segment-button:first-child.active {
+    background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Left.png');
+  }
+  
+  .segment-button:first-child.active::after {
+    background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Middle.png');
+  }
+  
+  .segment-button:not(:first-child):not(:last-child).active {
+    background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Middle.png');
+  }
+  
+  .segment-button:last-child.active {
+    background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Right.png');
+  }
+  
+  .segment-button:last-child.active::before {
+    background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Middle.png');
+  }
+  
+  .segment-divider {
+    width: 1px;
+    height: 30px;
+    background: url('/UISegmentBar/UISegmentBarDivider.png');
+    background-repeat: no-repeat;
+    background-size: 1px 30px;
+  }
+
+  .segment-text {
+    font-family: "Helvetica Neue", "Helvetica", sans-serif;
+    font-weight: bold;
+    font-size: 10px;
+    color: #fff;
+    white-space: nowrap;
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 2px;
+  }
+  
+  .segment-text-long {
+    font-size: 9px;
+  }
+
+  @media only screen and (-webkit-min-device-pixel-ratio: 2) {
+    .nav-background {
+      background: url('/UINavigationBar/UINavigationBarDefaultBackground@2x.png');
+      background-size: 1px 60px;
+    }
+    
+    .mobile-search-field {
+      background-image: url('/UISearchField/UISearchFieldLeftSharp@2x.png');
+      background-size: 13px 35px;
+    }
+    
+    .mobile-search-field::before {
+      background-image: url('/UISearchField/UISearchFieldMiddleSharp@2x.png');
+      background-size: 1px 35px;
+    }
+    
+    .mobile-search-field::after {
+      background-image: url('/UISearchField/UISearchFieldRightSharp@2x.png');
+      background-size: 13px 35px;
+    }
+    
+    .search-field-icon {
+      background-image: url('/UISearchField/UISearchFieldIcon@2x.png');
+      background-size: 12px 12px;
+    }
+    
+    .search-field {
+      background-image: url('/UISearchField/UISearchFieldLeftSharp@2x.png');
+      background-size: 13px 26px;
+    }
+    
+    .search-field::before {
+      background-image: url('/UISearchField/UISearchFieldMiddleSharp@2x.png');
+      background-size: 1px 26px;
+    }
+    
+    .search-field::after {
+      background-image: url('/UISearchField/UISearchFieldRightSharp@2x.png');
+      background-size: 13px 26px;
+    }
+    
+    .segment-button:first-child {
+      background-image: url('/UISegmentBar/UISegmentBarButton/Left@2x.png');
+    }
+    
+    .segment-button:first-child::after {
+      background-image: url('/UISegmentBar/UISegmentBarButton/Middle@2x.png');
+    }
+    
+    .segment-button:not(:first-child):not(:last-child) {
+      background-image: url('/UISegmentBar/UISegmentBarButton/Middle@2x.png');
+    }
+    
+    .segment-button:last-child {
+      background-image: url('/UISegmentBar/UISegmentBarButton/Right@2x.png');
+    }
+    
+    .segment-button:last-child::before {
+      background-image: url('/UISegmentBar/UISegmentBarButton/Middle@2x.png');
+    }
+    
+    .segment-button:first-child.active {
+      background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Left@2x.png');
+    }
+    
+    .segment-button:first-child.active::after {
+      background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Middle@2x.png');
+    }
+    
+    .segment-button:not(:first-child):not(:last-child).active {
+      background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Middle@2x.png');
+    }
+    
+    .segment-button:last-child.active {
+      background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Right@2x.png');
+    }
+    
+    .segment-button:last-child.active::before {
+      background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Middle@2x.png');
+    }
+    
+    .segment-divider {
+      background: url('/UISegmentBar/UISegmentBarDivider@2x.png');
+    }
+  }
+</style>

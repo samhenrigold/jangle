@@ -1,0 +1,136 @@
+---
+import { getSupabaseClient } from '../../../lib/supabase';
+import Layout from '../../../components/Layout.astro';
+import AppList from '../../../components/AppList.astro';
+import { cacheGet, cacheSet } from '../../../lib/cache';
+
+const { genreId } = Astro.params;
+const url = new URL(Astro.request.url);
+const page = Number(url.searchParams.get('page') || '1');
+const pageSize = Math.min(50, Number(url.searchParams.get('per_page') || '20'));
+const offset = (page - 1) * pageSize;
+
+const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+
+// Fetch genre details
+const genreCacheKey = `genre:${genreId}`;
+let genre = cacheGet<any>(genreCacheKey);
+if (!genre) {
+  const { data } = await supabase
+    .from('genres')
+    .select('*')
+    .eq('id', genreId)
+    .single();
+  genre = data;
+  if (genre) {
+    cacheSet(genreCacheKey, genre, 10 * 60 * 1000);
+  }
+}
+
+if (!genre) {
+  return Astro.redirect('/categories');
+}
+
+// Fetch apps in this genre
+const countArgs = { p_genre_id: Number(genreId), p_search_query: null };
+const countCacheKey = `genre_count:${genreId}`;
+let total = cacheGet<number>(countCacheKey);
+if (typeof total !== 'number') {
+  const { data: totalCountArr } = await supabase.rpc('get_apps_count', countArgs);
+  total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
+  cacheSet(countCacheKey, Number(total) || 0, 5 * 60 * 1000);
+}
+
+const rpcArgs = {
+  p_limit: pageSize,
+  p_offset: offset,
+  p_genre_id: Number(genreId),
+  p_ascending: false,
+  p_search_query: null,
+};
+
+const listCacheKey = `genre_apps:${genreId}:${page}:${pageSize}`;
+let list = cacheGet<any[]>(listCacheKey);
+if (!list) {
+  const { data } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
+  list = data || [];
+  cacheSet(listCacheKey, list, 5 * 60 * 1000);
+}
+
+const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
+---
+
+<Layout title={`${genre.genre_name} — Jangle`} activeTab="categories">
+  <div class="header">
+    <h1>{genre.genre_name}</h1>
+    <p class="subtitle">{total} apps in this category</p>
+  </div>
+
+  <div class="content">
+    <AppList list={list} />
+    
+    {totalPages > 1 && (
+      <div class="pagination">
+        {page > 1 && (
+          <a href={`/categories/${genreId}?page=${page-1}&per_page=${pageSize}`}>Prev</a>
+        )}
+        <span>Page {page} / {totalPages}</span>
+        {page < totalPages && (
+          <a href={`/categories/${genreId}?page=${page+1}&per_page=${pageSize}`}>Next</a>
+        )}
+      </div>
+    )}
+  </div>
+
+  <style>
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      padding: 20px 0;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .header h1 {
+      margin: 0 0 10px 0;
+      color: #333;
+      font-size: 32px;
+    }
+    
+    .subtitle {
+      margin: 0 0 20px 0;
+      color: #666;
+      font-size: 16px;
+    }
+    
+    .content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    
+    .pagination {
+      margin-top: 20px;
+      text-align: center;
+    }
+    
+    .pagination a {
+      margin: 0 8px;
+      padding: 8px 16px;
+      text-decoration: none;
+      color: #007AFF;
+      border: 1px solid #007AFF;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+    }
+    
+    .pagination a:hover {
+      background-color: #007AFF;
+      color: white;
+    }
+    
+    .pagination span {
+      margin: 0 16px;
+      color: #666;
+    }
+  </style>
+</Layout>
