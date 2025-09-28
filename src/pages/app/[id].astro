@@ -2,6 +2,7 @@
 import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
+import { sortVersions, coerceDir, coerceSortKey, defaultDirForSort, parseIOSVersionFromUA, isMinimumOSSupported } from '../../lib/sorting';
 
 const { id } = Astro.params;
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
@@ -107,17 +108,80 @@ for (const f of ipaFiles) {
   arr.push(f);
   filesByVersionId.set(f.app_version_id, arr);
 }
+
+// Sorting + filters
+const requestUrl = new URL(Astro.request.url);
+const pathname = requestUrl.pathname;
+const searchParams = requestUrl.searchParams;
+
+const currentSort = coerceSortKey(searchParams.get('sort'));
+const currentDir = coerceDir(searchParams.get('dir') || defaultDirForSort(currentSort));
+
+// iOS feature: hide newer-than-device checkbox
+const ua = Astro.request.headers.get('user-agent') || '';
+const { isIOS, versionNumbers: deviceIOS } = parseIOSVersionFromUA(ua);
+const hideNewerParam = searchParams.get('hide_newer');
+const hideNewerPresent = searchParams.has('hide_newer_present');
+const hideNewer = isIOS ? (hideNewerPresent ? (hideNewerParam === '1' || hideNewerParam === 'true') : true) : false;
+const iosVersionParts = (deviceIOS && deviceIOS.length >= 3 && deviceIOS[2] === 0) ? deviceIOS.slice(0, 2) : deviceIOS;
+const iosVersionLabel = (deviceIOS && deviceIOS.length) ? iosVersionParts.join('.') : undefined;
+
+const filtered = hideNewer
+  ? (versions || []).filter((v: any) => isMinimumOSSupported(v?.minimum_os_version, deviceIOS))
+  : (versions || []);
+
+const sortedVersions = sortVersions(filtered, currentSort, currentDir);
+
+function toggleSortHref(nextSort: string) {
+  // clicking the same sort toggles dir, otherwise use default dir for that sort
+  const ns = coerceSortKey(nextSort);
+  const nd = ns === currentSort ? (currentDir === 'asc' ? 'desc' : 'asc') : defaultDirForSort(ns);
+  const sp = new URLSearchParams(searchParams);
+  sp.set('sort', ns);
+  sp.set('dir', nd);
+  return `${pathname}?${sp.toString()}`;
+}
 ---
 
 <Layout title={`${appData.display_name || appData.bundle_id} — Jangle`}>
-  <a href="/">← Back</a>
   <div style="max-width:900px;margin:10px auto 0 auto;">
     <h1>{appData.display_name || appData.bundle_id}</h1>
     <div class="meta" style="color:#666;font-size:13px;">{appData.developers?.artist_name} · {appData.bundle_id}</div>
     <p>{appData.copyright}</p>
 
     <h2>Versions</h2>
-    {(versions || []).map((v: any) => (
+    <div class="sort-bar" style="margin:6px 0 12px 0;font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div>
+        <span style="margin-right:6px;">Sort:</span>
+        <a href={toggleSortHref('date')} style={currentSort === 'date' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>Date</a>
+        <a href={toggleSortHref('version')} style={currentSort === 'version' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>Version</a>
+        <a href={toggleSortHref('build')} style={currentSort === 'build' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>Build</a>
+        <a href={toggleSortHref('ios')} style={currentSort === 'ios' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>iOS</a>
+        <a href={toggleSortHref('id')} style={currentSort === 'id' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>ID</a>
+        <span style="color:#666;margin-left:6px;">({currentDir})</span>
+      </div>
+      {isIOS && (
+        <form method="get" style="margin:0;">
+          {(() => {
+            const sp = new URLSearchParams(searchParams);
+            sp.delete('hide_newer');
+            sp.delete('hide_newer_present');
+            const hiddenInputs = Array.from(sp.entries()).map(([k, v]) => (<input type="hidden" name={k} value={v} />));
+            return (
+              <>
+                {hiddenInputs}
+                <input type="hidden" name="hide_newer_present" value="1" />
+                <label style="user-select:none;cursor:pointer;">
+                  <input type="checkbox" name="hide_newer" value="1" checked={hideNewer} onchange="this.form.submit()" />
+                  <span style="margin-left:6px;">Hide versions newer than iOS {iosVersionLabel || 'this device'}</span>
+                </label>
+              </>
+            );
+          })()}
+        </form>
+      )}
+    </div>
+    {(sortedVersions || []).map((v: any) => (
       <div class="version" style="border-bottom:1px solid #eee;padding:10px 0;">
         <div><strong>{v.version_string}</strong> ({v.build_number})</div>
         <div class="meta" style="color:#666;font-size:13px;">iOS {v.minimum_os_version || '—'} · {v.release_date ? new Date(v.release_date).toISOString().slice(0,10) : '—'}</div>

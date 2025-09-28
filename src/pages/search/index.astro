@@ -7,7 +7,7 @@ import { cacheGet, cacheSet } from '../../lib/cache';
 
 // Search parameters
 const url = new URL(Astro.request.url);
-const q = url.searchParams.get('q') || '';
+const q = url.searchParams.get('q')?.trim() || '';
 const genreId = url.searchParams.get('genre');
 const sort = url.searchParams.get('sort') || 'versions';
 const page = Number(url.searchParams.get('page') || '1');
