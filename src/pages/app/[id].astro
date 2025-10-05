@@ -3,6 +3,7 @@ import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { sortVersions, coerceDir, coerceSortKey, defaultDirForSort, parseIOSVersionFromUA, isMinimumOSSupported } from '../../lib/sorting';
+import { generateIpaDownloadUrl } from '../../lib/urls';
 
 const { id } = Astro.params;
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
@@ -95,7 +96,7 @@ if (versionIds.length) {
   if (ipaFiles.length === 0) {
     const { data } = await supabase
       .from('ipa_files')
-      .select('id, app_version_id, filename, has_itunes_metadata, has_itunes_artwork')
+      .select('id, app_version_id, filename, has_itunes_metadata, has_itunes_artwork, info_plist_path, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id)')
       .in('app_version_id', versionIds);
     ipaFiles = data || [];
     cacheSet(ipaCacheKey, ipaFiles, 5 * 60 * 1000);
@@ -189,9 +190,24 @@ function toggleSortHref(nextSort: string) {
           {(filesByVersionId.get(v.id) || []).map((f: any) => {
             const origin = new URL(Astro.request.url).origin;
             const manifestUrl = `${origin}/manifest/${f.id}.plist`;
-            return (
-              <a class="install" style="display:inline-block;margin-right:8px;" href={`itms-services://?action=download-manifest&url=${manifestUrl}`}>Install</a>
-            );
+            
+            // Show Install link for iPhone, Download link for others
+            if (isIOS) {
+              return (
+                <a class="install" style="display:inline-block;margin-right:8px;" href={`itms-services://?action=download-manifest&url=${manifestUrl}`}>Install</a>
+              );
+            } else {
+              // Generate direct download URL to IPA file
+              const ipaUrl = generateIpaDownloadUrl({
+                id: f.id,
+                filename: f.filename,
+                info_plist_path: f.info_plist_path,
+                archive_item: { ia_item_id: f.archive_items?.ia_item_id || '' }
+              });
+              return (
+                <a class="download" style="display:inline-block;margin-right:8px;" href={ipaUrl} download>Download</a>
+              );
+            }
           })}
         </div>
       </div>
