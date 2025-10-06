@@ -1,43 +1,71 @@
-# Astro Starter Kit: Minimal
+# Jangle (Legacy Store)
 
-```sh
-npm create astro@latest -- --template minimal
+A web application for browsing and exploring archived iOS applications from the early App Store era. Built with Astro and Supabase.
+
+## Features
+
+- **Browse Apps**: Explore a catalog of archived iOS applications
+- **Search**: Full-text search across app names, bundle IDs, and metadata
+- **Filter by Genre**: Browse apps by category
+- **Sort Options**: Sort by version count or release date
+- **App Details**: View detailed information about each app, including version history
+
+A goal for this project is to be accessible on older versions of Safari, so a good number of these components use weird flexbox syntax and inline styles. That's also why a lot of this site uses SSR and minimal client scripting.
+
+## Tech Stack
+
+- **Frontend**: [Astro](https://astro.build/) - Static site generation with SSR support
+- **Database**: [Supabase](https://supabase.com/) (PostgreSQL)
+- **Styling**: CSS with PostCSS and Autoprefixer
+- **Deployment**: Cloudflare Workers (via Astro adapter)
+
+## Project Structure
+
 ```
-
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
-
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
 /
-├── public/
+├── public/               # Static assets (images, icons)
+│   └── UINavigationBar/  # iOS-style UI elements
 ├── src/
-│   └── pages/
-│       └── index.astro
+│   ├── components/       # Astro components
+│   │   ├── AppList.astro
+│   │   ├── Layout.astro
+│   │   ├── SearchField.astro
+│   │   └── ...
+│   ├── lib/             # Utility functions
+│   │   ├── supabase.ts  # Database client
+│   │   ├── cache.ts     # In-memory caching
+│   │   └── sorting.ts   # Sorting utilities
+│   ├── pages/           # Routes (file-based routing)
+│   │   ├── index.astro  # Home/featured page
+│   │   ├── app/[id].astro
+│   │   ├── categories/
+│   │   ├── charts/
+│   │   └── search/
+│   └── styles/          # Global styles
+├── db_schema.sql        # Database schema
+├── supabase_functions.sql  # Custom SQL functions
 └── package.json
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+## UI Components
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+The project includes custom iOS-style UI components:
+- **TopNavigation**: iOS-style navigation bar with back buttons
+- **SearchNavigation**: Search bar with iOS styling
+- **SegmentedControl**: iOS-style segmented control for tab switching
+- **SearchField**: iOS-style search input field
 
-Any static assets, like images, can be placed in the `public/` directory.
+## Database Schema Overview
 
-## 🧞 Commands
+The database consists of six main tables:
 
-All commands are run from the root of the project, from a terminal:
+- **apps**: Core app information (bundle ID, name, icon, etc.)
+- **app_versions**: Version history for each app
+- **developers**: App developer/publisher information
+- **genres**: App Store categories
+- **archive_items**: References to Internet Archive items
+- **ipa_files**: IPA file metadata and processing status
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+## Why "jangle"?
 
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+The codename for the iTunes Store was "Jingle" and alliteration is fun.
