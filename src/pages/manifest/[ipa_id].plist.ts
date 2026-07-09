@@ -6,75 +6,51 @@ import { generateIpaDownloadUrl } from '../../lib/urls';
 export const GET: APIRoute = async (ctx) => {
   try {
     const ipaId = ctx.params.ipa_id;
-    if (!ipaId) {
-      return new Response('Missing ipa_id', { status: 400 });
+    if (!ipaId || !/^\d+$/.test(String(ipaId))) {
+      return new Response('Not found', { status: 404 });
     }
 
     const supabase = getSupabaseClient((ctx.locals as any)?.runtime?.env);
 
-    const { data: ipa } = await supabase
+    const { data: ipa, error } = await supabase
       .from('ipa_files')
-      .select('id, filename, info_plist_path, archive_item_id, app_version_id')
+      .select(`
+        id, filename, info_plist_path,
+        app_version:app_versions!ipa_files_app_version_id_fkey(
+          version_string,
+          app:apps!app_versions_app_id_fkey(bundle_id, display_name, icon_url)
+        ),
+        archive_item:archive_items!ipa_files_archive_item_id_fkey(ia_item_id)
+      `)
       .eq('id', ipaId)
-      .single();
-    if (!ipa) return new Response('IPA not found', { status: 404 });
+      .maybeSingle();
 
-    const { data: version } = await supabase
-      .from('app_versions')
-      .select('id, app_id, version_string')
-      .eq('id', ipa.app_version_id)
-      .single();
-    if (!version) return new Response('Version not found', { status: 404 });
+    if (error) throw error;
 
-    const { data: app } = await supabase
-      .from('apps')
-      .select('bundle_id, display_name, icon_url')
-      .eq('id', version.app_id)
-      .single();
-    if (!app) return new Response('App not found', { status: 404 });
-
-    // Build full upstream IPA URL
-    let iaItemId: string | undefined;
-    if (ipa.archive_item_id) {
-      const { data: item } = await supabase
-        .from('archive_items')
-        .select('ia_item_id')
-        .eq('id', ipa.archive_item_id)
-        .single();
-      iaItemId = item?.ia_item_id as string | undefined;
+    const version = ipa?.app_version;
+    const app = (version as any)?.app;
+    if (!ipa || !version || !app) {
+      return new Response('Not found', { status: 404 });
     }
-    const ipaUrl = generateIpaDownloadUrl({
-      id: ipa.id,
-      filename: ipa.filename,
-      info_plist_path: ipa.info_plist_path,
-      archive_item: { ia_item_id: iaItemId || '' },
-    });
 
-    const manifest = {
-      items: [
-        {
-          assets: [
-            { kind: 'software-package', url: ipaUrl },
-            app.icon_url
-              ? { kind: 'display-image', 'needs-shine': false, url: app.icon_url }
-              : undefined,
-          ].filter(Boolean),
-          metadata: {
-            'bundle-identifier': app.bundle_id,
-            'bundle-version': version.version_string || '1.0',
-            kind: 'software',
-            title: app.display_name || app.bundle_id,
-          },
-        },
-      ],
-    } as any;
+    let ipaUrl: string;
+    try {
+      ipaUrl = generateIpaDownloadUrl({
+        id: ipa.id,
+        filename: ipa.filename,
+        info_plist_path: ipa.info_plist_path,
+        archive_item: { ia_item_id: (ipa as any).archive_item?.ia_item_id || '' },
+      });
+    } catch {
+      return new Response('Not found', { status: 404 });
+    }
 
     const xml = buildItmsManifestPlist({
       bundleId: app.bundle_id,
       title: app.display_name || app.bundle_id,
-      version: version.version_string || '1.0',
+      version: (version as any).version_string || '1.0',
       ipaUrl: ipaUrl,
-      iconUrl: app.icon_url,
+      iconUrl: app.icon_url && /^https:\/\//i.test(app.icon_url) ? app.icon_url : null,
     });
     return new Response(xml, {
       status: 200,
@@ -83,8 +59,9 @@ export const GET: APIRoute = async (ctx) => {
         'Cache-Control': 'public, max-age=600',
       },
     });
-  } catch (err: any) {
-    return new Response(err?.message || 'Error', { status: 500 });
+  } catch (err) {
+    console.error('manifest error:', (err as any)?.message);
+    return new Response('Internal error', { status: 500 });
   }
 };
 
