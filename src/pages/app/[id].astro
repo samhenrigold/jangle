@@ -16,23 +16,35 @@ const looksLikeBundleId = /\./.test(rawParam);
 
 let appData = undefined as any;
 
-// 1) Try by App Store ID or internal ID when numeric (single round-trip)
+// 1) Numeric param: prefer App Store ID (what public links use), fall back to
+//    internal id. Never match the app_store_id=0 sentinel; break ties by id so
+//    duplicate app_store_ids route deterministically.
 if (isNumeric) {
   const cacheKey = `appByNumeric:${rawParam}`;
   const cached = cacheGet<any>(cacheKey);
   if (cached) {
     appData = cached;
   } else {
-    const { data } = await supabase
-      .from('apps')
-      .select('id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
-      .or(`app_store_id.eq.${rawParam},id.eq.${rawParam}`)
-      .limit(1)
-      .maybeSingle();
-    if (data) {
-      appData = data;
-      cacheSet(cacheKey, appData, 10 * 60 * 1000);
+    const cols = 'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)';
+    if (rawParam !== '0') {
+      const { data } = await supabase
+        .from('apps')
+        .select(cols)
+        .eq('app_store_id', rawParam)
+        .order('id', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (data) appData = data;
     }
+    if (!appData) {
+      const { data } = await supabase
+        .from('apps')
+        .select(cols)
+        .eq('id', rawParam)
+        .maybeSingle();
+      if (data) appData = data;
+    }
+    if (appData) cacheSet(cacheKey, appData, 10 * 60 * 1000);
   }
 }
 
@@ -92,9 +104,13 @@ if (!versions) {
 const versionIds = (versions || []).map((v: any) => v.id);
 let ipaFiles: any[] = [];
 if (versionIds.length) {
-  const ipaCacheKey = `ipa_files:${versionIds.join(',')}`;
-  ipaFiles = cacheGet<any[]>(ipaCacheKey) || [];
-  if (ipaFiles.length === 0) {
+  // Bounded key (version sets change only at ingest); a cached empty array is a
+  // hit, not a perpetual refetch.
+  const ipaCacheKey = `ipa_files:${appData.id}:${versionIds.length}`;
+  const cachedIpa = cacheGet<any[]>(ipaCacheKey);
+  if (cachedIpa) {
+    ipaFiles = cachedIpa;
+  } else {
     const { data } = await supabase
       .from('ipa_files')
       .select('id, app_version_id, filename, has_itunes_metadata, has_itunes_artwork, info_plist_path, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id)')
@@ -198,7 +214,7 @@ function toggleSortHref(nextSort: string) {
             // Show Install link for iPhone, Download link for others
             if (isIOS) {
               return (
-                <a class="install" style="display:inline-block;margin-right:8px;" href={`itms-services://?action=download-manifest&url=${manifestUrl}`}>Install</a>
+                <a class="install" style="display:inline-block;margin-right:8px;" href={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`}>Install</a>
               );
             } else {
               // Generate direct download URL to IPA file
