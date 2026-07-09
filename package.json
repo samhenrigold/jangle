@@ -10,15 +10,13 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.12",
-    "astro": "^5.13.2",
-    "autoprefixer": "^10.4.21",
-    "postcss": "^8.5.6"
+    "astro": "^5.13.2"
   },
   "devDependencies": {
     "@astrojs/cloudflare": "^12.6.4",
-    "@astrojs/node": "^9.4.2",
-    "@vitejs/plugin-legacy": "^7.2.1",
+    "autoprefixer": "^10.4.21",
     "cssnano": "^7.1.0",
+    "postcss": "^8.5.6",
     "wrangler": "^4.31.0"
   },
   "browserslist": [

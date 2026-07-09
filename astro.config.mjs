@@ -1,7 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import cloudflare from '@astrojs/cloudflare';
-import legacy from '@vitejs/plugin-legacy';
 
 // https://astro.build/config
 export default defineConfig({
@@ -15,13 +14,9 @@ export default defineConfig({
       // emits modern shorthands. (autoprefixer still adds -webkit- prefixes via
       // the browserslist in package.json; esbuild does not strip those.)
       cssTarget: ['safari5', 'ios5', 'chrome60']
-    },
-    plugins: [
-      // @ts-ignore
-      legacy({
-        targets: ['ios_saf >= 4'],
-        additionalLegacyPolyfills: ['regenerator-runtime/runtime']
-      })
-    ]
+    }
+    // Note: the legacy Vite JS-transpile plugin was removed — it only rewrites
+    // client-side JS bundles, and this site ships zero client JS, so it was
+    // inert. Legacy support lives in the CSS pipeline (cssTarget + browserslist).
   }
 });

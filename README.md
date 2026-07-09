@@ -17,7 +17,19 @@ A goal for this project is to be accessible on older versions of Safari, so a go
 - **Frontend**: [Astro](https://astro.build/) - Static site generation with SSR support
 - **Database**: [Supabase](https://supabase.com/) (PostgreSQL)
 - **Styling**: CSS with PostCSS and Autoprefixer
-- **Deployment**: Cloudflare Workers (via Astro adapter)
+- **Deployment**: Cloudflare Pages (project `jangle`, via the `@astrojs/cloudflare` adapter)
+
+## Local development
+
+Create a `.env` in the repo root (never commit it) with your Supabase project
+credentials — variable names only:
+
+```
+SUPABASE_PROJECT_URL=...
+SUPABASE_PUBLISHABLE_KEY=...
+```
+
+Then `npm install` and `npm run dev` (serves on `http://localhost:4321`).
 
 ## Project Structure
 

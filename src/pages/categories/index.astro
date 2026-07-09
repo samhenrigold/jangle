@@ -2,6 +2,7 @@
 import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
+import { sortGenres } from '../../lib/genres';
 import { setCacheHeaders } from '../../lib/http';
 
 setCacheHeaders(Astro.response, 86400);
@@ -17,24 +18,8 @@ if (!genres) {
   cacheSet(genresCacheKey, genres, 10 * 60 * 1000);
 }
 
-// Group Game subgenres after the parent Games genre
-const sortedGenres = (genres ?? []).sort((a: any, b: any) => {
-  if (a.id === 6014) return -1;
-  if (b.id === 6014) return 1;
-  
-  if (a.genre_id && String(a.genre_id).startsWith('70')) {
-    if (b.genre_id && String(b.genre_id).startsWith('70')) {
-      return a.genre_name.localeCompare(b.genre_name);
-    }
-    return -1;
-  }
-  
-  if (b.genre_id && String(b.genre_id).startsWith('70')) {
-    return 1;
-  }
-  
-  return a.genre_name.localeCompare(b.genre_name);
-});
+// Group Game subgenres after the parent Games genre (returns a copy)
+const sortedGenres = sortGenres(genres ?? []);
 ---
 
 <Layout title="Categories — Legacy Store" activeTab="categories">
