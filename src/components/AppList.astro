@@ -1,10 +1,13 @@
 ---
+import { iconSrc } from '../lib/icons';
 const { list = [] } = Astro.props;
 ---
 <ul class="applist">
-  {list.map((a: any) => (
+  {list.map((a: any) => {
+    const icon = iconSrc(a.icon_url);
+    return (
     <li class="app">
-      <div class="icon">{a.icon_url && <img src={a.icon_url} alt="" width="48" height="48" />}</div>
+      <div class="icon">{icon && <img src={icon} alt="" width="48" height="48" />}</div>
       <div class="info">
         <div><a href={`/app/${a.app_store_id ? a.app_store_id : a.id}`}>{a.display_name || a.bundle_id}</a></div>
         <div class="meta">{a.developer_artist_name} · {a.bundle_id}</div>
@@ -12,6 +15,7 @@ const { list = [] } = Astro.props;
       <div class="count">{a.version_count ?? ''}</div>
       <div style="clear:both"></div>
     </li>
-  ))}
+    );
+  })}
   {list.length === 0 && <li>No results</li>}
 </ul>
