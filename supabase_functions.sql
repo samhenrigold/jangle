@@ -214,3 +214,18 @@ $$;
 -- Grant execute permissions
 GRANT EXECUTE ON FUNCTION get_genres_with_counts TO authenticated;
 GRANT EXECUTE ON FUNCTION get_genres_with_counts TO anon;
+-- ── Hardening (applied 2026-07 in production) ───────────────────────────────
+-- Public roles (anon/authenticated) keep SELECT (via RLS policies) and EXECUTE
+-- on the RPCs; all write privileges are revoked so RLS is no longer the sole
+-- barrier to public data destruction. Ingest must use the service role.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON TABLES FROM anon, authenticated;
+
+-- Advisor lint 0011: pin function search_path (object-resolution hardening).
+ALTER FUNCTION public.get_apps_sorted_by_version_count(integer, integer, bigint, boolean, text) SET search_path = public, pg_temp;
+ALTER FUNCTION public.get_apps_sorted_by_first_version_date(integer, integer, bigint, boolean, text) SET search_path = public, pg_temp;
+ALTER FUNCTION public.get_apps_count(bigint, text) SET search_path = public, pg_temp;
+ALTER FUNCTION public.get_genres_with_counts() SET search_path = public, pg_temp;
