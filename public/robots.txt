@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /search
+Disallow: /manifest/
+Sitemap: https://legacystore.app/sitemap.xml

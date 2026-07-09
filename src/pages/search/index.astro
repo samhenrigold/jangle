@@ -5,6 +5,9 @@ import SearchForm from '../../components/SearchForm.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { buildPrefixTsquery, clampPage, clampPageSize } from '../../lib/search';
+import { setCacheHeaders } from '../../lib/http';
+
+setCacheHeaders(Astro.response, 600);
 
 // Search parameters
 const url = new URL(Astro.request.url);

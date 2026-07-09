@@ -2,6 +2,9 @@
 import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
+import { setCacheHeaders } from '../../lib/http';
+
+setCacheHeaders(Astro.response, 86400);
 
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
 

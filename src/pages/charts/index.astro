@@ -4,6 +4,9 @@ import Layout from '../../components/Layout.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
+import { setCacheHeaders } from '../../lib/http';
+
+setCacheHeaders(Astro.response, 3600);
 
 const url = new URL(Astro.request.url);
 const page = clampPage(url.searchParams.get('page'));
