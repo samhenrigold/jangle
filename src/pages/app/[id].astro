@@ -4,6 +4,7 @@ import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { sortVersions, coerceDir, coerceSortKey, defaultDirForSort, parseIOSVersionFromUA, isMinimumOSSupported } from '../../lib/sorting';
 import { generateIpaDownloadUrl } from '../../lib/urls';
+import { setCacheHeaders } from '../../lib/http';
 
 const { id } = Astro.params;
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
@@ -70,7 +71,7 @@ if (!appData) {
 }
 
 if (!appData) {
-  return Astro.redirect('/');
+  return Astro.rewrite('/404');
 }
 
 // Versions with IPA links (assuming you have a table mapping)
@@ -121,6 +122,9 @@ const currentDir = coerceDir(searchParams.get('dir') || defaultDirForSort(curren
 // iOS feature: hide newer-than-device checkbox
 const ua = Astro.request.headers.get('user-agent') || '';
 const { isIOS, versionNumbers: deviceIOS } = parseIOSVersionFromUA(ua);
+
+setCacheHeaders(Astro.response, 3600);
+Astro.response.headers.set('Vary', 'User-Agent');
 const hideNewerParam = searchParams.get('hide_newer');
 const hideNewerPresent = searchParams.has('hide_newer_present');
 const hideNewer = isIOS ? (hideNewerPresent ? (hideNewerParam === '1' || hideNewerParam === 'true') : true) : false;

@@ -4,6 +4,7 @@ import Layout from '../../components/Layout.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
+import { setCacheHeaders } from '../../lib/http';
 
 const { genreId } = Astro.params;
 const url = new URL(Astro.request.url);
@@ -29,8 +30,10 @@ if (!genre) {
 }
 
 if (!genre) {
-  return Astro.redirect('/categories');
+  return Astro.rewrite('/404');
 }
+
+setCacheHeaders(Astro.response, 3600);
 
 // Fetch apps in this genre
 const countArgs = { p_genre_id: Number(genreId), p_search_query: null };
