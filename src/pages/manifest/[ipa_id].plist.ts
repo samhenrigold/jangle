@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { buildItmsManifestPlist } from '../../lib/manifest';
 import { getSupabaseClient } from '../../lib/supabase';
 import { generateIpaDownloadUrl } from '../../lib/urls';
+import { absoluteIconSrc } from '../../lib/icons';
 
 export const GET: APIRoute = async (ctx) => {
   try {
@@ -50,7 +51,7 @@ export const GET: APIRoute = async (ctx) => {
       title: app.display_name || app.bundle_id,
       version: (version as any).version_string || '1.0',
       ipaUrl: ipaUrl,
-      iconUrl: app.icon_url && /^https:\/\//i.test(app.icon_url) ? app.icon_url : null,
+      iconUrl: absoluteIconSrc(app.icon_url, new URL(ctx.request.url).origin),
     });
     return new Response(xml, {
       status: 200,
