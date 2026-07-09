@@ -20,5 +20,13 @@
     "@vitejs/plugin-legacy": "^7.2.1",
     "cssnano": "^7.1.0",
     "wrangler": "^4.31.0"
-  }
+  },
+  "browserslist": [
+    "ios_saf >= 4",
+    "android >= 2.3",
+    "safari >= 5",
+    "ie >= 8",
+    "last 2 chrome versions",
+    "last 2 firefox versions"
+  ]
 }

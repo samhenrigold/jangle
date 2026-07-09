@@ -151,7 +151,7 @@ function toggleSortHref(nextSort: string) {
     <p>{appData.copyright}</p>
 
     <h2>Versions</h2>
-    <div class="sort-bar" style="margin:6px 0 12px 0;font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div class="sort-bar">
       <div>
         <span style="margin-right:6px;">Sort:</span>
         <a href={toggleSortHref('date')} style={currentSort === 'date' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>Date</a>
@@ -213,6 +213,19 @@ function toggleSortHref(nextSort: string) {
       </div>
     ))}
   </div>
+
+  <style>
+    .sort-bar {
+      margin: 6px 0 12px 0;
+      font-size: 13px;
+      display: -webkit-box;
+      -webkit-box-align: center;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .sort-bar > * { margin-right: 10px; margin-bottom: 4px; }
+  </style>
 </Layout>
 
 
