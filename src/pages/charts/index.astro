@@ -3,10 +3,11 @@ import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
+import { clampPage, clampPageSize } from '../../lib/search';
 
 const url = new URL(Astro.request.url);
-const page = Number(url.searchParams.get('page') || '1');
-const pageSize = Math.min(50, Number(url.searchParams.get('per_page') || '20'));
+const page = clampPage(url.searchParams.get('page'));
+const pageSize = clampPageSize(url.searchParams.get('per_page'));
 const offset = (page - 1) * pageSize;
 
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);

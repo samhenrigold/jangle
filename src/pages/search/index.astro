@@ -4,14 +4,15 @@ import SearchLayout from '../../components/SearchLayout.astro';
 import SearchForm from '../../components/SearchForm.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
+import { buildPrefixTsquery, clampPage, clampPageSize } from '../../lib/search';
 
 // Search parameters
 const url = new URL(Astro.request.url);
 const q = url.searchParams.get('q')?.trim() || '';
 const genreId = url.searchParams.get('genre');
 const sort = url.searchParams.get('sort') || 'versions';
-const page = Number(url.searchParams.get('page') || '1');
-const pageSize = Math.min(50, Number(url.searchParams.get('per_page') || '20'));
+const page = clampPage(url.searchParams.get('page'));
+const pageSize = clampPageSize(url.searchParams.get('per_page'));
 const offset = (page - 1) * pageSize;
 
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
@@ -50,52 +51,69 @@ let totalPages = 1;
 
 // Only fetch search results if there's a search query or genre filter
 if (q || genreId) {
-  const countArgs: Record<string, any> = {
-    p_genre_id: genreId ? Number(genreId) : null,
-    p_search_query: q ? q.split(/\s+/).map((t) => `${t}:*`).join(' & ') : null,
-  };
-  
-  const countCacheKey = `search_count:${genreId||''}:${q}`;
-  total = cacheGet<number>(countCacheKey);
-  if (typeof total !== 'number') {
-    const { data: totalCountArr } = await supabase.rpc('get_apps_count', countArgs);
-    total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
-    cacheSet(countCacheKey, Number(total) || 0, 2 * 60 * 1000);
-  }
+  const tsquery = q ? buildPrefixTsquery(q) : null;
 
-  const rpcArgs = {
-    p_limit: pageSize,
-    p_offset: offset,
-    p_genre_id: countArgs.p_genre_id,
-    p_ascending: false,
-    p_search_query: countArgs.p_search_query,
-  };
+  // If the user typed something but it sanitized to nothing (all punctuation),
+  // there is no valid tsquery to run — render the empty state instead.
+  if (q && !tsquery) {
+    total = 0;
+    searchResults = [];
+    totalPages = 1;
+  } else {
+    const countArgs: Record<string, any> = {
+      p_genre_id: genreId ? Number(genreId) : null,
+      p_search_query: tsquery,
+    };
 
-  const listCacheKey = `search_list:${sort}:${genreId||''}:${q}:${page}:${pageSize}`;
-  searchResults = cacheGet<any[]>(listCacheKey);
-  if (!searchResults) {
-    if (sort === 'first_date') {
-      const { data } = await supabase.rpc('get_apps_sorted_by_first_version_date', rpcArgs);
-      searchResults = data || [];
-    } else if (sort === 'name') {
-      const { data } = await supabase
-        .from('apps')
-        .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, executable_name, developers!apps_developer_id_fkey(artist_name)')
-        .order('display_name', { ascending: true })
-        .range(offset, offset + pageSize - 1);
-      searchResults = (data || []).map((a: any) => ({
-        ...a,
-        developer_artist_name: (a as any).developers?.artist_name,
-        version_count: undefined,
-      }));
-    } else {
-      const { data } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
-      searchResults = data || [];
+    const countCacheKey = `search_count:${genreId||''}:${tsquery||''}`;
+    total = cacheGet<number>(countCacheKey);
+    if (typeof total !== 'number') {
+      const { data: totalCountArr, error: countError } = await supabase.rpc('get_apps_count', countArgs);
+      if (countError) console.error('search count failed:', countError.message);
+      total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
+      cacheSet(countCacheKey, Number(total) || 0, 2 * 60 * 1000);
     }
-    cacheSet(listCacheKey, searchResults, 60 * 1000);
+
+    const rpcArgs = {
+      p_limit: pageSize,
+      p_offset: offset,
+      p_genre_id: countArgs.p_genre_id,
+      p_ascending: false,
+      p_search_query: countArgs.p_search_query,
+    };
+
+    const listCacheKey = `search_list:${sort}:${genreId||''}:${tsquery||''}:${page}:${pageSize}`;
+    searchResults = cacheGet<any[]>(listCacheKey);
+    if (!searchResults) {
+      if (sort === 'first_date') {
+        const { data, error } = await supabase.rpc('get_apps_sorted_by_first_version_date', rpcArgs);
+        if (error) console.error('search sort=first_date failed:', error.message);
+        searchResults = data || [];
+      } else if (sort === 'name') {
+        let query = supabase
+          .from('apps')
+          .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, executable_name, developers!apps_developer_id_fkey(artist_name)')
+          .order('display_name', { ascending: true })
+          .range(offset, offset + pageSize - 1);
+        if (tsquery) query = query.textSearch('search_vector', tsquery);
+        if (genreId) query = query.eq('genre_id', Number(genreId));
+        const { data, error } = await query;
+        if (error) console.error('search sort=name failed:', error.message);
+        searchResults = (data || []).map((a: any) => ({
+          ...a,
+          developer_artist_name: (a as any).developers?.artist_name,
+          version_count: undefined,
+        }));
+      } else {
+        const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
+        if (error) console.error('search sort=version_count failed:', error.message);
+        searchResults = data || [];
+      }
+      cacheSet(listCacheKey, searchResults, 60 * 1000);
+    }
+
+    totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   }
-  
-  totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 }
 ---
 
