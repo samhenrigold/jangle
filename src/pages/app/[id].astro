@@ -24,7 +24,7 @@ if (isNumeric) {
   } else {
     const { data } = await supabase
       .from('apps')
-      .select('*, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
+      .select('id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
       .or(`app_store_id.eq.${rawParam},id.eq.${rawParam}`)
       .limit(1)
       .maybeSingle();
@@ -43,7 +43,7 @@ if (!appData && looksLikeBundleId) {
   } else {
     const { data } = await supabase
       .from('apps')
-      .select('*, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
+      .select('id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
       .eq('bundle_id', rawParam)
       .maybeSingle();
     if (data) {
@@ -61,7 +61,7 @@ if (!appData) {
   } else {
     const { data } = await supabase
       .from('apps')
-      .select('*, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
+      .select('id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
       .eq('id', rawParam)
       .maybeSingle();
     appData = data;
