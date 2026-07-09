@@ -19,12 +19,23 @@ export function generateIpaDownloadUrl(ipaFile: MinimalIpa): string {
   if (ipaFile.info_plist_path) {
     const match = ipaFile.info_plist_path.match(/^(.+\.ipa)\//);
     if (match) {
-      url = `https:${match[1]}`;
-    } else {
+      const base = match[1];
+      if (/^https?:\/\//i.test(base)) {
+        url = base;                    // already absolute (10 known rows)
+      } else if (base.startsWith('//')) {
+        url = `https:${base}`;         // protocol-relative (canonical shape)
+      } else {
+        url = `https://archive.org/download/${ipaFile.archive_item.ia_item_id}/${encodeURIComponent(ipaFile.filename)}`;
+      }
+    } else if (ipaFile.archive_item.ia_item_id) {
       url = `https://archive.org/download/${ipaFile.archive_item.ia_item_id}/${encodeURIComponent(ipaFile.filename)}`;
+    } else {
+      throw new Error('no source for ipa url');
     }
-  } else {
+  } else if (ipaFile.archive_item.ia_item_id) {
     url = `https://archive.org/download/${ipaFile.archive_item.ia_item_id}/${encodeURIComponent(ipaFile.filename)}`;
+  } else {
+    throw new Error('no source for ipa url');
   }
 
   urlCache.set(cacheKey, url);
