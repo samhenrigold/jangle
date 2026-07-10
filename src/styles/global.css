@@ -18,7 +18,9 @@ a { color: inherit; text-decoration: none; }
 .applist { list-style: none; padding: 0; margin: 10px 0; border: 1px solid #e1e1e1; border-radius: 8px; background: #fff; overflow: hidden; }
 .app { border-bottom: 1px solid #e1e1e1; }
 .app:last-child { border-bottom: none; }
-.app-link { display: block; padding: 8px 10px; }
+/* overflow:hidden contains the floated icon/rank so rows never collapse
+   shorter than the 57px icon */
+.app-link { display: block; padding: 8px 10px; overflow: hidden; }
 .app-link:active { background-color: #e8ebef; }
 .rank { float: left; width: 30px; margin: 0 6px 0 -4px; line-height: 57px; text-align: center; font-size: 19px; font-weight: bold; color: #8e8e93; }
 .icon { float: left; width: 57px; height: 57px; margin-right: 10px; background: #f3f3f3; border-radius: 11px; overflow: hidden; }

@@ -4,6 +4,7 @@ import Layout from '../../components/Layout.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
+import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 
 const { genreId } = Astro.params;
@@ -93,7 +94,7 @@ const genreName = genre?.genre_name || 'Category';
       <>
         <div class="section-header">
           <h1 class="section-title">{genreName}</h1>
-          {typeof total === 'number' && total > 0 && <span class="section-detail">{Number(total)} apps</span>}
+          {typeof total === 'number' && total > 0 && <span class="section-detail">{formatNumber(total)} apps</span>}
         </div>
         <AppList list={list} startRank={offset + 1} />
 
