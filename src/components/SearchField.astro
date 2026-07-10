@@ -1,13 +1,14 @@
 ---
-// No props needed for now, but interface ready for future expansion
-interface Props {}
+interface Props {
+  value?: string;
+}
 
-const {} = Astro.props;
+const { value = '' } = Astro.props;
 ---
 
 <form class="search-field" action="/search" method="get" onsubmit="this.q.value = this.q.value.trim()">
   <div class="search-field-icon"></div>
-  <input type="search" class="search-input" name="q" placeholder="Search" />
+  <input type="search" class="search-input" name="q" placeholder="Search" value={value} autocapitalize="off" autocorrect="off" />
 </form>
 
 <style>
@@ -85,6 +86,10 @@ const {} = Astro.props;
       box-sizing: border-box;
       line-height: 26pt;
       margin: 0;
+      /* Old iOS draws its own search-field bezel over type=search inputs
+         unless appearance is reset — ours comes from the slice images. */
+      -webkit-appearance: none;
+      border-radius: 0;
     }
     
     .search-input:focus {
