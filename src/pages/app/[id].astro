@@ -115,7 +115,7 @@ if (appData) {
   } else {
     const { data, error } = await supabase
       .from('app_versions')
-      .select('id, version_string, build_number, minimum_os_version, release_date')
+      .select('id, version_string, build_number, minimum_os_version, release_date, estimated_release_date')
       .eq('app_id', appData.id)
       .order('release_date', { ascending: false })
       .limit(200);
@@ -172,7 +172,7 @@ if (!dbError && ipaFiles.length) {
     for (let i = 0; i < shas.length; i += CHUNK) {
       const { data, error } = await supabase
         .from('binaries')
-        .select('sha1, install_status, architectures, macho_min_os, sdk_version, icon_sha256, has_watch_app')
+        .select('sha1, install_status, architectures, macho_min_os, sdk_version, icon_sha256, bundle_icon_sha256, has_watch_app')
         .in('sha1', shas.slice(i, i + CHUNK));
       if (error) {
         // Binary enrichment is decorative (install badges, era icons). If it
@@ -335,6 +335,11 @@ for (const f of ipaFiles) {
 
 const binaryOf = (f: any) => (f?.binary_sha1 ? binariesBySha1.get(f.binary_sha1) : undefined);
 
+// Prefer the build-time bundle icon (period-accurate); fall back to the legacy
+// icon_sha256 (iTunesArtwork-derived, stamped with the copy's download date, so
+// unreliable per version). Both are content-addressed at /icon/<sha>.
+const iconShaOf = (f: any) => { const b = binaryOf(f); return b?.bundle_icon_sha256 || b?.icon_sha256 || null; };
+
 // The app header shows the OLDEST archived icon (period-authentic) extracted
 // from the app's own binaries, before falling back to the iTunes CDN icon_url.
 // pickOldestIcon takes the earliest version carrying an icon and its least
@@ -347,7 +352,7 @@ const oldestIconSha = pickOldestIcon(
       return {
         version_string: v.version_string,
         minimum_os_version: v.minimum_os_version,
-        icon_sha256: bin?.icon_sha256 || null,
+        icon_sha256: bin?.bundle_icon_sha256 || bin?.icon_sha256 || null,
         install_status: bin?.install_status,
         architectures: bin?.architectures,
         has_extensions: bin?.has_extensions,
@@ -519,23 +524,27 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
             const hiddenCopies = groups.length - visibleGroups.length;
             const versionLabel = v.version_string || v.build_number || 'Unknown version';
             const showBuild = v.build_number && v.build_number !== versionLabel;
-            const vIconSha = groups.map((g) => binaryOf(g.file)?.icon_sha256).find(Boolean);
+            // Icon closest to this version, from its best copy's build-time
+            // bundle icon (falls back to the legacy icon where not yet extracted).
+            const vIconSha = groups.map((g) => iconShaOf(g.file)).find(Boolean);
             const metaBits: string[] = [];
             const machoMinOs = groups.map((g) => binaryOf(g.file)?.macho_min_os).find(Boolean);
             if (v.minimum_os_version) metaBits.push(`Requires iOS ${v.minimum_os_version}+`);
             else if (machoMinOs) metaBits.push(`Requires iOS ${machoMinOs}+`);
-            const released = isTrustworthyDate(v.release_date) ? formatDate(v.release_date) : '';
-            if (released) metaBits.push(`Released ${released}`);
+            // Per-version date: prefer the estimated release date (month-precision,
+            // shown with a ~), else a trustworthy real release_date.
+            if (v.estimated_release_date) metaBits.push(`~${formatMonthYear(v.estimated_release_date)}`);
+            else if (isTrustworthyDate(v.release_date)) metaBits.push(`Released ${formatDate(v.release_date)}`);
             return (
               <div class="version" id={`v${v.id}`}>
                 <span class="v-icon">{vIconSha && <img src={`/icon/${vIconSha}`} alt="" width="29" height="29" loading="lazy" />}</span>
                 <div class="v-body">
-                  <div class="v-title">
-                    <strong>{versionLabel}</strong>
-                    {showBuild && <span class="v-build"> ({v.build_number})</span>}
-                  </div>
-                  {metaBits.length > 0 && <div class="meta">{metaBits.join(' · ')}</div>}
-                  <div class="v-files">
+                <div class="v-title">
+                  <strong>{versionLabel}</strong>
+                  {showBuild && <span class="v-build"> ({v.build_number})</span>}
+                </div>
+                {metaBits.length > 0 && <div class="meta">{metaBits.join(' · ')}</div>}
+                <div class="v-files">
                     {visibleGroups.map(({ file: f }) => {
                       const bin = binaryOf(f);
                       const size = formatFileSize(f.file_size);
@@ -833,7 +842,7 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       border-bottom: none;
     }
 
-    /* Era icon extracted from that version's own binary (R2, /icon route) */
+    /* Period-accurate icon for this version, from its build-time bundle icon */
     .v-icon {
       float: left;
       width: 29px;

@@ -85,7 +85,7 @@ export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise
     for (let i = 0; i < shas.length; i += CHUNK) {
       const { data: bins, error: bErr } = await supabase
         .from('binaries')
-        .select('sha1, icon_sha256, install_status, architectures, has_extensions')
+        .select('sha1, icon_sha256, bundle_icon_sha256, install_status, architectures, has_extensions')
         .in('sha1', shas.slice(i, i + CHUNK))
         .not('icon_sha256', 'is', null);
       if (bErr) return empty;
@@ -105,7 +105,9 @@ export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise
       arr.push({
         version_string: v.version_string,
         minimum_os_version: v.minimum_os_version,
-        icon_sha256: bin.icon_sha256,
+        // Prefer the build-time bundle icon (period-accurate); fall back to the
+        // legacy icon_sha256 (iTunesArtwork-derived, download-date-stamped).
+        icon_sha256: bin.bundle_icon_sha256 || bin.icon_sha256,
         install_status: bin.install_status,
         architectures: bin.architectures,
         has_extensions: bin.has_extensions,
