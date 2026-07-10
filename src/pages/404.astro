@@ -2,9 +2,31 @@
 import Layout from '../components/Layout.astro';
 Astro.response.status = 404;
 ---
-<Layout title="Not found — Legacy Store">
-  <div style="max-width:900px;margin:20px auto;padding:0 20px;">
-    <h1>Not found</h1>
-    <p>This app or page doesn't exist in the archive. <a href="/">Back to Featured</a></p>
+<Layout title="Not Found — Legacy Store" activeTab="none" mobileSearch={true} description="Page not found on Legacy Store.">
+  <div class="content">
+    <div class="notfound">
+      <h1>Not Found</h1>
+      <p>This app or page isn't in the archive.</p>
+      <p>Try searching above, or head back to <a href="/">Featured</a>, <a href="/categories">Categories</a>, or the <a href="/charts">Top 25</a>.</p>
+    </div>
   </div>
+
+  <style>
+    .notfound {
+      text-align: center;
+      padding: 40px 20px;
+      color: #666;
+    }
+
+    .notfound h1 {
+      color: #333;
+      font-size: 22px;
+      margin: 0 0 12px 0;
+    }
+
+    .notfound a {
+      color: #385487;
+      font-weight: bold;
+    }
+  </style>
 </Layout>

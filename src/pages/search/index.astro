@@ -1,12 +1,12 @@
 ---
 import { getSupabaseClient } from '../../lib/supabase';
-import SearchLayout from '../../components/SearchLayout.astro';
+import Layout from '../../components/Layout.astro';
 import SearchForm from '../../components/SearchForm.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { buildPrefixTsquery, clampPage, clampPageSize } from '../../lib/search';
 import { sortGenres } from '../../lib/genres';
-import { setCacheHeaders } from '../../lib/http';
+import { setCacheHeaders, setDegraded } from '../../lib/http';
 
 setCacheHeaders(Astro.response, 600);
 
@@ -20,14 +20,20 @@ const pageSize = clampPageSize(url.searchParams.get('per_page'));
 const offset = (page - 1) * pageSize;
 
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+let dbError = false;
 
-// Fetch genres for the search form
+// Fetch genres for the filter bar
 const genresCacheKey = 'genres_with_counts';
 let genres = cacheGet<any[]>(genresCacheKey);
 if (!genres) {
-  const { data } = await supabase.rpc('get_genres_with_counts');
+  const { data, error } = await supabase.rpc('get_genres_with_counts');
   genres = data || [];
-  cacheSet(genresCacheKey, genres, 10 * 60 * 1000);
+  if (error) {
+    console.error('genres query failed:', error.message);
+    dbError = true;
+  } else {
+    cacheSet(genresCacheKey, genres, 10 * 60 * 1000);
+  }
 }
 
 // Group Game subgenres after the parent Games genre (returns a copy)
@@ -57,9 +63,13 @@ if (q || genreId) {
     total = cacheGet<number>(countCacheKey);
     if (typeof total !== 'number') {
       const { data: totalCountArr, error: countError } = await supabase.rpc('get_apps_count', countArgs);
-      if (countError) console.error('search count failed:', countError.message);
       total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
-      cacheSet(countCacheKey, Number(total) || 0, 2 * 60 * 1000);
+      if (countError) {
+        console.error('search count failed:', countError.message);
+        dbError = true;
+      } else {
+        cacheSet(countCacheKey, Number(total) || 0, 2 * 60 * 1000);
+      }
     }
 
     const rpcArgs = {
@@ -73,9 +83,10 @@ if (q || genreId) {
     const listCacheKey = `search_list:${sort}:${genreId||''}:${tsquery||''}:${page}:${pageSize}`;
     searchResults = cacheGet<any[]>(listCacheKey);
     if (!searchResults) {
+      let listError: { message: string } | null = null;
       if (sort === 'first_date') {
         const { data, error } = await supabase.rpc('get_apps_sorted_by_first_version_date', rpcArgs);
-        if (error) console.error('search sort=first_date failed:', error.message);
+        listError = error;
         searchResults = data || [];
       } else if (sort === 'name') {
         let query = supabase
@@ -86,7 +97,7 @@ if (q || genreId) {
         if (tsquery) query = query.textSearch('search_vector', tsquery);
         if (genreId) query = query.eq('genre_id', Number(genreId));
         const { data, error } = await query;
-        if (error) console.error('search sort=name failed:', error.message);
+        listError = error;
         searchResults = (data || []).map((a: any) => ({
           ...a,
           developer_artist_name: (a as any).developers?.artist_name,
@@ -94,50 +105,84 @@ if (q || genreId) {
         }));
       } else {
         const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
-        if (error) console.error('search sort=version_count failed:', error.message);
+        listError = error;
         searchResults = data || [];
       }
-      cacheSet(listCacheKey, searchResults, 60 * 1000);
+      if (listError) {
+        console.error(`search sort=${sort} failed:`, listError.message);
+        dbError = true;
+      } else {
+        cacheSet(listCacheKey, searchResults, 60 * 1000);
+      }
     }
 
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   }
 }
+
+// A transient DB failure must not render as a cacheable "no results" page.
+if (dbError) setDegraded(Astro.response);
+
+const genreName = genreId ? (sortedGenres.find((g: any) => String(g.id) === String(genreId))?.genre_name ?? null) : null;
+const pageTitle = q ? `“${q}” — Search — Legacy Store` : 'Search — Legacy Store';
+
+function pageHref(p: number) {
+  const sp = new URLSearchParams();
+  if (q) sp.set('q', q);
+  if (genreId) sp.set('genre', String(genreId));
+  if (sort !== 'versions') sp.set('sort', sort);
+  if (p !== 1) sp.set('page', String(p));
+  if (pageSize !== 20) sp.set('per_page', String(pageSize));
+  const s = sp.toString();
+  return s ? `/search?${s}` : '/search';
+}
 ---
 
-<SearchLayout title="Search — Legacy Store" searchQuery={q}>
+<Layout title={pageTitle} activeTab="search" searchQuery={q} mobileSearch={true} description="Search Legacy Store — archived versions of classic iPhone and iPad apps, by name or bundle ID.">
   <div class="content">
-    <div class="search-form-section">
-      <SearchForm q={q} genreId={genreId} sort={sort} genres={sortedGenres} />
-      {total > 0 && <div class="total">Total results: {total}</div>}
-    </div>
-    
-    {!q && !genreId ? (
-      <div class="search-intro">
-        <h2>Find Apps</h2>
-        <p>Use the search form to find apps by name, bundle ID, or developer. You can also filter by genre and sort results.</p>
-      </div>
+    {dbError ? (
+      <p class="db-error">The archive is having trouble searching right now. Please try again in a minute.</p>
+    ) : !q && !genreId ? (
+      <>
+        <div class="search-intro">
+          <h1>Find Apps</h1>
+          <p>Search by app name or bundle ID — matching starts at the beginning of each word, so &ldquo;ang&rdquo; finds Angry Birds.</p>
+          <p>Or browse a genre:</p>
+        </div>
+        <div class="filters-section">
+          <SearchForm q={q} genreId={genreId} sort={sort} genres={sortedGenres} />
+        </div>
+      </>
     ) : (
       <>
+        <div class="filters-section">
+          <SearchForm q={q} genreId={genreId} sort={sort} genres={sortedGenres} />
+        </div>
         {searchResults.length > 0 ? (
           <>
+            <div class="section-header">
+              <h1 class="section-title">
+                {q ? `Results for “${q}”` : `${genreName || 'Genre'} apps`}
+              </h1>
+              {Number(total) > 0 && <span class="section-detail">{Number(total)} found</span>}
+            </div>
             <AppList list={searchResults} />
             {totalPages > 1 && (
               <div class="pagination">
                 {page > 1 && (
-                  <a href={`/search?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page-1}&per_page=${pageSize}`}>Prev</a>
+                  <a href={pageHref(page - 1)}>&#9664; Previous</a>
                 )}
-                <span>Page {page} / {totalPages}</span>
+                <span>Page {page} of {totalPages}</span>
                 {page < totalPages && (
-                  <a href={`/search?q=${encodeURIComponent(q)}&genre=${genreId||''}&sort=${sort}&page=${page+1}&per_page=${pageSize}`}>Next</a>
+                  <a href={pageHref(page + 1)}>Next &#9654;</a>
                 )}
               </div>
             )}
           </>
         ) : (
           <div class="no-results">
-            <p>No apps found matching your search criteria.</p>
-            <p>Try adjusting your search terms or genre filter.</p>
+            <p>{q ? `No apps matched “${q}”.` : 'No apps in this genre yet.'}</p>
+            {q && <p>Search matches the beginnings of words — try a shorter prefix, a different word, or check the spelling.</p>}
           </div>
         )}
       </>
@@ -145,65 +190,34 @@ if (q || genreId) {
   </div>
 
   <style>
-    .content { 
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 20px;
-    }
-    
-    .search-form-section {
-      margin-bottom: 20px;
-      padding: 20px;
-      background: #f8f8f8;
+    .filters-section {
+      margin: 10px 0 4px 0;
+      padding: 12px;
+      background: #f7f7f8;
+      border: 1px solid #e1e1e1;
       border-radius: 8px;
     }
-    
-    .total { 
-      margin-top: 10px; 
-      color: #666; 
-      font-size: 13px; 
-    }
-    
+
     .search-intro {
       text-align: center;
-      padding: 40px 20px;
+      padding: 30px 20px 0 20px;
       color: #666;
     }
-    
-    .search-intro h2 {
+
+    .search-intro h1 {
       color: #333;
-      margin-bottom: 16px;
+      font-size: 22px;
+      margin: 0 0 12px 0;
     }
-    
+
+    .search-intro p {
+      margin: 0 0 10px 0;
+    }
+
     .no-results {
       text-align: center;
       padding: 40px 20px;
       color: #666;
     }
-    
-    .pagination { 
-      margin-top: 20px; 
-      text-align: center;
-    }
-    
-    .pagination a { 
-      margin: 0 8px;
-      padding: 8px 16px;
-      text-decoration: none;
-      color: #007AFF;
-      border: 1px solid #007AFF;
-      border-radius: 4px;
-      transition: all 0.2s ease;
-    }
-    
-    .pagination a:hover {
-      background-color: #007AFF;
-      color: white;
-    }
-    
-    .pagination span {
-      margin: 0 16px;
-      color: #666;
-    }
   </style>
-</SearchLayout>
+</Layout>

@@ -4,22 +4,24 @@ import Layout from '../../components/Layout.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
-import { setCacheHeaders } from '../../lib/http';
+import { setCacheHeaders, setDegraded } from '../../lib/http';
 
 setCacheHeaders(Astro.response, 3600);
 
 const url = new URL(Astro.request.url);
 const page = clampPage(url.searchParams.get('page'));
-const pageSize = clampPageSize(url.searchParams.get('per_page'));
+// 25 per page — the tab is literally called Top 25.
+const pageSize = clampPageSize(url.searchParams.get('per_page'), 25);
 const offset = (page - 1) * pageSize;
 
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+let dbError = false;
 
 // Fetch top charts apps (sorted by most versions)
 const topChartsCacheKey = `topcharts:${page}:${pageSize}`;
 let topChartsApps = cacheGet<any[]>(topChartsCacheKey);
 if (!topChartsApps) {
-  const { data } = await supabase.rpc('get_apps_sorted_by_version_count', {
+  const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', {
     p_limit: pageSize,
     p_offset: offset,
     p_genre_id: null,
@@ -27,68 +29,54 @@ if (!topChartsApps) {
     p_search_query: null,
   });
   topChartsApps = data || [];
-  cacheSet(topChartsCacheKey, topChartsApps, 5 * 60 * 1000);
+  if (error) {
+    console.error('charts list failed:', error.message);
+    dbError = true;
+  } else {
+    cacheSet(topChartsCacheKey, topChartsApps, 5 * 60 * 1000);
+  }
 }
 
 // Get total count for pagination
 const countCacheKey = 'topcharts_count';
 let total = cacheGet<number>(countCacheKey);
 if (typeof total !== 'number') {
-  const { data: totalCountArr } = await supabase.rpc('get_apps_count', { p_genre_id: null, p_search_query: null });
+  const { data: totalCountArr, error } = await supabase.rpc('get_apps_count', { p_genre_id: null, p_search_query: null });
   total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
-  cacheSet(countCacheKey, Number(total) || 0, 10 * 60 * 1000);
+  if (error) {
+    console.error('charts count failed:', error.message);
+    dbError = true;
+  } else {
+    cacheSet(countCacheKey, Number(total) || 0, 10 * 60 * 1000);
+  }
 }
 
 const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
+
+// A transient DB failure must not render as a cacheable empty page.
+if (dbError) setDegraded(Astro.response);
 ---
 
-<Layout title="Top Charts — Legacy Store" activeTab="charts">
+<Layout title="Top Charts — Legacy Store" activeTab="charts" description="The most-archived apps on Legacy Store — classic iPhone and iPad apps ranked by how many versions the archive holds.">
   <div class="content">
-    <AppList list={topChartsApps} />
-    
-    {totalPages > 1 && (
-      <div class="pagination">
-        {page > 1 && (
-          <a href={`/charts?page=${page-1}&per_page=${pageSize}`}>Prev</a>
+    {dbError ? (
+      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+    ) : (
+      <>
+        <AppList list={topChartsApps} startRank={offset + 1} />
+
+        {totalPages > 1 && (
+          <div class="pagination">
+            {page > 1 && (
+              <a href={`/charts?page=${page-1}${pageSize !== 25 ? `&per_page=${pageSize}` : ''}`}>&#9664; Previous</a>
+            )}
+            <span>Page {page} of {totalPages}</span>
+            {page < totalPages && (
+              <a href={`/charts?page=${page+1}${pageSize !== 25 ? `&per_page=${pageSize}` : ''}`}>Next {pageSize} &#9654;</a>
+            )}
+          </div>
         )}
-        <span>Page {page} / {totalPages}</span>
-        {page < totalPages && (
-          <a href={`/charts?page=${page+1}&per_page=${pageSize}`}>Next</a>
-        )}
-      </div>
+      </>
     )}
   </div>
-
-  <style>
-    .content {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 20px;
-    }
-    
-    .pagination {
-      margin-top: 20px;
-      text-align: center;
-    }
-    
-    .pagination a {
-      margin: 0 8px;
-      padding: 8px 16px;
-      text-decoration: none;
-      color: #007AFF;
-      border: 1px solid #007AFF;
-      border-radius: 4px;
-      transition: all 0.2s ease;
-    }
-    
-    .pagination a:hover {
-      background-color: #007AFF;
-      color: white;
-    }
-    
-    .pagination span {
-      margin: 0 16px;
-      color: #666;
-    }
-  </style>
 </Layout>

@@ -3,17 +3,18 @@ import { getSupabaseClient } from '../lib/supabase';
 import Layout from '../components/Layout.astro';
 import AppList from '../components/AppList.astro';
 import { cacheGet, cacheSet } from '../lib/cache';
-import { setCacheHeaders } from '../lib/http';
+import { setCacheHeaders, setDegraded } from '../lib/http';
 
 setCacheHeaders(Astro.response, 3600);
 
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+let dbError = false;
 
 // Featured: First 5 apps
 const featuredCacheKey = 'featured_apps';
 let featuredApps = cacheGet<any[]>(featuredCacheKey);
 if (!featuredApps) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('apps')
     .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, executable_name, developers!apps_developer_id_fkey(artist_name)')
     .order('id', { ascending: true })
@@ -23,13 +24,25 @@ if (!featuredApps) {
     developer_artist_name: (a as any).developers?.artist_name,
     version_count: undefined,
   }));
-  cacheSet(featuredCacheKey, featuredApps, 10 * 60 * 1000);
+  if (error) {
+    console.error('featured query failed:', error.message);
+    dbError = true;
+  } else {
+    cacheSet(featuredCacheKey, featuredApps, 10 * 60 * 1000);
+  }
 }
+
+// A transient DB failure must not render as a cacheable empty page.
+if (dbError) setDegraded(Astro.response);
 ---
 
-<Layout title="Legacy Store" activeTab="featured">
+<Layout title="Legacy Store" activeTab="featured" description="Browse and install archived versions of classic iPhone and iPad apps, directly on your old iOS device.">
   <div class="content">
-    <AppList list={featuredApps} />
+    {dbError ? (
+      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+    ) : (
+      <AppList list={featuredApps} />
+    )}
   </div>
 
   <style>
