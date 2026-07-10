@@ -2,7 +2,7 @@
 import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
-import { sortVersions, coerceDir, coerceSortKey, defaultDirForSort, parseIOSVersionFromUA, isMinimumOSSupported } from '../../lib/sorting';
+import { sortVersions, coerceDir, coerceSortKey, defaultDirForSort } from '../../lib/sorting';
 import { generateIpaDownloadUrl } from '../../lib/urls';
 import { iconSrc } from '../../lib/icons';
 import { formatDate, formatFileSize } from '../../lib/format';
@@ -388,12 +388,11 @@ const origin = requestUrl.origin;
 const currentSort = coerceSortKey(searchParams.get('sort'));
 const currentDir = coerceDir(searchParams.get('dir') || defaultDirForSort(currentSort));
 
-// iOS feature: hide newer-than-device checkbox
-const ua = Astro.request.headers.get('user-agent') || '';
-const { isIOS, versionNumbers: deviceIOS } = parseIOSVersionFromUA(ua);
-
+// The page is rendered identically for every device (no User-Agent sniffing),
+// so it edge-caches. The old auto "hide newer than your iOS" filter is now an
+// explicit ?ios=<major> choice — a distinct, cacheable URL per selection.
 if (!dbError) setCacheHeaders(Astro.response, 3600);
-Astro.response.headers.set('Vary', 'User-Agent');
+
 // Best-copy-only is the default; ?copies=all expands every archived copy.
 const showAllCopies = searchParams.get('copies') === 'all';
 function copiesToggleHref(all: boolean): string {
@@ -404,15 +403,28 @@ function copiesToggleHref(all: boolean): string {
   return q ? `${pathname}?${q}` : pathname;
 }
 
-const hideNewerParam = searchParams.get('hide_newer');
-const hideNewerPresent = searchParams.has('hide_newer_present');
-const hideNewer = isIOS ? (hideNewerPresent ? (hideNewerParam === '1' || hideNewerParam === 'true') : true) : false;
-const iosVersionParts = (deviceIOS && deviceIOS.length >= 3 && deviceIOS[2] === 0) ? deviceIOS.slice(0, 2) : deviceIOS;
-const iosVersionLabel = (deviceIOS && deviceIOS.length) ? iosVersionParts.join('.') : undefined;
+// Compatibility filter: ?ios=6 keeps versions that run on an iOS 6-class device
+// (minimum OS major ≤ 6), plus any version whose minimum is unknown.
+const minOsMajor = (v: any) => {
+  const m = parseInt(String(v?.minimum_os_version || '').split('.')[0], 10);
+  return Number.isFinite(m) && m > 0 ? m : null;
+};
+const iosParam = searchParams.get('ios');
+const iosFilter = iosParam && /^\d{1,2}$/.test(iosParam) ? Number(iosParam) : null;
+const iosMajors = Array.from(
+  new Set((versions || []).map(minOsMajor).filter((m): m is number => m != null))
+).sort((a, b) => a - b);
+function iosFilterHref(major: number | null): string {
+  const sp = new URLSearchParams(searchParams);
+  if (major == null) sp.delete('ios');
+  else sp.set('ios', String(major));
+  const q = sp.toString();
+  return q ? `${pathname}?${q}` : pathname;
+}
 
-const filtered = hideNewer
-  ? (versions || []).filter((v: any) => isMinimumOSSupported(v?.minimum_os_version, deviceIOS))
-  : (versions || []);
+const filtered = iosFilter == null
+  ? (versions || [])
+  : (versions || []).filter((v: any) => { const mm = minOsMajor(v); return mm == null || mm <= iosFilter; });
 
 const sortedVersions = sortVersions(filtered, currentSort, currentDir);
 
@@ -488,25 +500,14 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
                 : <>Showing the best copy per version · <a class="copies-link" href={copiesToggleHref(true)}>show all copies</a></>}
             </div>
           )}
-          {isIOS && (
-            <form method="get" class="hide-newer-form">
-              {(() => {
-                const sp = new URLSearchParams(searchParams);
-                sp.delete('hide_newer');
-                sp.delete('hide_newer_present');
-                const hiddenInputs = Array.from(sp.entries()).map(([k, v]) => (<input type="hidden" name={k} value={v} />));
-                return (
-                  <>
-                    {hiddenInputs}
-                    <input type="hidden" name="hide_newer_present" value="1" />
-                    <label class="hide-newer-label">
-                      <input type="checkbox" name="hide_newer" value="1" checked={hideNewer} onchange="this.form.submit()" />
-                      <span>Hide versions newer than iOS {iosVersionLabel || 'this device'}</span>
-                    </label>
-                  </>
-                );
-              })()}
-            </form>
+          {iosMajors.length > 1 && (
+            <div class="ios-filter">
+              <span class="sort-label">Runs on:</span>
+              <a href={iosFilterHref(null)} class={iosFilter == null ? 'ios-link active' : 'ios-link'}>Any</a>
+              {iosMajors.map((m) => (
+                <a href={iosFilterHref(m)} class={iosFilter === m ? 'ios-link active' : 'ios-link'}>iOS {m}</a>
+              ))}
+            </div>
           )}
         </div>
 
@@ -558,20 +559,10 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
                       const chip = bin?.install_status === 'encrypted'
                         ? <span class="chip chip-warn">Encrypted</span>
                         : null;
-                      if (isIOS) {
-                        const manifestUrl = `${origin}/manifest/${f.id}.plist`;
-                        return (
-                          <div class="file-row">
-                            <a class="navbtn" href={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`}><span class="navbtn-label">Install</span></a>
-                            <span class="file-detail">
-                              {chip}
-                              {detail && <span class="file-name">{detail}</span>}
-                            </span>
-                          </div>
-                        );
-                      }
-                      // Direct download URL to the IPA file; a row with no known
-                      // source throws — skip the link rather than crash the page.
+                      // Both affordances render for everyone (no UA branch, so the
+                      // page caches): "Install" is the over-the-air itms-services
+                      // link that works on an iOS device; "Download" is the raw
+                      // .ipa for desktop. A row with no known source shows neither.
                       let ipaUrl: string | null = null;
                       try {
                         ipaUrl = generateIpaDownloadUrl({
@@ -583,11 +574,17 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
                       } catch {
                         ipaUrl = null;
                       }
+                      const manifestUrl = `${origin}/manifest/${f.id}.plist`;
                       return (
                         <div class="file-row">
-                          {ipaUrl
-                            ? <a class="navbtn" href={ipaUrl} download><span class="navbtn-label">Download</span></a>
-                            : <span class="meta">File source unavailable</span>}
+                          {ipaUrl ? (
+                            <span class="file-actions">
+                              <a class="navbtn" href={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`}><span class="navbtn-label">Install</span></a>
+                              <a class="navbtn navbtn-alt" href={ipaUrl} download><span class="navbtn-label">Download</span></a>
+                            </span>
+                          ) : (
+                            <span class="meta">File source unavailable</span>
+                          )}
                           <span class="file-detail">
                             {chip}
                             {detail && <span class="file-name">{detail}</span>}
@@ -613,8 +610,8 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
             );
           })}
           {sortedVersions.length === 0 && (
-            hideNewer && (versions || []).length > 0 ? (
-              <p class="applist-empty">All {versions.length} {versionNoun} require a newer iOS than this device — uncheck the filter above to see them.</p>
+            iosFilter != null && (versions || []).length > 0 ? (
+              <p class="applist-empty">None of the {versions.length} {versionNoun} run on iOS {iosFilter} — <a class="copies-link" href={iosFilterHref(null)}>show all</a>.</p>
             ) : (
               <p class="applist-empty">No versions in the archive yet.</p>
             )
@@ -814,15 +811,20 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       font-size: 9px;
     }
 
-    .hide-newer-form {
+    /* Compatibility filter (?ios=N) — links, so it caches with no JS */
+    .ios-filter {
       margin: 4px 0 0 0;
+      font-size: 13px;
     }
 
-    .hide-newer-label {
-      cursor: pointer;
-      -webkit-user-select: none;
-      user-select: none;
-      color: #333;
+    .ios-link {
+      display: inline-block;
+      padding: 4px 6px;
+      color: #385487;
+    }
+
+    .ios-link.active {
+      font-weight: bold;
     }
 
     .versions {
@@ -882,9 +884,18 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       overflow: hidden;
     }
 
-    .file-row .navbtn {
+    .file-actions {
       float: left;
       margin-right: 10px;
+    }
+
+    .file-actions .navbtn {
+      margin-right: 6px;
+    }
+
+    /* Download is the secondary action next to Install; dim it slightly */
+    .navbtn-alt .navbtn-label {
+      font-weight: normal;
     }
 
     .file-detail {
