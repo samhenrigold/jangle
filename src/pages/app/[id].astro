@@ -115,7 +115,7 @@ if (appData) {
   } else {
     const { data, error } = await supabase
       .from('app_versions')
-      .select('id, version_string, build_number, minimum_os_version, release_date, estimated_release_date')
+      .select('id, version_string, build_number, minimum_os_version, release_date, estimated_release_date, external_identifier')
       .eq('app_id', appData.id)
       .order('release_date', { ascending: false })
       .limit(200);

@@ -62,17 +62,67 @@ function tieBreakByIdDesc(a: any, b: any): number {
   return bid - aid;
 }
 
+function epochOf(d: any): number | null {
+  if (!d || typeof d !== 'string') return null;
+  const t = Date.parse(d.length <= 10 ? `${d}T00:00:00Z` : d);
+  return Number.isFinite(t) ? t : null;
+}
+
+// Chronological ordering key per version. release_date is unreliable (bulk-import
+// + scrape-date artifacts), so we ignore it: estimated_release_date and Apple's
+// globally-monotonic external_identifier are the trustworthy, mutually-agreeing
+// signals. Key = the version's est date where known; where it's missing but an
+// external_identifier exists, interpolate a date from the (ext_id → est_date)
+// anchors in the same list. Versions with neither signal get no key (sorted last).
+export function buildChronoKeys<T extends Record<string, any>>(list: T[]): Map<T, number> {
+  const keys = new Map<T, number>();
+  const anchors: { x: number; e: number }[] = [];
+  for (const v of list || []) {
+    const e = epochOf(v?.estimated_release_date);
+    const x = v?.external_identifier == null ? null : Number(v.external_identifier);
+    if (e != null) {
+      keys.set(v, e);
+      if (x != null && Number.isFinite(x)) anchors.push({ x, e });
+    }
+  }
+  if (!keys.size) return keys;
+  anchors.sort((a, b) => a.x - b.x);
+  if (anchors.length) {
+    for (const v of list || []) {
+      if (keys.has(v)) continue;
+      const x = v?.external_identifier == null ? null : Number(v.external_identifier);
+      if (x == null || !Number.isFinite(x)) continue;
+      // Linear interpolation between the bracketing ext_id anchors (clamped).
+      if (x <= anchors[0].x) { keys.set(v, anchors[0].e); continue; }
+      if (x >= anchors[anchors.length - 1].x) { keys.set(v, anchors[anchors.length - 1].e); continue; }
+      for (let i = 1; i < anchors.length; i++) {
+        if (x <= anchors[i].x) {
+          const lo = anchors[i - 1], hi = anchors[i];
+          const t = hi.x === lo.x ? 0 : (x - lo.x) / (hi.x - lo.x);
+          keys.set(v, lo.e + t * (hi.e - lo.e));
+          break;
+        }
+      }
+    }
+  }
+  return keys;
+}
+
 export function sortVersions<T extends Record<string, any>>(list: T[], sortKey: SortKey, dir: SortDir): T[] {
   const dirMult = dir === 'asc' ? 1 : -1;
+  // 'date' is a true chronological sort; keys are precomputed over the whole list.
+  const chrono = sortKey === 'date' ? buildChronoKeys(list) : null;
 
   const cmpMap: Record<SortKey, (a: T, b: T) => number> = {
     date: (a, b) => {
-      const at = timeOf(a?.release_date);
-      const bt = timeOf(b?.release_date);
-      if (at === undefined && bt === undefined) return tieBreakByIdDesc(a, b);
-      if (at === undefined) return 1;
-      if (bt === undefined) return -1;
-      return at - bt;
+      const ka = chrono!.get(a);
+      const kb = chrono!.get(b);
+      // Undated versions sort last regardless of direction (undo the dir flip).
+      if (ka == null && kb == null) return dirMult * (compareVersionLike(a?.version_string, b?.version_string) || tieBreakByIdDesc(a, b));
+      if (ka == null) return dirMult * 1;
+      if (kb == null) return dirMult * -1;
+      if (ka !== kb) return ka - kb;
+      return compareVersionLike(a?.version_string, b?.version_string) || tieBreakByIdDesc(a, b);
     },
     version: (a, b) => {
       const c = compareVersionLike(a?.version_string, b?.version_string);
