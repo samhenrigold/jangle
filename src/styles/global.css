@@ -1,34 +1,52 @@
 /* Global base */
-body { font-family: -apple-system, system-ui, sans-serif; margin: 0; }
-
-/* Layout */
-.site-header { padding: 12px 16px; border-bottom: 1px solid #ddd; }
-.site-header a { color: inherit; text-decoration: none; }
-.site-main { padding: 16px; }
-
-/* Search form */
-.search { display: block; }
-.search > * { display: inline-block; vertical-align: middle; margin-right: 8px; }
-input, select, button { font: inherit; padding: 6px; }
-@media screen and (max-width: 480px) {
-  .search > * { display: block; margin: 6px 0; }
-}
-
-/* App list */
-.applist { list-style: none; padding: 0; margin: 0; }
-.app { padding: 8px; border-bottom: 1px solid #eee; }
-.icon { float: left; width: 48px; height: 48px; background: #f3f3f3; border-radius: 8px; overflow: hidden; margin-right: 12px; }
-.info { overflow: hidden; }
-.meta { color: #666; font-size: 13px; }
-.count { float: right; color: #666; font-size: 13px; }
+body { font-family: -apple-system, system-ui, "Helvetica Neue", Helvetica, sans-serif; margin: 0; background: #fff; color: #000; -webkit-text-size-adjust: 100%; }
 a { color: inherit; text-decoration: none; }
 
-/* Index page layout */
-.layout { padding: 0; margin: 0; }
-.sidebar { float: left; width: 220px; padding: 0 16px; }
-.content { overflow: hidden; padding: 0 16px; }
+/* Layout */
+.site-main { padding: 12px 8px 24px 8px; }
+.content { max-width: 900px; margin: 0 auto; padding: 0 8px; }
+
+/* Section headers (iOS grouped-table style) */
+.section-header { margin: 12px 4px 6px 4px; overflow: hidden; }
+.section-title { display: inline; margin: 0; font-size: 18px; font-weight: bold; color: #4c566c; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8); }
+.section-detail { float: right; color: #8e8e93; font-size: 14px; line-height: 24px; }
+
+/* Degraded (DB error) notice */
+.db-error { margin: 30px auto; padding: 20px; max-width: 420px; text-align: center; color: #666; background: #f7f7f8; border: 1px solid #e1e1e1; border-radius: 8px; }
+
+/* App list (iOS table style) */
+.applist { list-style: none; padding: 0; margin: 10px 0; border: 1px solid #e1e1e1; border-radius: 8px; background: #fff; overflow: hidden; }
+.app { border-bottom: 1px solid #e1e1e1; }
+.app:last-child { border-bottom: none; }
+.app-link { display: block; padding: 8px 10px; }
+.app-link:active { background-color: #e8ebef; }
+.rank { float: left; width: 30px; margin: 0 6px 0 -4px; line-height: 57px; text-align: center; font-size: 19px; font-weight: bold; color: #8e8e93; }
+.icon { float: left; width: 57px; height: 57px; margin-right: 10px; background: #f3f3f3; border-radius: 11px; overflow: hidden; }
+.icon img { display: block; width: 57px; height: 57px; }
+.chevron { float: right; margin: 15px 0 0 2px; color: #c7c7cc; font-size: 24px; line-height: 26px; font-weight: bold; font-family: "Helvetica Neue", Helvetica, sans-serif; }
+.count { float: right; margin: 11px 6px 0 10px; text-align: right; color: #385487; font-size: 16px; font-weight: bold; line-height: 18px; }
+.count-label { display: block; color: #8e8e93; font-size: 11px; font-weight: normal; }
+.info { display: block; overflow: hidden; padding-top: 10px; }
+.name { display: block; font-size: 16px; font-weight: bold; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { color: #666; font-size: 13px; }
+.info .meta { display: block; line-height: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.applist-empty { padding: 24px 10px; text-align: center; color: #8e8e93; }
+
+/* Form controls */
+input, select, button { font: inherit; padding: 6px; }
+
+/* Filter bar (search page) */
+.filters { display: block; margin: 0; }
+.filters > * { display: inline-block; vertical-align: middle; margin: 0 8px 0 0; }
+@media screen and (max-width: 480px) {
+  .filters > * { display: block; margin: 6px 0; width: 100%; -webkit-box-sizing: border-box; box-sizing: border-box; }
+}
+
+/* Pagination */
+.pagination { margin: 16px 0; text-align: center; color: #666; font-size: 14px; }
+.pagination a { display: inline-block; margin: 0 6px; padding: 10px 14px; color: #385487; font-weight: bold; border: 1px solid #b5b5b5; border-radius: 8px; background-color: #f7f7f8; }
+.pagination a:active { background-color: #e8ebef; }
+.pagination span { margin: 0 6px; }
+
+/* Misc */
 .total { margin-top: 10px; color: #666; font-size: 13px; }
-.pagination { margin-top: 12px; }
-.pagination a { margin-right: 8px; }
-
-
