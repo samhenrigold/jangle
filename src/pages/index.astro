@@ -57,46 +57,45 @@ if (!featuredApps) {
 // Deterministic per calendar week so the page stays edge-cacheable: the week
 // number picks Top Free vs Top Paid, and the capture nearest to this
 // month/day 15 years back is shown.
+// Everything below is decorative enrichment — a slow/failed query here must
+// leave the Featured list standing, never 503 the page. Only the core featured
+// query (above) is allowed to set dbError.
 const [chartTypes, snapshotIndex] = await Promise.all([
   getChartTypes(supabase),
   getSnapshotIndex(supabase),
 ]);
-if (!chartTypes || !snapshotIndex) dbError = true;
 
 let heroSnapshot: any = null;
 let heroType: any = null;
 let heroEntries: any[] = [];
 let heroYearsAgo = 0;
-if (!dbError && (snapshotIndex || []).length) {
+if (!dbError && chartTypes && snapshotIndex && snapshotIndex.length) {
   const now = new Date();
   const week = Math.floor((now.getTime() - Date.UTC(now.getUTCFullYear(), 0, 1)) / (7 * 86400000));
   const slug = week % 2 ? 'top-paid' : 'top-free';
-  heroType = (chartTypes || []).find((t: any) => t.slug === slug) || (chartTypes || [])[0];
+  heroType = chartTypes.find((t: any) => t.slug === slug) || chartTypes[0];
   heroYearsAgo = 15;
   const target = `${now.getUTCFullYear() - heroYearsAgo}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
   const candidates = dedupeByDate(
-    (snapshotIndex || []).filter(
+    snapshotIndex.filter(
       (s) => s.chart_type_id === Number(heroType?.id) && s.genre_id === null && deviceOf(s.source_url) === 'iphone'
     )
   );
   heroSnapshot = nearestSnapshot(candidates, target);
   if (heroSnapshot) {
     const positions = await getSnapshotPositions(supabase, heroSnapshot.id);
-    if (positions === null) {
-      dbError = true;
-    } else {
-      heroEntries = positions.slice(0, 5);
-    }
+    // null = enrichment query failed; drop the hero, keep the page.
+    if (positions) heroEntries = positions.slice(0, 5);
+    else heroSnapshot = null;
   }
 }
 
-// Peak-chart badges + period-authentic (oldest) icons for the curated list.
+// Peak-chart badges + period-authentic (oldest) icons for the curated list —
+// both best-effort (null/empty just means no badges / fallback icons).
 let peakLines: Map<number, string> | undefined;
 let iconShas: Map<number, string> | undefined;
 if (!dbError && featuredApps && featuredApps.length) {
-  const lines = await getPeakLines(supabase, FEATURED_APP_STORE_IDS, 'featured');
-  if (lines === null) dbError = true;
-  else peakLines = lines;
+  peakLines = (await getPeakLines(supabase, FEATURED_APP_STORE_IDS, 'featured')) || undefined;
   iconShas = await getOldestIcons(supabase, featuredApps.map((a: any) => Number(a.id)));
 }
 

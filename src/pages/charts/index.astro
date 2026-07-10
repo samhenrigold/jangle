@@ -55,15 +55,13 @@ if (typeof total !== 'number') {
 
 const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 
-// Historical peak badges ("Peaked at #1 Top Paid · Dec 2010") from the
-// archived charts, for the apps on this page.
+// Historical peak badges + period-authentic icons — both decorative, so a
+// failure here just drops the badges/icons rather than 503-ing the list.
 let peakLines: Map<number, string> | undefined;
 let iconShas: Map<number, string> | undefined;
 if (!dbError && (topChartsApps || []).length) {
   const ids = (topChartsApps || []).map((a: any) => Number(a.app_store_id)).filter(Boolean);
-  const lines = await getPeakLines(supabase, ids, `top25:${page}:${pageSize}`);
-  if (lines === null) dbError = true;
-  else peakLines = lines;
+  peakLines = (await getPeakLines(supabase, ids, `top25:${page}:${pageSize}`)) || undefined;
   iconShas = await getOldestIcons(supabase, (topChartsApps || []).map((a: any) => Number(a.id)));
 }
 

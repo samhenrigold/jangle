@@ -92,12 +92,11 @@ if (!dbError && (list || []).length) {
 // (chart_snapshots.genre_id = genres.id). One row per chart type with the
 // years we can show.
 type GenreChartRow = { slug: string; name: string; years: { year: string; date: string }[] };
+// Decorative teaser — a failure here drops the module, never 503s the category.
 let genreCharts: GenreChartRow[] = [];
 if (!dbError) {
   const [types, index] = await Promise.all([getChartTypes(supabase), getSnapshotIndex(supabase)]);
-  if (!types || !index) {
-    dbError = true;
-  } else {
+  if (types && index) {
     for (const t of types) {
       // iPhone feeds only — the genre module is a teaser, not a full browser.
       const snaps = index.filter(

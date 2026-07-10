@@ -169,15 +169,15 @@ if (!dbError && ipaFiles.length) {
   if (!bins) {
     bins = [];
     const CHUNK = 150; // keeps the in() filter well under URL-length limits
-    for (let i = 0; i < shas.length && !dbError; i += CHUNK) {
+    for (let i = 0; i < shas.length; i += CHUNK) {
       const { data, error } = await supabase
         .from('binaries')
         .select('sha1, install_status, architectures, macho_min_os, sdk_version, icon_sha256, has_watch_app')
         .in('sha1', shas.slice(i, i + CHUNK));
       if (error) {
+        // Binary enrichment is decorative (install badges, era icons). If it
+        // fails, render the downloads without it — never 503 the whole page.
         console.error('binaries query failed:', error.message);
-        dbError = true;
-        setDegraded(Astro.response);
         bins = null;
         break;
       }
@@ -252,12 +252,11 @@ if (!dbError && appStoreId) {
       return result;
     })(),
   ]);
-  if (charts === null || ratings === null || reviews === null) {
-    dbError = true;
-    setDegraded(Astro.response);
-  } else {
-    chartHistory = charts;
-    ratingHistory = ratings;
+  // History (charts / ratings / reviews) is decorative — a failure drops those
+  // sections, it does not 503 the app page. Each is independently best-effort.
+  if (charts) chartHistory = charts;
+  if (ratings) ratingHistory = ratings;
+  if (reviews) {
     archivedReviews = reviews.rows;
     reviewTotal = reviews.total;
   }
@@ -270,10 +269,8 @@ let chartTypesById = new Map<number, { name: string; slug: string }>();
 let genreNamesMap: Map<number, string> = new Map();
 if (!dbError && chartHistory.length) {
   const [types, genreNames] = await Promise.all([getChartTypes(supabase), getGenreNames(supabase)]);
-  if (!types || !genreNames) {
-    dbError = true;
-    setDegraded(Astro.response);
-  } else {
+  // Labels for the chart-history section; if they fail, skip the section.
+  if (types && genreNames) {
     chartTypesById = new Map(types.map((t: any) => [Number(t.id), { name: t.name, slug: t.slug }]));
     genreNamesMap = genreNames;
     const groups = new Map<string, any>();
