@@ -1,21 +1,22 @@
 ---
 // `genres` arrives already sorted by the page (see src/lib/genres.ts) — do not
 // re-sort here (that mutated the shared cached array and double-sorted).
+// The query text lives in the nav search field; this form only refines an
+// existing search, carrying q through a hidden input.
 const { q = '', genreId = '', sort = 'versions', genres = [] } = Astro.props;
-const sortedGenres = genres;
 ---
-<form class="search" method="get" action="/search">
-  <input type="text" name="q" value={q} placeholder="Search apps, bundle id, developer" />
-  <select name="genre">
+<form class="filters" method="get" action="/search">
+  <input type="hidden" name="q" value={q} />
+  <select name="genre" aria-label="Genre">
     <option value="">All genres</option>
-    {sortedGenres.map((g: any) => (
+    {genres.map((g: any) => (
       <option value={g.id} selected={String(g.id) === String(genreId)}>{g.genre_name} ({g.app_count})</option>
     ))}
   </select>
-  <select name="sort">
+  <select name="sort" aria-label="Sort by">
     <option value="versions" selected={sort==='versions'}>Most versions</option>
     <option value="first_date" selected={sort==='first_date'}>Oldest first release</option>
-    <option value="name" selected={sort==='name'}>Name A-Z</option>
+    <option value="name" selected={sort==='name'}>Name A&ndash;Z</option>
   </select>
-  <button type="submit">Search</button>
+  <button type="submit">Apply</button>
 </form>

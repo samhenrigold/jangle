@@ -3,77 +3,116 @@ import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { sortGenres } from '../../lib/genres';
-import { setCacheHeaders } from '../../lib/http';
+import { setCacheHeaders, setDegraded } from '../../lib/http';
 
 setCacheHeaders(Astro.response, 86400);
 
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+let dbError = false;
 
 // Fetch genres for categories
 const genresCacheKey = 'genres_with_counts';
 let genres = cacheGet<any[]>(genresCacheKey);
 if (!genres) {
-  const { data } = await supabase.rpc('get_genres_with_counts');
+  const { data, error } = await supabase.rpc('get_genres_with_counts');
   genres = data || [];
-  cacheSet(genresCacheKey, genres, 10 * 60 * 1000);
+  if (error) {
+    console.error('genres query failed:', error.message);
+    dbError = true;
+  } else {
+    cacheSet(genresCacheKey, genres, 10 * 60 * 1000);
+  }
 }
 
 // Group Game subgenres after the parent Games genre (returns a copy)
 const sortedGenres = sortGenres(genres ?? []);
+
+// Games subgenres (App Store genre_id 70xx) render indented under Games.
+const isGameSubgenre = (g: any) => g.id !== 6014 && g.genre_id && String(g.genre_id).startsWith('70');
+
+// A transient DB failure must not render as a cacheable empty page.
+if (dbError) setDegraded(Astro.response);
 ---
 
-<Layout title="Categories — Legacy Store" activeTab="categories">
+<Layout title="Categories — Legacy Store" activeTab="categories" description="Browse classic iPhone and iPad apps by category — games, entertainment, utilities, and more, archived for old iOS devices.">
   <div class="content">
-    <div class="categories-grid">
-      {sortedGenres.map((genre: any) => (
-        <a href={`/categories/${genre.id}`} class="category-card">
-          <h3>{genre.genre_name}</h3>
-          <p>{genre.app_count} apps</p>
-        </a>
-      ))}
-    </div>
+    {dbError ? (
+      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+    ) : (
+      <ul class="cat-list">
+        {sortedGenres.map((genre: any) => (
+          <li class={isGameSubgenre(genre) ? 'cat sub' : 'cat'}>
+            <a href={`/categories/${genre.id}`} class="cat-link">
+              <span class="chevron">&#8250;</span>
+              <span class="cat-count">{genre.app_count}</span>
+              <span class="cat-name">{genre.genre_name}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
   </div>
 
   <style>
-    .content {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 20px;
-    }
-    
-    .categories-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-      gap: 20px;
-      margin-top: 20px;
-    }
-    
-    .category-card {
-      display: block;
-      padding: 20px;
-      border: 1px solid #ddd;
+    .cat-list {
+      list-style: none;
+      margin: 10px 0 20px 0;
+      padding: 0;
+      border: 1px solid #e1e1e1;
       border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .cat {
+      border-bottom: 1px solid #e1e1e1;
+    }
+
+    .cat:last-child {
+      border-bottom: none;
+    }
+
+    .cat-link {
+      display: block;
+      padding: 11px 10px;
+      min-height: 22px;
       text-decoration: none;
-      color: inherit;
-      transition: all 0.2s ease;
+      color: #000;
     }
-    
-    .category-card:hover {
-      border-color: #007AFF;
-      box-shadow: 0 2px 8px rgba(0, 122, 255, 0.1);
-      transform: translateY(-2px);
+
+    .cat-link:active {
+      background-color: #e8ebef;
     }
-    
-    .category-card h3 {
-      margin: 0 0 8px 0;
-      color: #333;
-      font-size: 18px;
+
+    .cat.sub .cat-link {
+      padding-left: 30px;
     }
-    
-    .category-card p {
-      margin: 0;
-      color: #666;
-      font-size: 14px;
+
+    .cat-name {
+      display: block;
+      overflow: hidden;
+      font-size: 17px;
+      font-weight: bold;
+      line-height: 22px;
+    }
+
+    .cat-count {
+      float: right;
+      margin: 0 8px 0 10px;
+      color: #8e8e93;
+      font-size: 15px;
+      line-height: 22px;
+    }
+
+    /* margin:0 beats the app-list chevron's 15px top margin from global.css */
+    .chevron {
+      float: right;
+      margin: 0 0 0 2px;
+      color: #c7c7cc;
+      font-size: 20px;
+      line-height: 22px;
+      font-weight: bold;
+      font-family: "Helvetica Neue", Helvetica, sans-serif;
     }
   </style>
 </Layout>

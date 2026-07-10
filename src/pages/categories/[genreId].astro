@@ -4,32 +4,38 @@ import Layout from '../../components/Layout.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
-import { setCacheHeaders } from '../../lib/http';
+import { setCacheHeaders, setDegraded } from '../../lib/http';
 
 const { genreId } = Astro.params;
 const url = new URL(Astro.request.url);
 const page = clampPage(url.searchParams.get('page'));
-const pageSize = clampPageSize(url.searchParams.get('per_page'));
+const pageSize = clampPageSize(url.searchParams.get('per_page'), 25);
 const offset = (page - 1) * pageSize;
 
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+let dbError = false;
 
-// Fetch genre details
+// Fetch genre details. maybeSingle distinguishes "no such genre" (404) from a
+// transient DB failure (503, uncacheable) — a blip must not become a cached 404.
 const genreCacheKey = `genre:${genreId}`;
 let genre = cacheGet<any>(genreCacheKey);
 if (!genre) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('genres')
     .select('*')
     .eq('id', genreId)
-    .single();
+    .maybeSingle();
+  if (error) {
+    console.error('genre fetch failed:', error.message);
+    dbError = true;
+  }
   genre = data;
   if (genre) {
     cacheSet(genreCacheKey, genre, 10 * 60 * 1000);
   }
 }
 
-if (!genre) {
+if (!genre && !dbError) {
   return Astro.rewrite('/404');
 }
 
@@ -39,10 +45,15 @@ setCacheHeaders(Astro.response, 3600);
 const countArgs = { p_genre_id: Number(genreId), p_search_query: null };
 const countCacheKey = `genre_count:${genreId}`;
 let total = cacheGet<number>(countCacheKey);
-if (typeof total !== 'number') {
-  const { data: totalCountArr } = await supabase.rpc('get_apps_count', countArgs);
+if (!dbError && typeof total !== 'number') {
+  const { data: totalCountArr, error } = await supabase.rpc('get_apps_count', countArgs);
   total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
-  cacheSet(countCacheKey, Number(total) || 0, 5 * 60 * 1000);
+  if (error) {
+    console.error('genre count failed:', error.message);
+    dbError = true;
+  } else {
+    cacheSet(countCacheKey, Number(total) || 0, 5 * 60 * 1000);
+  }
 }
 
 const rpcArgs = {
@@ -55,62 +66,49 @@ const rpcArgs = {
 
 const listCacheKey = `genre_apps:${genreId}:${page}:${pageSize}`;
 let list = cacheGet<any[]>(listCacheKey);
-if (!list) {
-  const { data } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
+if (!dbError && !list) {
+  const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
   list = data || [];
-  cacheSet(listCacheKey, list, 5 * 60 * 1000);
+  if (error) {
+    console.error('genre list failed:', error.message);
+    dbError = true;
+  } else {
+    cacheSet(listCacheKey, list, 5 * 60 * 1000);
+  }
 }
 
 const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
+
+// A transient DB failure must not render as a cacheable empty page.
+if (dbError) setDegraded(Astro.response);
+
+const genreName = genre?.genre_name || 'Category';
 ---
 
-<Layout title={`${genre.genre_name} — Legacy Store`} activeTab="categories">
+<Layout title={`${genreName} — Legacy Store`} activeTab="categories" description={`Top ${genreName} apps on Legacy Store — archived versions of classic iPhone and iPad apps, installable on old iOS devices.`}>
   <div class="content">
-    <AppList list={list} />
-    
-    {totalPages > 1 && (
-      <div class="pagination">
-        {page > 1 && (
-          <a href={`/categories/${genreId}?page=${page-1}&per_page=${pageSize}`}>Prev</a>
+    {dbError ? (
+      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+    ) : (
+      <>
+        <div class="section-header">
+          <h1 class="section-title">{genreName}</h1>
+          {typeof total === 'number' && total > 0 && <span class="section-detail">{Number(total)} apps</span>}
+        </div>
+        <AppList list={list} startRank={offset + 1} />
+
+        {totalPages > 1 && (
+          <div class="pagination">
+            {page > 1 && (
+              <a href={`/categories/${genreId}?page=${page-1}${pageSize !== 25 ? `&per_page=${pageSize}` : ''}`}>&#9664; Previous</a>
+            )}
+            <span>Page {page} of {totalPages}</span>
+            {page < totalPages && (
+              <a href={`/categories/${genreId}?page=${page+1}${pageSize !== 25 ? `&per_page=${pageSize}` : ''}`}>Next {pageSize} &#9654;</a>
+            )}
+          </div>
         )}
-        <span>Page {page} / {totalPages}</span>
-        {page < totalPages && (
-          <a href={`/categories/${genreId}?page=${page+1}&per_page=${pageSize}`}>Next</a>
-        )}
-      </div>
+      </>
     )}
   </div>
-
-  <style>
-    .content {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 20px;
-    }
-    
-    .pagination {
-      margin-top: 20px;
-      text-align: center;
-    }
-    
-    .pagination a {
-      margin: 0 8px;
-      padding: 8px 16px;
-      text-decoration: none;
-      color: #007AFF;
-      border: 1px solid #007AFF;
-      border-radius: 4px;
-      transition: all 0.2s ease;
-    }
-    
-    .pagination a:hover {
-      background-color: #007AFF;
-      color: white;
-    }
-    
-    .pagination span {
-      margin: 0 16px;
-      color: #666;
-    }
-  </style>
 </Layout>
