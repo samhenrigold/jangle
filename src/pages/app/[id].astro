@@ -4,10 +4,13 @@ import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { sortVersions, coerceDir, coerceSortKey, defaultDirForSort, parseIOSVersionFromUA, isMinimumOSSupported } from '../../lib/sorting';
 import { generateIpaDownloadUrl } from '../../lib/urls';
-import { setCacheHeaders } from '../../lib/http';
+import { iconSrc } from '../../lib/icons';
+import { formatDate } from '../../lib/format';
+import { setCacheHeaders, setDegraded } from '../../lib/http';
 
 const { id } = Astro.params;
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+let dbError = false;
 
 // App details: prefer App Store ID in the URL, then bundle_id, fallback to internal DB id
 const rawParam = id as string;
@@ -26,22 +29,26 @@ if (isNumeric) {
     appData = cached;
   } else {
     const cols = 'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)';
-    if (rawParam !== '0') {
-      const { data } = await supabase
+    // app_store_id is int4 — an out-of-range param is "no such app", not a
+    // DB failure, so skip the probe rather than trip the 503 path.
+    if (rawParam !== '0' && Number(rawParam) <= 2147483647) {
+      const { data, error } = await supabase
         .from('apps')
         .select(cols)
         .eq('app_store_id', rawParam)
         .order('id', { ascending: true })
         .limit(1)
         .maybeSingle();
+      if (error) dbError = true;
       if (data) appData = data;
     }
-    if (!appData) {
-      const { data } = await supabase
+    if (!appData && !dbError) {
+      const { data, error } = await supabase
         .from('apps')
         .select(cols)
         .eq('id', rawParam)
         .maybeSingle();
+      if (error) dbError = true;
       if (data) appData = data;
     }
     if (appData) cacheSet(cacheKey, appData, 10 * 60 * 1000);
@@ -49,16 +56,17 @@ if (isNumeric) {
 }
 
 // 2) Try by bundle_id when it looks like a reverse-DNS ID
-if (!appData && looksLikeBundleId) {
+if (!appData && !dbError && looksLikeBundleId) {
   const cacheByBundle = cacheGet<any>(`appByBundle:${rawParam}`);
   if (cacheByBundle) {
     appData = cacheByBundle;
   } else {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('apps')
       .select('id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
       .eq('bundle_id', rawParam)
       .maybeSingle();
+    if (error) dbError = true;
     if (data) {
       appData = data;
       cacheSet(`appByBundle:${rawParam}`, appData, 10 * 60 * 1000);
@@ -67,43 +75,61 @@ if (!appData && looksLikeBundleId) {
 }
 
 // 3) Fallback to internal DB id
-if (!appData) {
+if (!appData && !dbError) {
   const cacheById = cacheGet<any>(`app:${rawParam}`);
   if (cacheById) {
     appData = cacheById;
   } else {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('apps')
       .select('id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
       .eq('id', rawParam)
       .maybeSingle();
+    if (error) dbError = true;
     appData = data;
     if (appData) cacheSet(`app:${rawParam}`, appData, 10 * 60 * 1000);
   }
 }
 
-if (!appData) {
+// A transient DB failure must not become a cached 404 (or a cached empty page).
+if (dbError) {
+  console.error('app page db failure for param:', rawParam);
+  setDegraded(Astro.response);
+}
+
+if (!appData && !dbError) {
   return Astro.rewrite('/404');
 }
 
-// Versions with IPA links (assuming you have a table mapping)
-const versionsCacheKey = `versions:${appData.id}`;
-let versions = cacheGet<any[]>(versionsCacheKey);
-if (!versions) {
-  const { data } = await supabase
-    .from('app_versions')
-    .select('id, version_string, build_number, minimum_os_version, release_date')
-    .eq('app_id', appData.id)
-    .order('release_date', { ascending: false })
-    .limit(200);
-  versions = data || [];
-  cacheSet(versionsCacheKey, versions, 5 * 60 * 1000);
+// Versions with IPA links
+let versions: any[] = [];
+if (appData) {
+  const versionsCacheKey = `versions:${appData.id}`;
+  const cachedVersions = cacheGet<any[]>(versionsCacheKey);
+  if (cachedVersions) {
+    versions = cachedVersions;
+  } else {
+    const { data, error } = await supabase
+      .from('app_versions')
+      .select('id, version_string, build_number, minimum_os_version, release_date')
+      .eq('app_id', appData.id)
+      .order('release_date', { ascending: false })
+      .limit(200);
+    versions = data || [];
+    if (error) {
+      console.error('versions query failed:', error.message);
+      dbError = true;
+      setDegraded(Astro.response);
+    } else {
+      cacheSet(versionsCacheKey, versions, 5 * 60 * 1000);
+    }
+  }
 }
 
 // Fetch IPA files for these versions
 const versionIds = (versions || []).map((v: any) => v.id);
 let ipaFiles: any[] = [];
-if (versionIds.length) {
+if (!dbError && versionIds.length) {
   // Bounded key (version sets change only at ingest); a cached empty array is a
   // hit, not a perpetual refetch.
   const ipaCacheKey = `ipa_files:${appData.id}:${versionIds.length}`;
@@ -111,12 +137,18 @@ if (versionIds.length) {
   if (cachedIpa) {
     ipaFiles = cachedIpa;
   } else {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('ipa_files')
       .select('id, app_version_id, filename, has_itunes_metadata, has_itunes_artwork, info_plist_path, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id)')
       .in('app_version_id', versionIds);
     ipaFiles = data || [];
-    cacheSet(ipaCacheKey, ipaFiles, 5 * 60 * 1000);
+    if (error) {
+      console.error('ipa files query failed:', error.message);
+      dbError = true;
+      setDegraded(Astro.response);
+    } else {
+      cacheSet(ipaCacheKey, ipaFiles, 5 * 60 * 1000);
+    }
   }
 }
 
@@ -131,6 +163,7 @@ for (const f of ipaFiles) {
 const requestUrl = new URL(Astro.request.url);
 const pathname = requestUrl.pathname;
 const searchParams = requestUrl.searchParams;
+const origin = requestUrl.origin;
 
 const currentSort = coerceSortKey(searchParams.get('sort'));
 const currentDir = coerceDir(searchParams.get('dir') || defaultDirForSort(currentSort));
@@ -139,7 +172,7 @@ const currentDir = coerceDir(searchParams.get('dir') || defaultDirForSort(curren
 const ua = Astro.request.headers.get('user-agent') || '';
 const { isIOS, versionNumbers: deviceIOS } = parseIOSVersionFromUA(ua);
 
-setCacheHeaders(Astro.response, 3600);
+if (!dbError) setCacheHeaders(Astro.response, 3600);
 Astro.response.headers.set('Vary', 'User-Agent');
 const hideNewerParam = searchParams.get('hide_newer');
 const hideNewerPresent = searchParams.has('hide_newer_present');
@@ -162,90 +195,378 @@ function toggleSortHref(nextSort: string) {
   sp.set('dir', nd);
   return `${pathname}?${sp.toString()}`;
 }
+
+const SORT_OPTIONS: [string, string][] = [
+  ['date', 'Date'],
+  ['version', 'Version'],
+  ['build', 'Build'],
+  ['ios', 'iOS'],
+  ['id', 'ID'],
+];
+
+const appTitle = appData ? (appData.app_store_name || appData.display_name || appData.bundle_id) : 'App';
+const appIcon = appData ? iconSrc(appData.icon_url) : '';
+const genreName = appData?.genres?.genre_name;
+const developerName = appData?.developers?.artist_name;
+const versionNoun = versions.length === 1 ? 'archived version' : 'archived versions';
 ---
 
-<Layout title={`${appData.display_name || appData.bundle_id} — Legacy Store`}>
-  <div style="max-width:900px;margin:10px auto 0 auto;">
-    <h1>{appData.display_name || appData.bundle_id}</h1>
-    <div class="meta" style="color:#666;font-size:13px;">{appData.developers?.artist_name} · {appData.bundle_id}</div>
-    <p>{appData.copyright}</p>
-
-    <h2>Versions</h2>
-    <div class="sort-bar">
-      <div>
-        <span style="margin-right:6px;">Sort:</span>
-        <a href={toggleSortHref('date')} style={currentSort === 'date' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>Date</a>
-        <a href={toggleSortHref('version')} style={currentSort === 'version' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>Version</a>
-        <a href={toggleSortHref('build')} style={currentSort === 'build' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>Build</a>
-        <a href={toggleSortHref('ios')} style={currentSort === 'ios' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>iOS</a>
-        <a href={toggleSortHref('id')} style={currentSort === 'id' ? 'font-weight:bold;margin-right:8px;' : 'margin-right:8px;'}>ID</a>
-        <span style="color:#666;margin-left:6px;">({currentDir})</span>
-      </div>
-      {isIOS && (
-        <form method="get" style="margin:0;">
-          {(() => {
-            const sp = new URLSearchParams(searchParams);
-            sp.delete('hide_newer');
-            sp.delete('hide_newer_present');
-            const hiddenInputs = Array.from(sp.entries()).map(([k, v]) => (<input type="hidden" name={k} value={v} />));
-            return (
-              <>
-                {hiddenInputs}
-                <input type="hidden" name="hide_newer_present" value="1" />
-                <label style="user-select:none;cursor:pointer;">
-                  <input type="checkbox" name="hide_newer" value="1" checked={hideNewer} onchange="this.form.submit()" />
-                  <span style="margin-left:6px;">Hide versions newer than iOS {iosVersionLabel || 'this device'}</span>
-                </label>
-              </>
-            );
-          })()}
-        </form>
-      )}
-    </div>
-    {(sortedVersions || []).map((v: any) => (
-      <div class="version" style="border-bottom:1px solid #eee;padding:10px 0;">
-        <div><strong>{v.version_string}</strong> ({v.build_number})</div>
-        <div class="meta" style="color:#666;font-size:13px;">iOS {v.minimum_os_version || '—'} · {v.release_date ? new Date(v.release_date).toISOString().slice(0,10) : '—'}</div>
-        <div>
-          {(filesByVersionId.get(v.id) || []).map((f: any) => {
-            const origin = new URL(Astro.request.url).origin;
-            const manifestUrl = `${origin}/manifest/${f.id}.plist`;
-            
-            // Show Install link for iPhone, Download link for others
-            if (isIOS) {
-              return (
-                <a class="install" style="display:inline-block;margin-right:8px;" href={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`}>Install</a>
-              );
-            } else {
-              // Generate direct download URL to IPA file
-              const ipaUrl = generateIpaDownloadUrl({
-                id: f.id,
-                filename: f.filename,
-                info_plist_path: f.info_plist_path,
-                archive_item: { ia_item_id: f.archive_items?.ia_item_id || '' }
-              });
-              return (
-                <a class="download" style="display:inline-block;margin-right:8px;" href={ipaUrl} download>Download</a>
-              );
-            }
-          })}
+<Layout
+  title={`${appTitle} — Legacy Store`}
+  activeTab="none"
+  description={appData ? `${appTitle}${developerName ? ` by ${developerName}` : ''} — ${versions.length} ${versionNoun} for old iOS devices, installable directly on iPhone, iPad, and iPod touch.` : 'Legacy Store'}
+>
+  <div class="content">
+    {dbError ? (
+      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+    ) : (
+      <>
+        <div class="app-header">
+          {appIcon && <span class="app-icon"><img src={appIcon} alt="" width="57" height="57" /></span>}
+          <div class="app-titles">
+            <h1 class="app-name">{appTitle}</h1>
+            {developerName && <div class="app-byline">{developerName}</div>}
+            <div class="app-facts">
+              {genreName && appData.genre_id && <a class="app-genre" href={`/categories/${appData.genre_id}`}>{genreName}</a>}
+              {genreName && appData.genre_id && ' · '}
+              <span>{versions.length} {versionNoun}</span>
+            </div>
+          </div>
         </div>
-      </div>
-    ))}
+        <div class="app-sub">
+          <span class="meta">{appData.bundle_id}</span>
+          {appData.copyright && <span class="meta"> · {appData.copyright}</span>}
+        </div>
+
+        <div class="section-header">
+          <h2 class="section-title">Versions</h2>
+        </div>
+        <div class="sort-bar">
+          <div class="sort-links">
+            <span class="sort-label">Sort:</span>
+            {SORT_OPTIONS.map(([key, label]) => (
+              <a href={toggleSortHref(key)} class={currentSort === key ? 'sort-link active' : 'sort-link'}>
+                {label}{currentSort === key && <span class="sort-dir">{currentDir === 'asc' ? ' ▲' : ' ▼'}</span>}
+              </a>
+            ))}
+          </div>
+          {isIOS && (
+            <form method="get" class="hide-newer-form">
+              {(() => {
+                const sp = new URLSearchParams(searchParams);
+                sp.delete('hide_newer');
+                sp.delete('hide_newer_present');
+                const hiddenInputs = Array.from(sp.entries()).map(([k, v]) => (<input type="hidden" name={k} value={v} />));
+                return (
+                  <>
+                    {hiddenInputs}
+                    <input type="hidden" name="hide_newer_present" value="1" />
+                    <label class="hide-newer-label">
+                      <input type="checkbox" name="hide_newer" value="1" checked={hideNewer} onchange="this.form.submit()" />
+                      <span>Hide versions newer than iOS {iosVersionLabel || 'this device'}</span>
+                    </label>
+                  </>
+                );
+              })()}
+            </form>
+          )}
+        </div>
+
+        <div class="versions">
+          {(sortedVersions || []).map((v: any) => {
+            const files = filesByVersionId.get(v.id) || [];
+            const metaBits: string[] = [];
+            if (v.minimum_os_version) metaBits.push(`Requires iOS ${v.minimum_os_version}+`);
+            const released = formatDate(v.release_date);
+            if (released) metaBits.push(`Released ${released}`);
+            return (
+              <div class="version">
+                <div class="v-title">
+                  <strong>{v.version_string || 'Unknown version'}</strong>
+                  {v.build_number && <span class="v-build"> ({v.build_number})</span>}
+                </div>
+                {metaBits.length > 0 && <div class="meta">{metaBits.join(' · ')}</div>}
+                <div class="v-files">
+                  {files.map((f: any) => {
+                    const manifestUrl = `${origin}/manifest/${f.id}.plist`;
+                    if (isIOS) {
+                      return (
+                        <div class="file-row">
+                          <a class="navbtn" href={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`}><span class="navbtn-label">Install</span></a>
+                          {files.length > 1 && <span class="file-name">{f.filename}</span>}
+                        </div>
+                      );
+                    }
+                    // Direct download URL to the IPA file; a row with no known
+                    // source throws — skip the link rather than crash the page.
+                    let ipaUrl: string | null = null;
+                    try {
+                      ipaUrl = generateIpaDownloadUrl({
+                        id: f.id,
+                        filename: f.filename,
+                        info_plist_path: f.info_plist_path,
+                        archive_item: { ia_item_id: f.archive_items?.ia_item_id || '' }
+                      });
+                    } catch {
+                      ipaUrl = null;
+                    }
+                    return (
+                      <div class="file-row">
+                        {ipaUrl
+                          ? <a class="navbtn" href={ipaUrl} download><span class="navbtn-label">Download</span></a>
+                          : <span class="meta">File source unavailable</span>}
+                        {files.length > 1 && <span class="file-name">{f.filename}</span>}
+                      </div>
+                    );
+                  })}
+                  {files.length === 0 && <div class="meta v-nofile">No file in the archive for this version.</div>}
+                </div>
+              </div>
+            );
+          })}
+          {sortedVersions.length === 0 && (
+            hideNewer && (versions || []).length > 0 ? (
+              <p class="applist-empty">All {versions.length} {versionNoun} require a newer iOS than this device — uncheck the filter above to see them.</p>
+            ) : (
+              <p class="applist-empty">No versions in the archive yet.</p>
+            )
+          )}
+        </div>
+      </>
+    )}
   </div>
 
   <style>
-    .sort-bar {
-      margin: 6px 0 12px 0;
-      font-size: 13px;
-      display: -webkit-box;
-      -webkit-box-align: center;
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
+    .app-header {
+      margin-top: 10px;
+      overflow: hidden;
     }
-    .sort-bar > * { margin-right: 10px; margin-bottom: 4px; }
+
+    .app-icon {
+      float: left;
+      width: 57px;
+      height: 57px;
+      margin-right: 12px;
+      background: #f3f3f3;
+      border-radius: 11px;
+      overflow: hidden;
+    }
+
+    .app-icon img {
+      display: block;
+      width: 57px;
+      height: 57px;
+    }
+
+    .app-titles {
+      overflow: hidden;
+    }
+
+    .app-name {
+      margin: 0;
+      font-size: 21px;
+      line-height: 24px;
+    }
+
+    .app-byline {
+      color: #666;
+      font-size: 14px;
+      line-height: 18px;
+    }
+
+    .app-facts {
+      font-size: 13px;
+      color: #666;
+      line-height: 18px;
+    }
+
+    .app-genre {
+      color: #385487;
+      font-weight: bold;
+    }
+
+    .app-sub {
+      margin: 6px 0 0 0;
+    }
+
+    .sort-bar {
+      margin: 2px 4px 10px 4px;
+      font-size: 13px;
+    }
+
+    .sort-links {
+      margin-bottom: 4px;
+    }
+
+    .sort-label {
+      color: #666;
+      margin-right: 4px;
+    }
+
+    .sort-link {
+      display: inline-block;
+      padding: 4px 6px;
+      color: #385487;
+    }
+
+    .sort-link.active {
+      font-weight: bold;
+    }
+
+    .sort-dir {
+      font-size: 9px;
+    }
+
+    .hide-newer-form {
+      margin: 4px 0 0 0;
+    }
+
+    .hide-newer-label {
+      cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
+      color: #333;
+    }
+
+    .versions {
+      border: 1px solid #e1e1e1;
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .version {
+      border-bottom: 1px solid #e1e1e1;
+      padding: 10px;
+    }
+
+    .version:last-child {
+      border-bottom: none;
+    }
+
+    .v-title {
+      font-size: 16px;
+    }
+
+    .v-build {
+      color: #666;
+      font-weight: normal;
+      font-size: 13px;
+    }
+
+    .v-files {
+      margin-top: 6px;
+    }
+
+    .file-row {
+      margin: 6px 0 0 0;
+      overflow: hidden;
+    }
+
+    .file-row .navbtn {
+      float: left;
+      margin-right: 10px;
+    }
+
+    .file-name {
+      display: block;
+      overflow: hidden;
+      color: #8e8e93;
+      font-size: 12px;
+      line-height: 15px;
+      padding-top: 5px;
+      word-break: break-all;
+    }
+
+    .v-nofile {
+      margin-top: 4px;
+    }
+
+    /* iOS nav-bar style button (3-slice) */
+    .navbtn {
+      display: inline-block;
+      position: relative;
+      height: 30pt;
+      line-height: 30pt;
+      padding: 0 14pt;
+      vertical-align: middle;
+      background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Left.png');
+      background-repeat: no-repeat;
+      background-size: 5pt 30pt;
+      background-position: left center;
+    }
+
+    .navbtn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 5pt;
+      right: 5pt;
+      height: 30pt;
+      background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Middle.png');
+      background-repeat: repeat-x;
+      background-size: 1pt 30pt;
+    }
+
+    .navbtn::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 5pt;
+      height: 30pt;
+      background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Right.png');
+      background-repeat: no-repeat;
+      background-size: 5pt 30pt;
+      background-position: right center;
+    }
+
+    .navbtn-label {
+      position: relative;
+      z-index: 1;
+      color: #fff;
+      font-weight: bold;
+      font-size: 12pt;
+      font-family: "Helvetica Neue", Helvetica, sans-serif;
+      text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.5);
+    }
+
+    .navbtn:active {
+      background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Left.png');
+    }
+
+    .navbtn:active::before {
+      background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Middle.png');
+    }
+
+    .navbtn:active::after {
+      background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Right.png');
+    }
+
+    @media only screen and (-webkit-min-device-pixel-ratio: 2) {
+      .navbtn {
+        background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Left@2x.png');
+      }
+
+      .navbtn::before {
+        background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Middle@2x.png');
+      }
+
+      .navbtn::after {
+        background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Right@2x.png');
+      }
+
+      .navbtn:active {
+        background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Left@2x.png');
+      }
+
+      .navbtn:active::before {
+        background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Middle@2x.png');
+      }
+
+      .navbtn:active::after {
+        background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Right@2x.png');
+      }
+    }
   </style>
 </Layout>
-
-
