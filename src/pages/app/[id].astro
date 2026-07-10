@@ -6,8 +6,10 @@ import { sortVersions, coerceDir, coerceSortKey, defaultDirForSort, parseIOSVers
 import { generateIpaDownloadUrl } from '../../lib/urls';
 import { iconSrc } from '../../lib/icons';
 import { formatDate, formatFileSize } from '../../lib/format';
-import { dedupeFilesByHash, fileLabel } from '../../lib/files';
+import { dedupeFilesByHash, fileLabel, sortGroupsByPreference } from '../../lib/files';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
+import { formatNumber } from '../../lib/format';
+import { getChartTypes, getGenreNames, deviceOf, starString, sampleEvenly, formatMonthYear, formatPrice, waybackUrl } from '../../lib/timemachine';
 
 const { id } = Astro.params;
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
@@ -140,7 +142,7 @@ if (!dbError && versionIds.length) {
   } else {
     const { data, error } = await supabase
       .from('ipa_files')
-      .select('id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, has_itunes_artwork, info_plist_path, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id)')
+      .select('id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, has_itunes_artwork, info_plist_path, binary_sha1, available, unavailable_reason, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id)')
       .in('app_version_id', versionIds);
     ipaFiles = data || [];
     if (error) {
@@ -153,12 +155,212 @@ if (!dbError && versionIds.length) {
   }
 }
 
+// Binary enrichment (plan 009): install_status ("will it actually launch"),
+// architectures, and the icon extracted from the IPA itself. Keyed by content
+// hash — many mirrored files share one binaries row. No FK from
+// ipa_files.binary_sha1, so this is a second chunked lookup.
+const binariesBySha1 = new Map<string, any>();
+if (!dbError && ipaFiles.length) {
+  const shas = Array.from(new Set(ipaFiles.map((f: any) => f.binary_sha1).filter(Boolean)));
+  const binCacheKey = `binaries:${appData.id}:${shas.length}`;
+  const cachedBins = cacheGet<any[]>(binCacheKey);
+  let bins: any[] | null = cachedBins ?? null;
+  if (!bins) {
+    bins = [];
+    const CHUNK = 150; // keeps the in() filter well under URL-length limits
+    for (let i = 0; i < shas.length && !dbError; i += CHUNK) {
+      const { data, error } = await supabase
+        .from('binaries')
+        .select('sha1, install_status, architectures, macho_min_os, sdk_version, icon_sha256, has_watch_app')
+        .in('sha1', shas.slice(i, i + CHUNK));
+      if (error) {
+        console.error('binaries query failed:', error.message);
+        dbError = true;
+        setDegraded(Astro.response);
+        bins = null;
+        break;
+      }
+      bins.push(...(data || []));
+    }
+    if (bins) cacheSet(binCacheKey, bins, 5 * 60 * 1000);
+  }
+  for (const b of bins || []) binariesBySha1.set(b.sha1, b);
+}
+
+// --- Wayback time-machine history (plan 010 Phase 5): chart trajectory,
+// rating history, and archived reviews. All keyed by app_store_id — apps
+// without one (delisted, no iTunesMetadata) simply don't get these sections.
+const appStoreId = appData?.app_store_id ? Number(appData.app_store_id) : null;
+let chartHistory: any[] = [];
+let ratingHistory: any[] = [];
+let archivedReviews: any[] = [];
+let reviewTotal = 0;
+
+if (!dbError && appStoreId) {
+  const [charts, ratings, reviews] = await Promise.all([
+    (async () => {
+      const key = `tm:apphist:${appStoreId}`;
+      const cached = cacheGet<any[]>(key);
+      if (cached) return cached;
+      const { data, error } = await supabase
+        .from('chart_positions')
+        .select('position, chart_snapshots(snapshot_date, genre_id, chart_type_id, source_url, captured_ts)')
+        .eq('app_store_id', appStoreId)
+        .limit(1000);
+      if (error) {
+        console.error('chart history query failed:', error.message);
+        return null;
+      }
+      cacheSet(key, data || [], 10 * 60 * 1000);
+      return data || [];
+    })(),
+    (async () => {
+      const key = `tm:ratings:${appStoreId}`;
+      const cached = cacheGet<any[]>(key);
+      if (cached) return cached;
+      const { data, error } = await supabase
+        .from('app_listing_snapshots')
+        .select('captured_at, rating_avg, rating_count, version, price_amount, price_currency')
+        .eq('app_store_id', appStoreId)
+        .order('captured_at', { ascending: true })
+        .limit(1000);
+      if (error) {
+        console.error('rating history query failed:', error.message);
+        return null;
+      }
+      cacheSet(key, data || [], 10 * 60 * 1000);
+      return data || [];
+    })(),
+    (async () => {
+      const key = `tm:reviews:${appStoreId}`;
+      const cached = cacheGet<{ rows: any[]; total: number }>(key);
+      if (cached) return cached;
+      const { data, error, count } = await supabase
+        .from('app_reviews')
+        .select('review_id, stars, title, body, author, app_version, vote_sum, vote_count', { count: 'exact' })
+        .eq('app_store_id', appStoreId)
+        .order('vote_sum', { ascending: false })
+        .order('review_id', { ascending: false })
+        .limit(8);
+      if (error) {
+        console.error('archived reviews query failed:', error.message);
+        return null;
+      }
+      const result = { rows: data || [], total: count || (data || []).length };
+      cacheSet(key, result, 10 * 60 * 1000);
+      return result;
+    })(),
+  ]);
+  if (charts === null || ratings === null || reviews === null) {
+    dbError = true;
+    setDegraded(Astro.response);
+  } else {
+    chartHistory = charts;
+    ratingHistory = ratings;
+    archivedReviews = reviews.rows;
+    reviewTotal = reviews.total;
+  }
+}
+
+// Fold raw chart rows into one group per (chart type, device, genre): peak,
+// span, and a chronological trajectory for the sparkline.
+let chartGroups: any[] = [];
+let chartTypesById = new Map<number, { name: string; slug: string }>();
+let genreNamesMap: Map<number, string> = new Map();
+if (!dbError && chartHistory.length) {
+  const [types, genreNames] = await Promise.all([getChartTypes(supabase), getGenreNames(supabase)]);
+  if (!types || !genreNames) {
+    dbError = true;
+    setDegraded(Astro.response);
+  } else {
+    chartTypesById = new Map(types.map((t: any) => [Number(t.id), { name: t.name, slug: t.slug }]));
+    genreNamesMap = genreNames;
+    const groups = new Map<string, any>();
+    for (const row of chartHistory) {
+      const snap = row.chart_snapshots;
+      if (!snap) continue;
+      const device = deviceOf(snap.source_url || '');
+      const genreId = snap.genre_id == null ? null : Number(snap.genre_id);
+      const typeId = Number(snap.chart_type_id);
+      const key = `${typeId}:${device}:${genreId ?? 'all'}`;
+      let g = groups.get(key);
+      if (!g) {
+        g = { typeId, device, genreId, points: [] };
+        groups.set(key, g);
+      }
+      g.points.push({
+        date: snap.snapshot_date,
+        position: Number(row.position),
+        ts: snap.captured_ts || null,
+        url: snap.source_url || '',
+      });
+    }
+    for (const g of groups.values()) {
+      // One point per date (duplicate captures of the same feed) — best rank wins.
+      g.points.sort((a: any, b: any) => a.date.localeCompare(b.date) || a.position - b.position);
+      const byDate = new Map<string, any>();
+      for (const p of g.points) if (!byDate.has(p.date)) byDate.set(p.date, p);
+      g.points = Array.from(byDate.values());
+      g.peak = Math.min(...g.points.map((p: any) => p.position));
+      const peakPoint = g.points.find((p: any) => p.position === g.peak);
+      g.peakDate = peakPoint?.date;
+      g.peakWayback = peakPoint ? waybackUrl(peakPoint.ts, peakPoint.url) : '';
+      g.first = g.points[0].date;
+      g.last = g.points[g.points.length - 1].date;
+    }
+    chartGroups = Array.from(groups.values()).sort(
+      (a, b) => Number(a.genreId != null) - Number(b.genreId != null) || b.points.length - a.points.length || a.peak - b.peak
+    );
+  }
+}
+
+// Rating snapshots arrive in bursts (several captures of the same listing
+// state) — collapse identical consecutive states, then thin to a readable table.
+const ratingRows = sampleEvenly(
+  ratingHistory.filter((r: any, i: number) => {
+    if (i === 0) return true;
+    const prev = ratingHistory[i - 1];
+    return !(r.version === prev.version && r.rating_count === prev.rating_count && r.rating_avg === prev.rating_avg);
+  }),
+  15
+);
+
+// Dead archive.org copies (available=false) never render a button; a version
+// whose every copy is dead says so instead of "no file".
 const filesByVersionId = new Map<number, any[]>();
+const unavailableCountByVersion = new Map<number, number>();
 for (const f of ipaFiles) {
+  if (f.available === false) {
+    unavailableCountByVersion.set(f.app_version_id, (unavailableCountByVersion.get(f.app_version_id) || 0) + 1);
+    continue;
+  }
   const arr = filesByVersionId.get(f.app_version_id) || [];
   arr.push(f);
   filesByVersionId.set(f.app_version_id, arr);
 }
+
+const binaryOf = (f: any) => (f?.binary_sha1 ? binariesBySha1.get(f.binary_sha1) : undefined);
+
+// The app header shows the icon extracted from the newest archived binary
+// (era-accurate, R2-hosted) before falling back to the iTunes CDN icon_url.
+// Scan in semantic version order — release_date sorts null-dated (often
+// mislabeled) versions first and can surface a repack's icon.
+let eraIconSha: string | null = null;
+for (const v of sortVersions(versions || [], 'version', 'desc')) {
+  for (const g of sortGroupsByPreference(dedupeFilesByHash(filesByVersionId.get(v.id) || []), binaryOf, v.minimum_os_version)) {
+    const sha = binaryOf(g.file)?.icon_sha256;
+    if (sha) { eraIconSha = sha; break; }
+  }
+  if (eraIconSha) break;
+}
+
+const installableVersionCount = (versions || []).filter((v: any) =>
+  (filesByVersionId.get(v.id) || []).some((f: any) => binaryOf(f)?.install_status === 'installable')
+).length;
+
+const anyMultiCopy = (versions || []).some(
+  (v: any) => dedupeFilesByHash(filesByVersionId.get(v.id) || []).length > 1
+);
 
 // Bulk-imported versions share one bogus release_date (e.g. 487 versions
 // catalog-wide claim "Apr 1, 2010"). Real releases don't land 3+ versions on
@@ -185,6 +387,16 @@ const { isIOS, versionNumbers: deviceIOS } = parseIOSVersionFromUA(ua);
 
 if (!dbError) setCacheHeaders(Astro.response, 3600);
 Astro.response.headers.set('Vary', 'User-Agent');
+// Best-copy-only is the default; ?copies=all expands every archived copy.
+const showAllCopies = searchParams.get('copies') === 'all';
+function copiesToggleHref(all: boolean): string {
+  const sp = new URLSearchParams(searchParams);
+  if (all) sp.set('copies', 'all');
+  else sp.delete('copies');
+  const q = sp.toString();
+  return q ? `${pathname}?${q}` : pathname;
+}
+
 const hideNewerParam = searchParams.get('hide_newer');
 const hideNewerPresent = searchParams.has('hide_newer_present');
 const hideNewer = isIOS ? (hideNewerPresent ? (hideNewerParam === '1' || hideNewerParam === 'true') : true) : false;
@@ -216,7 +428,7 @@ const SORT_OPTIONS: [string, string][] = [
 ];
 
 const appTitle = appData ? (appData.app_store_name || appData.display_name || appData.bundle_id) : 'App';
-const appIcon = appData ? iconSrc(appData.icon_url) : '';
+const appIcon = eraIconSha ? `/icon/${eraIconSha}` : (appData ? iconSrc(appData.icon_url) : '');
 const genreName = appData?.genres?.genre_name;
 const developerName = appData?.developers?.artist_name;
 const versionNoun = versions.length === 1 ? 'archived version' : 'archived versions';
@@ -241,6 +453,7 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
               {genreName && appData.genre_id && <a class="app-genre" href={`/categories/${appData.genre_id}`}>{genreName}</a>}
               {genreName && appData.genre_id && ' · '}
               <span>{versions.length} {versionNoun}</span>
+              {installableVersionCount > 0 && <span> · {installableVersionCount} installable</span>}
             </div>
           </div>
         </div>
@@ -261,6 +474,13 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
               </a>
             ))}
           </div>
+          {anyMultiCopy && (
+            <div class="copies-toggle meta">
+              {showAllCopies
+                ? <>Showing every archived copy · <a class="copies-link" href={copiesToggleHref(false)}>show best copy per version</a></>
+                : <>Showing the best copy per version · <a class="copies-link" href={copiesToggleHref(true)}>show all copies</a></>}
+            </div>
+          )}
           {isIOS && (
             <form method="get" class="hide-newer-form">
               {(() => {
@@ -285,59 +505,98 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
 
         <div class="versions">
           {(sortedVersions || []).map((v: any) => {
-            // Byte-identical mirrors (same md5) collapse to one button each.
-            const groups = dedupeFilesByHash(filesByVersionId.get(v.id) || []);
+            // Byte-identical mirrors (same md5) collapse to one button each;
+            // groups rank best-first (launchable > era-plausible > store rips)
+            // and only the best copy shows unless ?copies=all.
+            const groups = sortGroupsByPreference(
+              dedupeFilesByHash(filesByVersionId.get(v.id) || []),
+              binaryOf,
+              v.minimum_os_version
+            );
+            const visibleGroups = showAllCopies ? groups : groups.slice(0, 1);
+            const hiddenCopies = groups.length - visibleGroups.length;
             const versionLabel = v.version_string || v.build_number || 'Unknown version';
             const showBuild = v.build_number && v.build_number !== versionLabel;
+            const vIconSha = groups.map((g) => binaryOf(g.file)?.icon_sha256).find(Boolean);
             const metaBits: string[] = [];
+            const machoMinOs = groups.map((g) => binaryOf(g.file)?.macho_min_os).find(Boolean);
             if (v.minimum_os_version) metaBits.push(`Requires iOS ${v.minimum_os_version}+`);
+            else if (machoMinOs) metaBits.push(`Requires iOS ${machoMinOs}+`);
             const released = isTrustworthyDate(v.release_date) ? formatDate(v.release_date) : '';
             if (released) metaBits.push(`Released ${released}`);
             return (
-              <div class="version">
-                <div class="v-title">
-                  <strong>{versionLabel}</strong>
-                  {showBuild && <span class="v-build"> ({v.build_number})</span>}
-                </div>
-                {metaBits.length > 0 && <div class="meta">{metaBits.join(' · ')}</div>}
-                <div class="v-files">
-                  {groups.map(({ file: f }) => {
-                    const size = formatFileSize(f.file_size);
-                    const detail = groups.length > 1
-                      ? [fileLabel(f.filename), size].filter(Boolean).join(' · ')
-                      : size;
-                    if (isIOS) {
-                      const manifestUrl = `${origin}/manifest/${f.id}.plist`;
+              <div class="version" id={`v${v.id}`}>
+                <span class="v-icon">{vIconSha && <img src={`/icon/${vIconSha}`} alt="" width="29" height="29" loading="lazy" />}</span>
+                <div class="v-body">
+                  <div class="v-title">
+                    <strong>{versionLabel}</strong>
+                    {showBuild && <span class="v-build"> ({v.build_number})</span>}
+                  </div>
+                  {metaBits.length > 0 && <div class="meta">{metaBits.join(' · ')}</div>}
+                  <div class="v-files">
+                    {visibleGroups.map(({ file: f }) => {
+                      const bin = binaryOf(f);
+                      const size = formatFileSize(f.file_size);
+                      const arch = (bin?.architectures || []).join('/');
+                      const detailBits = showAllCopies && groups.length > 1 ? [fileLabel(f.filename), size] : [size];
+                      if (arch) detailBits.push(arch);
+                      if (bin?.has_watch_app) detailBits.push('Watch app');
+                      if (bin?.install_status === 'encrypted') detailBits.push('installs but won’t launch (FairPlay DRM)');
+                      const detail = detailBits.filter(Boolean).join(' · ');
+                      // Installable is the norm — only the exception gets a badge.
+                      const chip = bin?.install_status === 'encrypted'
+                        ? <span class="chip chip-warn">Encrypted</span>
+                        : null;
+                      if (isIOS) {
+                        const manifestUrl = `${origin}/manifest/${f.id}.plist`;
+                        return (
+                          <div class="file-row">
+                            <a class="navbtn" href={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`}><span class="navbtn-label">Install</span></a>
+                            <span class="file-detail">
+                              {chip}
+                              {detail && <span class="file-name">{detail}</span>}
+                            </span>
+                          </div>
+                        );
+                      }
+                      // Direct download URL to the IPA file; a row with no known
+                      // source throws — skip the link rather than crash the page.
+                      let ipaUrl: string | null = null;
+                      try {
+                        ipaUrl = generateIpaDownloadUrl({
+                          id: f.id,
+                          filename: f.filename,
+                          info_plist_path: f.info_plist_path,
+                          archive_item: { ia_item_id: f.archive_items?.ia_item_id || '' }
+                        });
+                      } catch {
+                        ipaUrl = null;
+                      }
                       return (
                         <div class="file-row">
-                          <a class="navbtn" href={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`}><span class="navbtn-label">Install</span></a>
-                          {detail && <span class="file-name">{detail}</span>}
+                          {ipaUrl
+                            ? <a class="navbtn" href={ipaUrl} download><span class="navbtn-label">Download</span></a>
+                            : <span class="meta">File source unavailable</span>}
+                          <span class="file-detail">
+                            {chip}
+                            {detail && <span class="file-name">{detail}</span>}
+                          </span>
                         </div>
                       );
-                    }
-                    // Direct download URL to the IPA file; a row with no known
-                    // source throws — skip the link rather than crash the page.
-                    let ipaUrl: string | null = null;
-                    try {
-                      ipaUrl = generateIpaDownloadUrl({
-                        id: f.id,
-                        filename: f.filename,
-                        info_plist_path: f.info_plist_path,
-                        archive_item: { ia_item_id: f.archive_items?.ia_item_id || '' }
-                      });
-                    } catch {
-                      ipaUrl = null;
-                    }
-                    return (
-                      <div class="file-row">
-                        {ipaUrl
-                          ? <a class="navbtn" href={ipaUrl} download><span class="navbtn-label">Download</span></a>
-                          : <span class="meta">File source unavailable</span>}
-                        {detail && <span class="file-name">{detail}</span>}
+                    })}
+                    {hiddenCopies > 0 && (
+                      <div class="more-copies">
+                        <a href={`${copiesToggleHref(true)}#v${v.id}`}>{hiddenCopies} more {hiddenCopies === 1 ? 'copy' : 'copies'} of this version &#8250;</a>
                       </div>
-                    );
-                  })}
-                  {groups.length === 0 && <div class="meta v-nofile">No file in the archive for this version.</div>}
+                    )}
+                    {groups.length === 0 && (
+                      <div class="meta v-nofile">
+                        {unavailableCountByVersion.get(v.id)
+                          ? 'The copies of this version are no longer available on archive.org.'
+                          : 'No file in the archive for this version.'}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -350,6 +609,111 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
             )
           )}
         </div>
+
+        {chartGroups.length > 0 && (
+          <>
+            <div class="section-header">
+              <h2 class="section-title">Chart History</h2>
+              <span class="section-detail"><a class="tm-more" href="/time-machine">Time Machine ›</a></span>
+            </div>
+            <div class="history-card">
+              {chartGroups.map((g: any) => {
+                const type = chartTypesById.get(g.typeId);
+                const bits = [type?.name || 'Chart'];
+                if (g.genreId != null) bits.push(genreNamesMap.get(g.genreId) || `Genre ${g.genreId}`);
+                if (g.device === 'ipad') bits.push('iPad');
+                const n = g.points.length;
+                const spanStart = formatMonthYear(g.first);
+                const spanEnd = formatMonthYear(g.last);
+                const span = spanStart === spanEnd ? spanStart : `${spanStart} – ${spanEnd}`;
+                const sp = new URLSearchParams();
+                if (type && type.slug !== 'top-free') sp.set('type', type.slug);
+                if (g.device === 'ipad') sp.set('device', g.device);
+                if (g.genreId != null) sp.set('genre', String(g.genreId));
+                if (g.peakDate) sp.set('date', g.peakDate);
+                return (
+                  <div class="history-row">
+                    <div class="history-title">
+                      <strong>{bits.join(' · ')}</strong>
+                      <a class="history-link" href={`/time-machine?${sp.toString()}`}>View chart ›</a>
+                    </div>
+                    <div class="meta">
+                      Peaked at #{g.peak}{g.peakDate ? ` (${formatDate(g.peakDate)})` : ''} · {n} archived {n === 1 ? 'capture' : 'captures'} · {span}
+                      {g.peakWayback && <> · <a class="history-wb" href={g.peakWayback} rel="noopener">archive.org &#8599;</a></>}
+                    </div>
+                    {n >= 3 && (
+                      <div class="spark" title="Chart position over time — taller is higher">
+                        {g.points.slice(-60).map((p: any) => (
+                          <span
+                            class="spark-bar"
+                            style={`height:${Math.round(4 + 26 * (101 - Math.min(p.position, 100)) / 100)}px`}
+                            title={`#${p.position} — ${formatDate(p.date)}`}
+                          ></span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {ratingRows.length > 0 && (
+          <>
+            <div class="section-header">
+              <h2 class="section-title">Ratings Over Time</h2>
+              {ratingRows.length < ratingHistory.length && (
+                <span class="section-detail">sampled from {formatNumber(ratingHistory.length)} archived captures</span>
+              )}
+            </div>
+            <div class="history-card">
+              <table class="ratings-table">
+                <thead>
+                  <tr><th>Date</th><th>Version</th><th>Rating</th><th class="num">Ratings</th><th class="num">Price</th></tr>
+                </thead>
+                <tbody>
+                  {ratingRows.map((r: any) => (
+                    <tr>
+                      <td>{formatDate(r.captured_at)}</td>
+                      <td>{r.version || '—'}</td>
+                      <td>{r.rating_avg != null ? `★ ${Number(r.rating_avg).toFixed(1)}` : '—'}</td>
+                      <td class="num">{r.rating_count != null ? formatNumber(r.rating_count) : '—'}</td>
+                      <td class="num">{formatPrice(r.price_amount, r.price_currency) || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p class="history-note">From archived App Store listing data, captured by the Wayback Machine.</p>
+          </>
+        )}
+
+        {archivedReviews.length > 0 && (
+          <>
+            <div class="section-header">
+              <h2 class="section-title">Archived Reviews</h2>
+              {reviewTotal > archivedReviews.length && (
+                <span class="section-detail">{archivedReviews.length} of {formatNumber(reviewTotal)}</span>
+              )}
+            </div>
+            <div class="history-card">
+              {archivedReviews.map((r: any) => (
+                <div class="review">
+                  <div class="review-head">
+                    <span class="review-stars">{starString(r.stars)}</span>
+                    {r.title && <strong class="review-title">{r.title}</strong>}
+                  </div>
+                  <div class="meta">
+                    {[r.author ? `by ${r.author}` : '', r.app_version ? `v${r.app_version}` : '', r.vote_count > 0 ? `${r.vote_sum} of ${r.vote_count} found helpful` : ''].filter(Boolean).join(' · ')}
+                  </div>
+                  {r.body && <p class="review-body">{r.body}</p>}
+                </div>
+              ))}
+            </div>
+            <p class="history-note">Period reviews recovered from Apple's customer-review feeds via the Wayback Machine.</p>
+          </>
+        )}
       </>
     )}
   </div>
@@ -456,10 +820,32 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
     .version {
       border-bottom: 1px solid #e1e1e1;
       padding: 10px;
+      overflow: hidden;
     }
 
     .version:last-child {
       border-bottom: none;
+    }
+
+    /* Era icon extracted from that version's own binary (R2, /icon route) */
+    .v-icon {
+      float: left;
+      width: 29px;
+      height: 29px;
+      margin-right: 8px;
+      background: #f3f3f3;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .v-icon img {
+      display: block;
+      width: 29px;
+      height: 29px;
+    }
+
+    .v-body {
+      overflow: hidden;
     }
 
     .v-title {
@@ -486,18 +872,167 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       margin-right: 10px;
     }
 
+    .file-detail {
+      display: block;
+      overflow: hidden;
+      padding-top: 3px;
+    }
+
     .file-name {
       display: block;
       overflow: hidden;
       color: #8e8e93;
       font-size: 12px;
       line-height: 15px;
-      padding-top: 5px;
+      padding-top: 2px;
       word-break: break-all;
+    }
+
+    .history-wb {
+      color: #385487;
+      font-weight: bold;
+    }
+
+    .copies-toggle {
+      margin-top: 2px;
+    }
+
+    .copies-link {
+      color: #385487;
+      font-weight: bold;
+    }
+
+    .more-copies {
+      margin-top: 6px;
+      font-size: 12px;
+    }
+
+    .more-copies a {
+      color: #385487;
+      font-weight: bold;
     }
 
     .v-nofile {
       margin-top: 4px;
+    }
+
+    /* Wayback history sections (iOS grouped-table style, same as .versions) */
+    .history-card {
+      border: 1px solid #e1e1e1;
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .history-row {
+      border-bottom: 1px solid #e1e1e1;
+      padding: 10px;
+    }
+
+    .history-row:last-child {
+      border-bottom: none;
+    }
+
+    .history-title {
+      font-size: 15px;
+      overflow: hidden;
+    }
+
+    .history-link {
+      float: right;
+      color: #385487;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .tm-more {
+      color: #385487;
+      font-weight: bold;
+    }
+
+    /* Chart-trajectory sparkline: plain divs so it renders on iOS 3+. Bars
+       sit on a shared baseline; taller = higher chart position. */
+    .spark {
+      margin-top: 6px;
+      height: 30px;
+      line-height: 30px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .spark-bar {
+      display: inline-block;
+      vertical-align: bottom;
+      width: 3px;
+      margin-right: 1px;
+      background: #6d84a2;
+    }
+
+    .ratings-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .ratings-table th {
+      text-align: left;
+      color: #8e8e93;
+      font-size: 11px;
+      text-transform: uppercase;
+      padding: 6px 8px;
+      border-bottom: 1px solid #e1e1e1;
+    }
+
+    .ratings-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .ratings-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .ratings-table .num {
+      text-align: right;
+    }
+
+    .review {
+      border-bottom: 1px solid #e1e1e1;
+      padding: 10px;
+    }
+
+    .review:last-child {
+      border-bottom: none;
+    }
+
+    .review-head {
+      font-size: 14px;
+      line-height: 18px;
+    }
+
+    .review-stars {
+      color: #e8901a;
+      letter-spacing: 1px;
+      margin-right: 4px;
+    }
+
+    .review-title {
+      font-size: 15px;
+    }
+
+    .review-body {
+      margin: 6px 0 0 0;
+      font-size: 14px;
+      line-height: 19px;
+      color: #333;
+      word-wrap: break-word;
+    }
+
+    .history-note {
+      margin: 6px 4px 0 4px;
+      color: #8e8e93;
+      font-size: 11px;
+      line-height: 15px;
     }
 
     /* iOS nav-bar style button (3-slice) */
@@ -545,7 +1080,7 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       color: #fff;
       font-weight: bold;
       font-size: 12pt;
-      font-family: "Helvetica Neue", Helvetica, sans-serif;
+      font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif;
       text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.5);
     }
 

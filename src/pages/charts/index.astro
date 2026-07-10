@@ -5,6 +5,7 @@ import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
+import { getPeakLines } from '../../lib/timemachine';
 
 setCacheHeaders(Astro.response, 3600);
 
@@ -53,17 +54,31 @@ if (typeof total !== 'number') {
 
 const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 
+// Historical peak badges ("Peaked at #1 Top Paid · Dec 2010") from the
+// archived charts, for the apps on this page.
+let peakLines: Map<number, string> | undefined;
+if (!dbError && (topChartsApps || []).length) {
+  const ids = (topChartsApps || []).map((a: any) => Number(a.app_store_id)).filter(Boolean);
+  const lines = await getPeakLines(supabase, ids, `top25:${page}:${pageSize}`);
+  if (lines === null) dbError = true;
+  else peakLines = lines;
+}
+
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);
 ---
 
-<Layout title="Top Charts — Legacy Store" activeTab="charts" description="The most-archived apps on Legacy Store — classic iPhone and iPad apps ranked by how many versions the archive holds.">
+<Layout title="Top 25 Most Archived — Legacy Store" activeTab="none" description="The most-archived apps on Legacy Store — classic iPhone and iPad apps ranked by how many versions the archive holds.">
   <div class="content">
     {dbError ? (
       <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
     ) : (
       <>
-        <AppList list={topChartsApps} startRank={offset + 1} />
+        <div class="section-header">
+          <h1 class="section-title">Top 25 Most Archived</h1>
+          <span class="section-detail">Ranked by how many versions the archive holds — not by popularity.</span>
+        </div>
+        <AppList list={topChartsApps} startRank={offset + 1} peakLines={peakLines} />
 
         {totalPages > 1 && (
           <div class="pagination">

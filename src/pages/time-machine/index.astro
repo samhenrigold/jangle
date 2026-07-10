@@ -1,0 +1,418 @@
+---
+import { getSupabaseClient } from '../../lib/supabase';
+import Layout from '../../components/Layout.astro';
+import { cacheGet, cacheSet } from '../../lib/cache';
+import { setCacheHeaders, setDegraded } from '../../lib/http';
+import { iconSrc } from '../../lib/icons';
+import { formatDate, formatNumber } from '../../lib/format';
+import {
+  getChartTypes,
+  getGenreNames,
+  getSnapshotIndex,
+  dedupeByDate,
+  nearestSnapshot,
+  deviceOf,
+  formatPrice,
+  waybackUrl,
+  formatWaybackTs,
+  type Device,
+} from '../../lib/timemachine';
+
+setCacheHeaders(Astro.response, 3600);
+
+const url = new URL(Astro.request.url);
+const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+let dbError = false;
+
+const [chartTypes, snapshotIndex, genreNames] = await Promise.all([
+  getChartTypes(supabase),
+  getSnapshotIndex(supabase),
+  getGenreNames(supabase),
+]);
+if (!chartTypes || !snapshotIndex || !genreNames) dbError = true;
+
+// --- Resolve filters from the query string ---------------------------------
+const typeParam = url.searchParams.get('type') || 'top-free';
+const chartType =
+  (chartTypes || []).find((t) => t.slug === typeParam) || (chartTypes || [])[0];
+
+const ofType = chartType
+  ? (snapshotIndex || []).filter((s) => s.chart_type_id === chartType.id)
+  : [];
+
+const devicesAvailable = new Set<Device>(ofType.map((s) => deviceOf(s.source_url)));
+const deviceParam = url.searchParams.get('device') === 'ipad' ? 'ipad' : 'iphone';
+const device: Device = devicesAvailable.has(deviceParam)
+  ? deviceParam
+  : devicesAvailable.has('iphone') ? 'iphone' : 'ipad';
+
+const ofDevice = ofType.filter((s) => deviceOf(s.source_url) === device);
+
+// Genre options that actually have captures for this chart+device.
+const genreIdsAvailable = Array.from(
+  new Set(ofDevice.filter((s) => s.genre_id != null).map((s) => s.genre_id as number))
+);
+const genreOptions = genreIdsAvailable
+  .map((id) => ({ id, name: genreNames?.get(id) || `Genre ${id}` }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+const genreParam = url.searchParams.get('genre') || 'all';
+const genreId =
+  genreParam !== 'all' && genreIdsAvailable.includes(Number(genreParam))
+    ? Number(genreParam)
+    : null;
+const genreName = genreId != null ? genreNames?.get(genreId) : null;
+
+const dates = dedupeByDate(ofDevice.filter((s) => s.genre_id === genreId));
+
+// Default to the oldest capture — a time machine should land in 2010, not
+// last week. Any ?date= snaps to the nearest real capture. ?date=random picks
+// a day server-side (the 5-min edge TTL keeps it fresh enough to feel random).
+const dateParam = url.searchParams.get('date');
+const snapshot =
+  dateParam === 'random' && dates.length
+    ? dates[Math.floor(Math.random() * dates.length)]
+    : dateParam
+      ? nearestSnapshot(dates, dateParam)
+      : dates[0] || null;
+const snapIdx = snapshot ? dates.findIndex((s) => s.id === snapshot.id) : -1;
+const prevSnap = snapIdx > 0 ? dates[snapIdx - 1] : null;
+const nextSnap = snapIdx >= 0 && snapIdx < dates.length - 1 ? dates[snapIdx + 1] : null;
+
+// Year jump links: first capture date of each year present.
+const firstDateOfYear = new Map<string, string>();
+for (const s of dates) {
+  const y = s.snapshot_date.slice(0, 4);
+  if (!firstDateOfYear.has(y)) firstDateOfYear.set(y, s.snapshot_date);
+}
+
+function qs(over: Record<string, string | null | undefined>): string {
+  const params: Record<string, string> = {
+    type: chartType?.slug || 'top-free',
+    device,
+    genre: genreId != null ? String(genreId) : 'all',
+    date: snapshot?.snapshot_date || '',
+    ...Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined)) as any,
+  };
+  const sp = new URLSearchParams();
+  if (params.type && params.type !== 'top-free') sp.set('type', params.type);
+  if (params.device && params.device !== 'iphone') sp.set('device', params.device);
+  if (params.genre && params.genre !== 'all') sp.set('genre', params.genre);
+  if (params.date) sp.set('date', params.date);
+  const q = sp.toString();
+  return q ? `/time-machine?${q}` : '/time-machine';
+}
+
+// --- Chart entries for the chosen capture -----------------------------------
+let positions: any[] = [];
+if (!dbError && snapshot) {
+  const posCacheKey = `tm:positions:${snapshot.id}`;
+  const cached = cacheGet<any[]>(posCacheKey);
+  if (cached) {
+    positions = cached;
+  } else {
+    const { data, error } = await supabase
+      .from('chart_positions')
+      .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, icon_url)')
+      .eq('chart_snapshot_id', snapshot.id)
+      .order('position', { ascending: true })
+      .limit(300);
+    if (error) {
+      console.error('chart_positions query failed:', error.message);
+      dbError = true;
+    } else {
+      positions = data || [];
+      cacheSet(posCacheKey, positions, 10 * 60 * 1000);
+    }
+  }
+}
+
+// A transient DB failure must not render as a cacheable empty page.
+if (dbError) setDegraded(Astro.response);
+
+const snapshotDateLabel = snapshot ? formatDate(snapshot.snapshot_date) : '';
+const deviceLabel = device === 'ipad' ? 'iPad' : 'iPhone';
+// "Top 300 Paid Games for iPhone" — the chart depth is part of the name.
+const chartCore = chartType
+  ? chartType.name.startsWith('Top ') && positions.length > 0
+    ? `Top ${positions.length} ${chartType.name.slice(4)}`
+    : chartType.name
+  : '';
+const headline = chartType
+  ? `${chartCore}${genreName ? ` ${genreName}` : ''} for ${deviceLabel}`
+  : 'Time Machine';
+const sourceLink = snapshot ? waybackUrl(snapshot.captured_ts, snapshot.source_url) : '';
+const pageTitle = snapshot
+  ? `${headline} — ${snapshotDateLabel} — Time Machine — Legacy Store`
+  : 'Time Machine — Legacy Store';
+---
+
+<Layout
+  title={pageTitle}
+  activeTab="timemachine"
+  description={`What did the App Store look like${snapshotDateLabel ? ` on ${snapshotDateLabel}` : ''}? Real historical Top Charts recovered from Apple's RSS feeds via the Wayback Machine.`}
+>
+  <div class="content">
+    {dbError ? (
+      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+    ) : (
+      <>
+        <div class="section-header">
+          <h1 class="section-title">Time Machine</h1>
+          <span class="section-detail">{formatNumber((snapshotIndex || []).length)} charts captured, 2010–2025</span>
+        </div>
+        <p class="tm-blurb">
+          Real App Store charts, recovered from Apple's RSS feeds archived by the Wayback Machine.
+        </p>
+
+        <div class="tm-controls">
+          <div class="tm-typerow">
+            {(chartTypes || []).map((t) => (
+              <a
+                href={qs({ type: t.slug, genre: 'all', date: dateParam ? snapshot?.snapshot_date : null })}
+                class={t.id === chartType?.id ? 'tm-type active' : 'tm-type'}
+              >{t.name}</a>
+            ))}
+          </div>
+
+          {devicesAvailable.size > 1 && (
+            <div class="tm-devicerow">
+              <a href={qs({ device: 'iphone', genre: 'all' })} class={device === 'iphone' ? 'tm-type active' : 'tm-type'}>iPhone</a>
+              <a href={qs({ device: 'ipad', genre: 'all' })} class={device === 'ipad' ? 'tm-type active' : 'tm-type'}>iPad</a>
+            </div>
+          )}
+
+          <form method="get" action="/time-machine" class="tm-form filters">
+            {chartType && chartType.slug !== 'top-free' && <input type="hidden" name="type" value={chartType.slug} />}
+            {device !== 'iphone' && <input type="hidden" name="device" value={device} />}
+            {genreOptions.length > 0 && (
+              <select name="genre" onchange="this.form.submit()">
+                <option value="all" selected={genreId == null}>All apps</option>
+                {genreOptions.map((g) => (
+                  <option value={String(g.id)} selected={genreId === g.id}>{g.name}</option>
+                ))}
+              </select>
+            )}
+            <select name="date" onchange="this.form.submit()">
+              {dates.map((s) => (
+                <option value={s.snapshot_date} selected={snapshot?.id === s.id}>{formatDate(s.snapshot_date)}</option>
+              ))}
+            </select>
+            <button type="submit" class="tm-go">Go</button>
+          </form>
+
+          {(firstDateOfYear.size > 1 || dates.length > 3) && (
+            <div class="tm-years">
+              {Array.from(firstDateOfYear.entries()).map(([year, date]) => (
+                <a
+                  href={qs({ date })}
+                  class={snapshot && snapshot.snapshot_date.slice(0, 4) === year ? 'tm-year active' : 'tm-year'}
+                >{year}</a>
+              ))}
+              {dates.length > 3 && <a href={qs({ date: 'random' })} class="tm-year tm-random">Random day</a>}
+            </div>
+          )}
+        </div>
+
+        {snapshot ? (
+          <>
+            <div class="section-header">
+              <h2 class="section-title">{headline}</h2>
+              <span class="section-detail">
+                {sourceLink
+                  ? <><a class="tm-link" href={sourceLink} rel="noopener">Snapshot</a> captured {formatWaybackTs(snapshot.captured_ts) || snapshotDateLabel}</>
+                  : <>Snapshot from {snapshotDateLabel}</>}
+              </span>
+            </div>
+
+            <ul class="applist">
+              {positions.map((p: any) => {
+                const icon = iconSrc(p.apps?.icon_url) || iconSrc(p.artwork_url);
+                const price = formatPrice(p.price_amount, p.price_currency);
+                const inLibrary = !!p.apps;
+                const href = inLibrary ? `/app/${p.apps.app_store_id || p.apps.id}` : null;
+                const inner = (
+                  <>
+                    <span class="rank">{p.position}</span>
+                    <span class="icon">{icon && <img src={icon} alt="" width="57" height="57" loading="lazy" />}</span>
+                    {inLibrary && <span class="chevron">&#8250;</span>}
+                    {price && <span class="count">{price}{inLibrary && <span class="count-label">in the archive</span>}</span>}
+                    <span class="info">
+                      <span class="name">{p.display_name}</span>
+                      <span class="meta">{p.developer_name}</span>
+                    </span>
+                  </>
+                );
+                return (
+                  <li class="app">
+                    {href
+                      ? <a class="app-link" href={href}>{inner}</a>
+                      : <span class="app-link tm-unlinked">{inner}</span>}
+                  </li>
+                );
+              })}
+              {positions.length === 0 && <li class="applist-empty">This capture is empty — try another date.</li>}
+            </ul>
+
+            <div class="pagination">
+              {prevSnap && <a href={qs({ date: prevSnap.snapshot_date })}>&#9664; {formatDate(prevSnap.snapshot_date)}</a>}
+              <span>{snapshotDateLabel}</span>
+              {nextSnap && <a href={qs({ date: nextSnap.snapshot_date })}>{formatDate(nextSnap.snapshot_date)} &#9654;</a>}
+            </div>
+
+            <p class="tm-source">
+              Apps marked with &#8250; are in the archive — tap through to install that era's version.
+            </p>
+
+            <a class="tm-top25" href="/charts">
+              <span class="tm-top25-chevron">&#8250;</span>
+              <span class="tm-top25-title">Top 25 Most Archived</span>
+              <span class="tm-top25-sub">The apps with the most versions preserved in the archive</span>
+            </a>
+          </>
+        ) : (
+          <p class="applist-empty tm-empty">No archived captures for this chart yet.</p>
+        )}
+      </>
+    )}
+  </div>
+
+  <style>
+    .tm-blurb {
+      margin: 0 4px 10px 4px;
+      color: #666;
+      font-size: 13px;
+      line-height: 17px;
+    }
+
+    .tm-link {
+      color: #385487;
+      font-weight: bold;
+    }
+
+    .tm-controls {
+      margin: 0 0 4px 0;
+      padding: 8px;
+      border: 1px solid #e1e1e1;
+      border-radius: 8px;
+      background: #f7f7f8;
+    }
+
+    .tm-typerow, .tm-devicerow {
+      margin-bottom: 6px;
+    }
+
+    .tm-type {
+      display: inline-block;
+      padding: 4px 8px;
+      margin: 0 2px 2px 0;
+      color: #385487;
+      font-size: 13px;
+      border-radius: 6px;
+    }
+
+    .tm-type.active {
+      background: #6d84a2;
+      color: #fff;
+      font-weight: bold;
+    }
+
+    .tm-form {
+      margin: 0;
+    }
+
+    .tm-form select {
+      max-width: 100%;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
+    }
+
+    .tm-go {
+      padding: 6px 12px;
+    }
+
+    /* One scrolling strip — never wraps (momentum scrolling exists since iOS 5) */
+    .tm-years {
+      margin-top: 6px;
+      white-space: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .tm-year {
+      display: inline-block;
+      padding: 3px 6px;
+      margin: 0 1px 2px 0;
+      color: #385487;
+      font-size: 12px;
+      font-weight: bold;
+      border-radius: 5px;
+    }
+
+    .tm-year.active {
+      background: #6d84a2;
+      color: #fff;
+    }
+
+    .tm-random {
+      border: 1px solid #c8d0dc;
+      background: #fff;
+    }
+
+    /* Chart entries not in our library aren't tappable; dim the chevron slot */
+    .tm-unlinked {
+      cursor: default;
+    }
+
+    .tm-source {
+      margin: 14px 4px 0 4px;
+      color: #8e8e93;
+      font-size: 12px;
+      line-height: 16px;
+    }
+
+    /* iOS grouped-table row linking the old Top 25 tab's content */
+    .tm-top25 {
+      display: block;
+      margin: 12px 0 0 0;
+      padding: 10px;
+      border: 1px solid #e1e1e1;
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .tm-top25:active {
+      background-color: #e8ebef;
+    }
+
+    .tm-top25-chevron {
+      float: right;
+      margin: 8px 0 0 6px;
+      color: #c7c7cc;
+      font-size: 24px;
+      line-height: 26px;
+      font-weight: bold;
+      font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif;
+    }
+
+    .tm-top25-title {
+      display: block;
+      font-size: 16px;
+      font-weight: bold;
+      line-height: 20px;
+    }
+
+    .tm-top25-sub {
+      display: block;
+      color: #666;
+      font-size: 13px;
+      line-height: 17px;
+    }
+
+    .tm-empty {
+      display: block;
+      list-style: none;
+    }
+  </style>
+</Layout>

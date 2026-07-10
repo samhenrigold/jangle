@@ -1,36 +1,26 @@
 // All formatting happens server-side (workerd ships full ICU), so old devices
-// get pre-formatted text without running any client JS. The try/catch
-// fallbacks only matter for exotic runtimes without Intl.
+// get pre-formatted text without running any client JS — and we can lean on
+// Intl without fallbacks.
 
-let numberFmt: Intl.NumberFormat | null = null;
-try {
-  numberFmt = new Intl.NumberFormat('en-US');
-} catch {
-  numberFmt = null;
-}
+const numberFmt = new Intl.NumberFormat('en-US');
 
 export function formatNumber(n: unknown): string {
   const v = Number(n);
   if (!Number.isFinite(v)) return String(n ?? '');
-  return numberFmt ? numberFmt.format(v) : String(v);
+  return numberFmt.format(v);
 }
 
-let dateFmt: Intl.DateTimeFormat | null = null;
-try {
-  dateFmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-} catch {
-  dateFmt = null;
-}
+// UTC so a date never shifts across the server's timezone.
+const dateFmt = new Intl.DateTimeFormat('en-US', {
+  month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+});
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-// "Mar 12, 2011" — UTC so a date never shifts across the server's timezone.
+// "Mar 12, 2011"
 export function formatDate(iso: unknown): string {
   if (!iso || typeof iso !== 'string') return '';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  if (dateFmt) return dateFmt.format(d);
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  return dateFmt.format(d);
 }
 
 // "11.7 MB" — decimal-ish sizes people expect on download buttons.

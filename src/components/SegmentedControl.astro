@@ -18,8 +18,8 @@ const { activeTab = 'featured', variant = 'nav' } = Astro.props;
     <span class="segment-text segment-text-long">Categories</span>
   </a>
   <div class="segment-divider"></div>
-  <a href="/charts" class={`segment-button ${activeTab === 'charts' ? 'active' : ''}`}>
-    <span class="segment-text">Top 25</span>
+  <a href="/time-machine" class={`segment-button ${activeTab === 'timemachine' ? 'active' : ''}`}>
+    <span class="segment-text segment-text-long">Time Machine</span>
   </a>
 </div>
 
@@ -131,7 +131,7 @@ const { activeTab = 'featured', variant = 'nav' } = Astro.props;
   }
 
   .segment-text {
-    font-family: "Helvetica Neue", "Helvetica", sans-serif;
+    font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif;
     font-weight: bold;
     font-size: 10pt;
     color: #fff;

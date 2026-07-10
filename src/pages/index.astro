@@ -5,6 +5,18 @@ import AppList from '../components/AppList.astro';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { setCacheHeaders, setDegraded } from '../lib/http';
 import { FEATURED_APP_STORE_IDS } from '../lib/featured';
+import { iconSrc } from '../lib/icons';
+import { formatDate } from '../lib/format';
+import {
+  getChartTypes,
+  getSnapshotIndex,
+  getSnapshotPositions,
+  getPeakLines,
+  dedupeByDate,
+  nearestSnapshot,
+  deviceOf,
+  formatPrice,
+} from '../lib/timemachine';
 
 setCacheHeaders(Astro.response, 3600);
 
@@ -40,6 +52,56 @@ if (!featuredApps) {
   }
 }
 
+// --- "This week, years ago" module (plan 010 charts) ------------------------
+// Deterministic per calendar week so the page stays edge-cacheable: the week
+// number picks Top Free vs Top Paid, and the capture nearest to this
+// month/day 15 years back is shown.
+const [chartTypes, snapshotIndex] = await Promise.all([
+  getChartTypes(supabase),
+  getSnapshotIndex(supabase),
+]);
+if (!chartTypes || !snapshotIndex) dbError = true;
+
+let heroSnapshot: any = null;
+let heroType: any = null;
+let heroEntries: any[] = [];
+let heroYearsAgo = 0;
+if (!dbError && (snapshotIndex || []).length) {
+  const now = new Date();
+  const week = Math.floor((now.getTime() - Date.UTC(now.getUTCFullYear(), 0, 1)) / (7 * 86400000));
+  const slug = week % 2 ? 'top-paid' : 'top-free';
+  heroType = (chartTypes || []).find((t: any) => t.slug === slug) || (chartTypes || [])[0];
+  heroYearsAgo = 15;
+  const target = `${now.getUTCFullYear() - heroYearsAgo}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+  const candidates = dedupeByDate(
+    (snapshotIndex || []).filter(
+      (s) => s.chart_type_id === Number(heroType?.id) && s.genre_id === null && deviceOf(s.source_url) === 'iphone'
+    )
+  );
+  heroSnapshot = nearestSnapshot(candidates, target);
+  if (heroSnapshot) {
+    const positions = await getSnapshotPositions(supabase, heroSnapshot.id);
+    if (positions === null) {
+      dbError = true;
+    } else {
+      heroEntries = positions.slice(0, 5);
+    }
+  }
+}
+
+// Peak-chart badges for the curated list.
+let peakLines: Map<number, string> | undefined;
+if (!dbError && featuredApps && featuredApps.length) {
+  const lines = await getPeakLines(supabase, FEATURED_APP_STORE_IDS, 'featured');
+  if (lines === null) dbError = true;
+  else peakLines = lines;
+}
+
+const heroDateLabel = heroSnapshot ? formatDate(heroSnapshot.snapshot_date) : '';
+const heroHref = heroSnapshot && heroType
+  ? `/time-machine?${heroType.slug !== 'top-free' ? `type=${heroType.slug}&` : ''}date=${heroSnapshot.snapshot_date}`
+  : '/time-machine';
+
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);
 ---
@@ -49,15 +111,162 @@ if (dbError) setDegraded(Astro.response);
     {dbError ? (
       <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
     ) : (
-      <AppList list={featuredApps} />
+      <>
+        {heroSnapshot && heroEntries.length > 0 && (
+          <>
+            <div class="section-header">
+              <h2 class="section-title">{heroYearsAgo} Years Ago This Week</h2>
+            </div>
+            <div class="hero-card">
+              <div class="hero-head">
+                <span class="hero-chart">{heroType.name}</span> · the real App Store chart from {heroDateLabel}
+              </div>
+              <ul class="hero-list">
+                {heroEntries.map((p: any) => {
+                  const icon = iconSrc(p.apps?.icon_url) || iconSrc(p.artwork_url);
+                  const price = formatPrice(p.price_amount, p.price_currency);
+                  const href = p.apps ? `/app/${p.apps.app_store_id || p.apps.id}` : null;
+                  const inner = (
+                    <>
+                      <span class="hero-rank">{p.position}</span>
+                      <span class="hero-icon">{icon && <img src={icon} alt="" width="29" height="29" loading="lazy" />}</span>
+                      <span class="hero-price">{price}</span>
+                      <span class="hero-name">{p.display_name}</span>
+                    </>
+                  );
+                  return (
+                    <li class="hero-row">
+                      {href ? <a class="hero-row-link" href={href}>{inner}</a> : <span class="hero-row-link">{inner}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+              <a class="hero-cta" href={heroHref}>See the full chart in the Time Machine <span class="hero-cta-chevron">&#8250;</span></a>
+            </div>
+          </>
+        )}
+
+        <div class="section-header">
+          <h2 class="section-title">Featured</h2>
+          <span class="section-detail">greatest hits from the archive</span>
+        </div>
+        <AppList list={featuredApps} peakLines={peakLines} />
+      </>
     )}
   </div>
 
   <style>
     .content {
-      max-width: 1200px;
+      max-width: 900px;
       margin: 0 auto;
-      padding: 0 20px;
+      padding: 0 8px;
+    }
+
+    .hero-card {
+      border: 1px solid #c8d0dc;
+      border-radius: 8px;
+      background: #eef1f6;
+      overflow: hidden;
+    }
+
+    .hero-head {
+      padding: 8px 10px;
+      color: #4c566c;
+      font-size: 12px;
+      line-height: 16px;
+      border-bottom: 1px solid #d5dbe4;
+    }
+
+    .hero-chart {
+      font-weight: bold;
+    }
+
+    .hero-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      background: #fff;
+    }
+
+    .hero-row {
+      border-bottom: 1px solid #e1e1e1;
+    }
+
+    .hero-row-link {
+      display: block;
+      padding: 6px 10px;
+      overflow: hidden;
+    }
+
+    a.hero-row-link:active {
+      background-color: #e8ebef;
+    }
+
+    .hero-rank {
+      float: left;
+      width: 20px;
+      margin-right: 6px;
+      line-height: 29px;
+      text-align: center;
+      font-size: 14px;
+      font-weight: bold;
+      color: #8e8e93;
+    }
+
+    .hero-icon {
+      float: left;
+      width: 29px;
+      height: 29px;
+      margin-right: 8px;
+      background: #f3f3f3;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .hero-icon img {
+      display: block;
+      width: 29px;
+      height: 29px;
+    }
+
+    .hero-price {
+      float: right;
+      margin-left: 8px;
+      line-height: 29px;
+      color: #385487;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .hero-name {
+      display: block;
+      overflow: hidden;
+      line-height: 29px;
+      font-size: 14px;
+      font-weight: bold;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hero-cta {
+      display: block;
+      padding: 9px 10px;
+      background: #f7f7f8;
+      border-top: 1px solid #d5dbe4;
+      color: #385487;
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    .hero-cta:active {
+      background-color: #e8ebef;
+    }
+
+    .hero-cta-chevron {
+      float: right;
+      color: #c7c7cc;
+      font-size: 18px;
+      line-height: 18px;
     }
   </style>
 </Layout>

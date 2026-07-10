@@ -6,6 +6,7 @@ import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
+import { getChartTypes, getSnapshotIndex, deviceOf } from '../../lib/timemachine';
 
 const { genreId } = Astro.params;
 const url = new URL(Astro.request.url);
@@ -80,6 +81,36 @@ if (!dbError && !list) {
 
 const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 
+// Time Machine module: archived chart captures exist for ~30 genres
+// (chart_snapshots.genre_id = genres.id). One row per chart type with the
+// years we can show.
+type GenreChartRow = { slug: string; name: string; years: { year: string; date: string }[] };
+let genreCharts: GenreChartRow[] = [];
+if (!dbError) {
+  const [types, index] = await Promise.all([getChartTypes(supabase), getSnapshotIndex(supabase)]);
+  if (!types || !index) {
+    dbError = true;
+  } else {
+    for (const t of types) {
+      // iPhone feeds only — the genre module is a teaser, not a full browser.
+      const snaps = index.filter(
+        (s) => s.genre_id === Number(genreId) && s.chart_type_id === Number(t.id) && deviceOf(s.source_url) === 'iphone'
+      );
+      if (!snaps.length) continue;
+      const firstOfYear = new Map<string, string>();
+      for (const s of snaps) {
+        const y = s.snapshot_date.slice(0, 4);
+        if (!firstOfYear.has(y)) firstOfYear.set(y, s.snapshot_date);
+      }
+      genreCharts.push({
+        slug: t.slug,
+        name: t.name,
+        years: Array.from(firstOfYear.entries()).map(([year, date]) => ({ year, date })),
+      });
+    }
+  }
+}
+
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);
 
@@ -109,7 +140,84 @@ const genreName = genre?.genre_name || 'Category';
             )}
           </div>
         )}
+
+        {genreCharts.length > 0 && (
+          <>
+            <div class="section-header">
+              <h2 class="section-title">Time Machine</h2>
+              <span class="section-detail">archived {genreName} charts</span>
+            </div>
+            <div class="genre-charts">
+              {genreCharts.map((row) => (
+                <div class="genre-chart-row">
+                  <span class="genre-chart-name">{row.name}</span>
+                  <span class="genre-chart-years">
+                    {row.years.map((y) => (
+                      <a class="genre-chart-year" href={`/time-machine?${row.slug !== 'top-free' ? `type=${row.slug}&` : ''}genre=${genreId}&date=${y.date}`}>{y.year}</a>
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p class="genre-chart-note">Real {genreName} Top Charts from Apple's RSS feeds, archived by the Wayback Machine.</p>
+          </>
+        )}
       </>
     )}
   </div>
+
+  <style>
+    .genre-charts {
+      border: 1px solid #e1e1e1;
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .genre-chart-row {
+      border-bottom: 1px solid #e1e1e1;
+      padding: 8px 10px;
+      overflow: hidden;
+    }
+
+    .genre-chart-row:last-child {
+      border-bottom: none;
+    }
+
+    .genre-chart-name {
+      float: left;
+      width: 110px;
+      font-size: 14px;
+      font-weight: bold;
+      line-height: 22px;
+    }
+
+    .genre-chart-years {
+      display: block;
+      overflow: hidden;
+    }
+
+    .genre-chart-year {
+      display: inline-block;
+      padding: 2px 7px;
+      margin: 1px 2px 1px 0;
+      color: #385487;
+      font-size: 13px;
+      font-weight: bold;
+      border: 1px solid #c8d0dc;
+      border-radius: 6px;
+      background: #f7f7f8;
+    }
+
+    .genre-chart-year:active {
+      background: #e8ebef;
+    }
+
+    .genre-chart-note {
+      margin: 6px 4px 0 4px;
+      color: #8e8e93;
+      font-size: 11px;
+      line-height: 15px;
+    }
+  </style>
 </Layout>
