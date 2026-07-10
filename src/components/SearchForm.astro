@@ -3,6 +3,7 @@
 // re-sort here (that mutated the shared cached array and double-sorted).
 // The query text lives in the nav search field; this form only refines an
 // existing search, carrying q through a hidden input.
+import { formatNumber } from '../lib/format';
 const { q = '', genreId = '', sort = 'versions', genres = [] } = Astro.props;
 ---
 <form class="filters" method="get" action="/search">
@@ -10,7 +11,7 @@ const { q = '', genreId = '', sort = 'versions', genres = [] } = Astro.props;
   <select name="genre" aria-label="Genre">
     <option value="">All genres</option>
     {genres.map((g: any) => (
-      <option value={g.id} selected={String(g.id) === String(genreId)}>{g.genre_name} ({g.app_count})</option>
+      <option value={g.id} selected={String(g.id) === String(genreId)}>{g.genre_name} ({formatNumber(g.app_count)})</option>
     ))}
   </select>
   <select name="sort" aria-label="Sort by">

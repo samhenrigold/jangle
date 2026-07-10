@@ -3,6 +3,7 @@ import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { sortGenres } from '../../lib/genres';
+import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 
 setCacheHeaders(Astro.response, 86400);
@@ -44,7 +45,7 @@ if (dbError) setDegraded(Astro.response);
           <li class={isGameSubgenre(genre) ? 'cat sub' : 'cat'}>
             <a href={`/categories/${genre.id}`} class="cat-link">
               <span class="chevron">&#8250;</span>
-              <span class="cat-count">{genre.app_count}</span>
+              <span class="cat-count">{formatNumber(genre.app_count)}</span>
               <span class="cat-name">{genre.genre_name}</span>
             </a>
           </li>

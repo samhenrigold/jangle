@@ -6,6 +6,7 @@ import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { buildPrefixTsquery, clampPage, clampPageSize } from '../../lib/search';
 import { sortGenres } from '../../lib/genres';
+import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 
 setCacheHeaders(Astro.response, 600);
@@ -164,7 +165,7 @@ function pageHref(p: number) {
               <h1 class="section-title">
                 {q ? `Results for “${q}”` : `${genreName || 'Genre'} apps`}
               </h1>
-              {Number(total) > 0 && <span class="section-detail">{Number(total)} found</span>}
+              {Number(total) > 0 && <span class="section-detail">{formatNumber(total)} found</span>}
             </div>
             <AppList list={searchResults} />
             {totalPages > 1 && (
