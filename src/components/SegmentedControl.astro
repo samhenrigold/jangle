@@ -1,12 +1,15 @@
 ---
 interface Props {
   activeTab?: string;
+  // 'nav' positions absolutely inside the 60px nav row (default);
+  // 'static' flows in-place (used for the search page's tab row).
+  variant?: 'nav' | 'static';
 }
 
-const { activeTab = 'featured' } = Astro.props;
+const { activeTab = 'featured', variant = 'nav' } = Astro.props;
 ---
 
-<div class="segment-bar">
+<div class={variant === 'static' ? 'segment-bar is-static' : 'segment-bar'}>
   <a href="/" class={`segment-button ${activeTab === 'featured' ? 'active' : ''}`}>
     <span class="segment-text">Featured</span>
   </a>
@@ -144,6 +147,13 @@ const { activeTab = 'featured' } = Astro.props;
   
   .segment-text-long {
     font-size: 9pt;
+  }
+
+  /* Static variant flows in-place (search page tab row) */
+  .segment-bar.is-static {
+    position: static;
+    margin: 0 auto;
+    max-width: 280pt;
   }
 
   /* iPad and larger screens */

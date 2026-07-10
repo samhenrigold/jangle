@@ -3,26 +3,41 @@ import SegmentedControl from './SegmentedControl.astro';
 import SearchButton from './SearchButton.astro';
 import SearchField from './SearchField.astro';
 
-const { activeTab = 'featured' } = Astro.props;
+// mobileSearch swaps the phone layout from [tabs + search button] to
+// [search field over tabs] (used on /search, so phones keep the tab bar
+// instead of dead-ending on a lone search field).
+const { activeTab = 'featured', searchQuery = '', mobileSearch = false } = Astro.props;
 ---
 
-<nav class="top-nav">
+<nav class={mobileSearch ? 'top-nav has-mobile-search' : 'top-nav'}>
   <div class="nav-background"></div>
-  <div class="nav-content">
+  {mobileSearch && (
+    <div class="mobile-rows">
+      <form class="mobile-search-form" action="/search" method="get" onsubmit="this.q.value = this.q.value.trim()">
+        <div class="mobile-search-field">
+          <div class="search-field-icon"></div>
+          <input type="search" class="search-input" name="q" placeholder="Search" value={searchQuery} autocapitalize="off" autocorrect="off" />
+        </div>
+      </form>
+      <div class="mobile-tabs">
+        <SegmentedControl activeTab={activeTab} variant="static" />
+      </div>
+    </div>
+  )}
+  <div class="main-row">
     <SegmentedControl activeTab={activeTab} />
-    <SearchButton activeTab={activeTab} />
-    <SearchField />
+    {!mobileSearch && <SearchButton activeTab={activeTab} />}
     <div class="spacer"></div>
+    <SearchField value={searchQuery} />
   </div>
 </nav>
 
 <style>
   .top-nav {
     position: relative;
-    height: 60px;
     width: 100%;
   }
-  
+
   .nav-background {
     position: absolute;
     top: 0;
@@ -31,33 +46,135 @@ const { activeTab = 'featured' } = Astro.props;
     bottom: 0;
     background: url('/UINavigationBar/UINavigationBarDefaultBackground.png');
     background-repeat: repeat-x;
-    background-size: 1px 60px;
+    background-size: 1px 100%;
   }
-  
-  .nav-content {
+
+  .main-row {
     position: relative;
-    height: 100%;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-box-align: center;
-    -webkit-box-pack: center;
+    height: 60px;
   }
-  
+
+  /* Mobile search rows (only rendered with mobileSearch) */
+  .mobile-rows {
+    display: none;
+  }
+
+  .has-mobile-search .mobile-rows {
+    display: block;
+    position: relative;
+    padding: 9px 8px;
+  }
+
+  .has-mobile-search .main-row {
+    display: none;
+  }
+
+  .mobile-search-form {
+    display: block;
+    margin: 0;
+    padding: 0;
+  }
+
+  .mobile-search-field {
+    display: block;
+    width: 100%;
+    height: 26pt;
+    position: relative;
+    background-image: url('/UISearchField/UISearchFieldLeftSharp.png');
+    background-repeat: no-repeat;
+    background-size: 13pt 26pt;
+    background-position: left center;
+    margin: 0;
+  }
+
+  .mobile-search-field::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 13pt;
+    right: 13pt;
+    height: 26pt;
+    background-image: url('/UISearchField/UISearchFieldMiddleSharp.png');
+    background-repeat: repeat-x;
+    background-size: 1pt 26pt;
+  }
+
+  .mobile-search-field::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 13pt;
+    height: 26pt;
+    background-image: url('/UISearchField/UISearchFieldRightSharp.png');
+    background-repeat: no-repeat;
+    background-size: 13pt 26pt;
+    background-position: right center;
+  }
+
+  .search-field-icon {
+    position: absolute;
+    top: 50%;
+    left: 8pt;
+    width: 12pt;
+    height: 12pt;
+    margin-top: -6pt;
+    background-image: url('/UISearchField/UISearchFieldIcon.png');
+    background-repeat: no-repeat;
+    background-size: 12pt 12pt;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .search-input {
+    position: absolute;
+    top: 0;
+    left: 25pt;
+    right: 13pt;
+    height: 26pt;
+    border: none;
+    background: transparent;
+    font-family: "Helvetica Neue", "Helvetica", sans-serif;
+    color: #000;
+    padding: 0 4pt;
+    z-index: 1;
+    box-sizing: border-box;
+    line-height: 26pt;
+    margin: 0;
+    /* Old iOS draws its own search-field bezel over type=search inputs
+       unless appearance is reset — ours comes from the slice images. */
+    -webkit-appearance: none;
+    border-radius: 0;
+  }
+
+  .search-input:focus {
+    outline: none;
+  }
+
+  .mobile-tabs {
+    margin-top: 8px;
+  }
+
   /* Spacer for iPad layout - hidden by default */
   .spacer {
     display: none;
   }
-  
+
   /* iPad and larger screens */
   @media screen and (min-width: 768px) {
-    .nav-content {
+    .main-row,
+    .has-mobile-search .main-row {
       display: -webkit-box;
       -webkit-box-orient: horizontal;
       -webkit-box-align: center;
       -webkit-box-pack: justify;
       padding: 0 8px;
     }
-    
+
+    .has-mobile-search .mobile-rows {
+      display: none;
+    }
+
     .spacer {
       display: block;
       width: 33.333%;
@@ -69,7 +186,27 @@ const { activeTab = 'featured' } = Astro.props;
   @media only screen and (-webkit-min-device-pixel-ratio: 2) {
     .nav-background {
       background: url('/UINavigationBar/UINavigationBarDefaultBackground@2x.png');
-      background-size: 1px 60px;
+      background-size: 1px 100%;
+    }
+
+    .mobile-search-field {
+      background-image: url('/UISearchField/UISearchFieldLeftSharp@2x.png');
+      background-size: 13pt 26pt;
+    }
+
+    .mobile-search-field::before {
+      background-image: url('/UISearchField/UISearchFieldMiddleSharp@2x.png');
+      background-size: 1pt 26pt;
+    }
+
+    .mobile-search-field::after {
+      background-image: url('/UISearchField/UISearchFieldRightSharp@2x.png');
+      background-size: 13pt 26pt;
+    }
+
+    .search-field-icon {
+      background-image: url('/UISearchField/UISearchFieldIcon@2x.png');
+      background-size: 12pt 12pt;
     }
   }
 </style>
