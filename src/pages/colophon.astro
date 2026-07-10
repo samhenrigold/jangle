@@ -1,0 +1,348 @@
+---
+import Layout from '../components/Layout.astro';
+import { setCacheHeaders } from '../lib/http';
+
+// Static prose — cache hard at the edge.
+setCacheHeaders(Astro.response, 86400, 3600);
+---
+
+<Layout
+  title="Colophon — Legacy Store"
+  activeTab="none"
+  description="How Legacy Store is made: a metadata-only preservation archive of the App Store's first fifteen years, and the pipeline behind it."
+>
+  <div class="content colophon">
+    <h1 class="col-title">Colophon</h1>
+    <p class="col-lede">How Legacy Store is made.</p>
+
+    <p>
+      Legacy Store is a preservation archive of iOS applications from the App Store's
+      first fifteen years — the delisted, the abandoned, the quietly removed, and the
+      merely old. It exists so that a person holding a first-generation iPad or an
+      iPhone 3G can find an app that still runs on it, know <em>before</em> downloading
+      whether it will actually launch, and install it straight onto the device. It is
+      also a time machine: a record of how each app — and the App Store around it —
+      looked and changed, year over year, screenshot by screenshot.
+    </p>
+    <p>
+      Everything here is open source, and everything about how it works is written
+      down. This page is the long version.
+    </p>
+
+    <h2 class="col-h2">What this is, and why it exists</h2>
+    <p>
+      There are roughly <strong>65,000 distinct iOS app binaries</strong> in the archive,
+      deduplicated by content hash from <strong>over 90,000 archived file copies</strong> held on
+      the Internet Archive. Around a third of those copies are exact duplicates of one
+      another; the archive treats the binary — identified by its hash — as the thing
+      worth knowing about, and folds the copies together.
+    </p>
+    <p>
+      The problem this solves is specific and, if you have ever tried it, familiar.
+      Many archived <code>.ipa</code> files are still FairPlay-encrypted: they install onto a
+      jailbroken or sideload-capable device without complaint, then refuse to launch.
+      The old way to find a working copy is to tap link after link until one happens
+      to run. Legacy Store answers the question up front — <em>will this actually run on
+      my device?</em> — for every app, before you spend a download on it. On a listing it
+      shows each version's copies with their install status, hides the copies that are
+      no longer on the Internet Archive, and, when you visit on an old iPhone or iPad,
+      reads your iOS version and can hide the versions too new to install on it.
+    </p>
+    <p>
+      The archive is <strong>metadata-only</strong>. It never re-hosts the app binaries
+      themselves; those live on the Internet Archive, and Legacy Store links out to
+      them. What Legacy Store contributes is the analysis, the history, and the index
+      that makes the whole collection navigable.
+    </p>
+
+    <h2 class="col-h2">Where the data comes from</h2>
+    <p>Three public sources, used politely:</p>
+    <ul>
+      <li>
+        <strong>The Internet Archive</strong> — the home of the binaries themselves, and, through
+        its <strong>Wayback Machine</strong>, the source for nearly all of the historical record:
+        archived App Store pages, chart feeds, rating snapshots, and reviews going
+        back to 2010.
+      </li>
+      <li>
+        <strong>Common Crawl</strong> — a complementary bulk source of archived pages where its
+        crawl schedule adds timeline points the Wayback Machine doesn't have.
+      </li>
+      <li>
+        <strong>Apple's own public endpoints and media CDN</strong> — the iTunes Lookup API for
+        structured metadata, and Apple's still-live image servers, which turn out to
+        hold a great many screenshots and icons that have otherwise vanished from the
+        web.
+      </li>
+    </ul>
+    <p>
+      New Internet Archive dumps are ingested automatically on a regular schedule.
+      When new items appear, they are diffed against what's already known by file
+      hash, and only genuinely new binaries enter the analysis pipeline. Nothing is
+      scraped twice.
+    </p>
+
+    <h2 class="col-h2">How each app is analyzed</h2>
+    <p>This is the part the project is quietly proud of.</p>
+    <p>
+      To decide whether an app will run, you do not need the whole app. You need the
+      first few hundred kilobytes of its Mach-O executable — the compiled program's
+      header. So that is all Legacy Store fetches. Using <strong>HTTP range requests</strong>
+      against the raw <code>.ipa</code> on the Internet Archive, the pipeline reads the Zip
+      archive's directory from the tail, locates the executable inside it, and pulls
+      just enough of it to parse the header. A typical binary is understood from well
+      under a megabyte of transfer, with no full download and no server-side
+      extraction.
+    </p>
+    <p>From that header it reads:</p>
+    <ul>
+      <li>
+        <strong>FairPlay encryption</strong> — the Mach-O <code>cryptid</code> flag. This is the canary. An
+        encrypted binary installs but never launches, so <code>cryptid</code> <em>is</em> the
+        will-it-run answer. Every app is labelled <strong>installable</strong> or <strong>encrypted</strong>
+        accordingly.
+      </li>
+      <li>
+        <strong>CPU architectures</strong> — armv6, armv7, arm64 — read from each slice of a fat
+        binary, so a page can tell you an app runs on an armv6 iPhone 3G, or only on
+        64-bit hardware.
+      </li>
+      <li>
+        <strong>The minimum iOS version</strong> the binary declares, and the SDK it was built
+        against.
+      </li>
+      <li>
+        <strong>Embedded frameworks, app extensions, and Watch apps</strong>, detected from the
+        archive's file listing.
+      </li>
+      <li>
+        <strong>Languages</strong>, from the app's <code>Info.plist</code> localizations and its <code>.lproj</code>
+        directories.
+      </li>
+    </ul>
+    <p>
+      <strong>Icons</strong> get their own care. The pipeline prefers Apple's high-resolution
+      <code>iTunesArtwork</code> where present, and otherwise extracts the app's icon from loose
+      PNGs or from the compiled <code>Assets.car</code> asset catalog. Apple's iOS-optimized
+      "CgBI" PNGs — which ordinary image viewers can't read — are converted back to
+      standard PNG. Every icon is <strong>content-addressed</strong> by the hash of its bytes,
+      deduplicated across every app and version that shares it, and served from a
+      CDN rather than from Apple's long-dead artwork servers. Because a single icon is
+      tied to the exact binary it came out of, listings can show the <em>oldest</em> icon an
+      app ever shipped by default, and switch to the icon closest to a given version
+      or chart date when you're looking at a moment in time.
+    </p>
+    <p>
+      Because the analysis is a property of the <em>binary</em>, not of any one archived
+      copy, each distinct binary is scanned exactly once. The raw artifacts pulled
+      during that scan — the plists, the parsed header, the file manifest — are kept
+      in object storage, so any new field wanted later can be derived from them
+      without ever crawling the Internet Archive again.
+    </p>
+
+    <h2 class="col-h2">The time machine</h2>
+    <p>The second half of the archive reconstructs history.</p>
+    <p>
+      <strong>Top Charts.</strong> Historical Top Free, Top Paid, Top Grossing, and New app charts,
+      rebuilt from archived App Store chart feeds — dense from around 2010, with
+      near-weekly resolution in the early years and coverage continuing into the
+      2020s. You can pick a chart and a date and see what the App Store looked like
+      that week — real rankings, complete with period prices, developers, and artwork,
+      and a link to the exact Wayback capture each was rebuilt from. Device-segmented
+      charts (separate iPhone and iPad lists) and editorial feature placements are
+      recovered alongside them.
+    </p>
+    <p>
+      <strong>Rating history.</strong> By reading archived iTunes Lookup responses over time, the
+      archive reconstructs how an app's rating count and average moved year over year —
+      so a popular app's page can show its ratings climbing from a few thousand in 2013
+      to a few hundred thousand later.
+    </p>
+    <p>
+      <strong>Reviews.</strong> Period-authentic customer reviews, recovered from archived review
+      feeds with their original stars, titles, bodies, authors, approximate dates, and
+      the app version each was written against. This coverage is opportunistic by
+      nature — it exists only where someone historically fetched the feed — so it is
+      present for some apps and absent for others, honestly.
+    </p>
+    <p>
+      <strong>Per-version store pages.</strong> For each app, the archive assembles a sequence of
+      its App Store listing as it changed release to release: descriptions,
+      screenshots, "What's New" notes, prices, and release dates. Reading these in
+      order is like flipping through the app's own changelog as its makers wrote it.
+    </p>
+    <p>
+      <strong>Screenshots that came back.</strong> Many old screenshot URLs are dead in the web
+      archive. Apple, however, rarely deletes the underlying images. Legacy Store
+      checks Apple's live CDN first — often recovering an original-resolution image
+      from a URL the archive only ever saw as a thumbnail — and falls back to the
+      Wayback Machine's raw capture, recording an honest miss only when an image is
+      genuinely gone. Recovered images are content-addressed and deduplicated like
+      everything else.
+    </p>
+
+    <h2 class="col-h2">Version history and downloads</h2>
+    <p>
+      Every version of every app carries the App Store download identifier Apple
+      assigned it (the <code>externalVersionId</code>). Because those identifiers are handed out
+      in order over time, they can be <em>dated</em> by calibration: given the known dates of
+      the identifiers around it, any version's release moment can be placed on the
+      timeline even when no dated archived page survives for it. That is what lets the
+      archive line up a moment in history with the exact <code>.ipa</code> you'd want to install
+      to match it.
+    </p>
+    <p>
+      Downloads themselves go two ways. On a legacy iOS device, Legacy Store serves an
+      <code>itms-services://</code> install manifest for true over-the-air installation straight
+      onto the hardware. On a desktop browser, it hands you the <code>.ipa</code> directly. In
+      both cases the file itself is fetched from the Internet Archive — Legacy Store
+      points the way, it doesn't hold the goods.
+    </p>
+
+    <h2 class="col-h2">How it's built</h2>
+    <ul>
+      <li>
+        <strong>The site</strong> is an <a class="col-link" href="https://astro.build/" rel="noopener">Astro</a> application deployed on
+        <strong>Cloudflare Pages</strong>. It is deliberately server-rendered with essentially no
+        client-side JavaScript, and its interface is built from the original iOS UIKit
+        image slices, so that it stays usable on genuinely old versions of Mobile
+        Safari — the same devices the archive is for.
+      </li>
+      <li>
+        <strong>Structured data</strong> lives in <strong>Postgres</strong> (hosted on
+        <a class="col-link" href="https://supabase.com/" rel="noopener">Supabase</a>), with public, read-only access: the tables
+        that describe apps, versions, binaries, charts, ratings, and reviews can be
+        queried directly.
+      </li>
+      <li>
+        <strong>Files</strong> — normalized icons, recovered screenshots, and the raw metadata
+        artifacts of every scan — live in <strong>Cloudflare R2</strong> object storage,
+        content-addressed throughout.
+      </li>
+    </ul>
+    <p>
+      The analysis pipeline that feeds all of this runs continuously and unattended,
+      scanning new binaries and folding in new archived pages on a schedule.
+    </p>
+
+    <h2 class="col-h2">Ethics, privacy, and method</h2>
+    <p>A few principles govern the whole thing:</p>
+    <ul>
+      <li>
+        <strong>Metadata only, never the binaries.</strong> Legacy Store analyzes and indexes; it
+        does not re-host the apps. Those remain on the Internet Archive, which the
+        site links to directly.
+      </li>
+      <li>
+        <strong>No personal data.</strong> Genuine purchase copies carry the original buyer's Apple
+        ID and account details in their metadata. Those fields are stripped out on
+        ingest — removed entirely, not merely hidden — so nothing personally
+        identifying is ever stored or served.
+      </li>
+      <li>
+        <strong>Polite crawlers.</strong> The pipeline is rate-limited and backs off hard when a
+        source signals it should slow down. The archives this project depends on are
+        a shared resource, and range requests, hash-based deduplication, and a
+        scan-once policy exist in part so the project asks as little of them as
+        possible.
+      </li>
+      <li>
+        <strong>Content-addressed and deduplicated</strong> everywhere, so the same bytes are never
+        stored or fetched twice.
+      </li>
+    </ul>
+
+    <h2 class="col-h2">Acknowledgements</h2>
+    <p>Legacy Store stands on other people's work and is glad to say so.</p>
+    <ul>
+      <li>
+        The <strong>Internet Archive</strong> and its <strong>Wayback Machine</strong>, without which almost
+        none of this would exist — both as the home of the binaries and as the memory
+        of the App Store itself.
+      </li>
+      <li><strong>Common Crawl</strong>, for the complementary view of the archived web.</li>
+      <li>
+        <strong>Apple's</strong> public metadata endpoints and long-lived media CDN, which keep far
+        more of the past reachable than one might expect.
+      </li>
+      <li>
+        The broader <strong>iOS preservation and jailbreak community</strong>, whose collecting,
+        documenting, and tooling made a project like this thinkable.
+      </li>
+      <li>The <strong>open-source ecosystem</strong> the whole thing is built on.</li>
+    </ul>
+    <p class="col-outro">
+      The project's codename, if you were wondering, is <strong>Jangle</strong> — Apple's codename
+      for the iTunes Store was "Jingle," and alliteration is fun.
+    </p>
+  </div>
+
+  <style>
+    .colophon {
+      max-width: 640px;
+      padding-bottom: 32px;
+    }
+
+    .col-title {
+      margin: 14px 0 2px 0;
+      font-size: 26px;
+      line-height: 30px;
+      color: #4c566c;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+
+    .col-lede {
+      margin: 0 0 12px 0;
+      color: #8e8e93;
+      font-size: 15px;
+      font-style: italic;
+    }
+
+    .col-h2 {
+      margin: 26px 0 8px 0;
+      font-size: 18px;
+      line-height: 22px;
+      color: #4c566c;
+      border-top: 1px solid #e1e1e1;
+      padding-top: 18px;
+    }
+
+    .colophon p {
+      margin: 0 0 12px 0;
+      font-size: 15px;
+      line-height: 22px;
+      color: #333;
+    }
+
+    .colophon ul {
+      margin: 0 0 12px 0;
+      padding-left: 20px;
+    }
+
+    .colophon li {
+      margin: 0 0 8px 0;
+      font-size: 15px;
+      line-height: 22px;
+      color: #333;
+    }
+
+    .colophon code {
+      font-family: Menlo, Monaco, "Courier New", monospace;
+      font-size: 13px;
+      background: #f3f3f3;
+      border-radius: 4px;
+      padding: 1px 4px;
+      word-break: break-word;
+    }
+
+    .col-link {
+      color: #385487;
+      font-weight: bold;
+    }
+
+    .col-outro {
+      margin-top: 18px;
+      color: #666;
+    }
+  </style>
+</Layout>

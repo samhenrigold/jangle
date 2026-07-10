@@ -4,7 +4,10 @@ import { iconSrc } from '../lib/icons';
 // startRank: when set, rows are numbered from it (charts / category "top" lists).
 // peakLines: optional map of app_store_id → "Peaked at #1 Top Paid · Dec 2010"
 // badge text sourced from the archived charts (plan 010).
-const { list = [], startRank, peakLines } = Astro.props;
+// iconShas: optional map of internal app id → oldest-icon sha256 (period-
+// authentic icon extracted from the app's earliest binary); when present it
+// wins over the modern iTunes CDN icon_url.
+const { list = [], startRank, peakLines, iconShas } = Astro.props;
 
 // app_store_name is the iTunes listing name ("Angry Birds HD Free") and
 // disambiguates the many apps whose bundle display_name is identical.
@@ -12,7 +15,8 @@ const titleOf = (a: any) => a.app_store_name || a.display_name || a.bundle_id;
 ---
 <ul class="applist">
   {list.map((a: any, i: number) => {
-    const icon = iconSrc(a.icon_url);
+    const oldSha = iconShas && a.id != null ? iconShas.get(Number(a.id)) : null;
+    const icon = oldSha ? `/icon/${oldSha}` : iconSrc(a.icon_url);
     const count = a.version_count == null ? null : Number(a.version_count);
     const peak = peakLines && a.app_store_id ? peakLines.get(Number(a.app_store_id)) : null;
     return (

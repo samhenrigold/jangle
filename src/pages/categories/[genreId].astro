@@ -7,6 +7,7 @@ import { clampPage, clampPageSize } from '../../lib/search';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getChartTypes, getSnapshotIndex, deviceOf } from '../../lib/timemachine';
+import { getOldestIcons } from '../../lib/appicons';
 
 const { genreId } = Astro.params;
 const url = new URL(Astro.request.url);
@@ -81,6 +82,12 @@ if (!dbError && !list) {
 
 const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 
+// Period-authentic (oldest) icons for the list.
+let iconShas: Map<number, string> | undefined;
+if (!dbError && (list || []).length) {
+  iconShas = await getOldestIcons(supabase, (list || []).map((a: any) => Number(a.id)));
+}
+
 // Time Machine module: archived chart captures exist for ~30 genres
 // (chart_snapshots.genre_id = genres.id). One row per chart type with the
 // years we can show.
@@ -127,7 +134,7 @@ const genreName = genre?.genre_name || 'Category';
           <h1 class="section-title">{genreName}</h1>
           {typeof total === 'number' && total > 0 && <span class="section-detail">{formatNumber(total)} apps</span>}
         </div>
-        <AppList list={list} startRank={offset + 1} />
+        <AppList list={list} startRank={offset + 1} iconShas={iconShas} />
 
         {totalPages > 1 && (
           <div class="pagination">

@@ -218,6 +218,14 @@ export function formatWaybackTs(ts: string | null | undefined): string {
   return waybackTsFmt.format(d);
 }
 
+// 14-digit Wayback timestamp → "Jul 2012". Used as an approximate review date:
+// review feeds carry no per-entry date in our store, so the capture month is
+// the best "written on or before" anchor we have.
+export function formatApproxMonthYear(ts: string | null | undefined): string {
+  if (!ts || ts.length < 6) return '';
+  return formatMonthYear(`${ts.slice(0, 4)}-${ts.slice(4, 6)}-01`);
+}
+
 // Several captures of the same feed can land on one date (partner-link URL
 // variants, different limit= sizes). One snapshot per date: the deepest chart
 // wins, then the cleaner (shorter) source URL.

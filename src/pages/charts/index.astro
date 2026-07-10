@@ -6,6 +6,7 @@ import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getPeakLines } from '../../lib/timemachine';
+import { getOldestIcons } from '../../lib/appicons';
 
 setCacheHeaders(Astro.response, 3600);
 
@@ -57,11 +58,13 @@ const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 // Historical peak badges ("Peaked at #1 Top Paid · Dec 2010") from the
 // archived charts, for the apps on this page.
 let peakLines: Map<number, string> | undefined;
+let iconShas: Map<number, string> | undefined;
 if (!dbError && (topChartsApps || []).length) {
   const ids = (topChartsApps || []).map((a: any) => Number(a.app_store_id)).filter(Boolean);
   const lines = await getPeakLines(supabase, ids, `top25:${page}:${pageSize}`);
   if (lines === null) dbError = true;
   else peakLines = lines;
+  iconShas = await getOldestIcons(supabase, (topChartsApps || []).map((a: any) => Number(a.id)));
 }
 
 // A transient DB failure must not render as a cacheable empty page.
@@ -78,7 +81,7 @@ if (dbError) setDegraded(Astro.response);
           <h1 class="section-title">Top 25 Most Archived</h1>
           <span class="section-detail">Ranked by how many versions the archive holds — not by popularity.</span>
         </div>
-        <AppList list={topChartsApps} startRank={offset + 1} peakLines={peakLines} />
+        <AppList list={topChartsApps} startRank={offset + 1} peakLines={peakLines} iconShas={iconShas} />
 
         {totalPages > 1 && (
           <div class="pagination">

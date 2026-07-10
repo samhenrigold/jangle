@@ -226,7 +226,9 @@ const pageTitle = snapshot
 
             <ul class="applist">
               {positions.map((p: any) => {
-                const icon = iconSrc(p.apps?.icon_url) || iconSrc(p.artwork_url);
+                // Period artwork from the capture itself is closest to the
+                // moment; fall back to the app's current library icon.
+                const icon = iconSrc(p.artwork_url) || iconSrc(p.apps?.icon_url);
                 const price = formatPrice(p.price_amount, p.price_currency);
                 const inLibrary = !!p.apps;
                 const href = inLibrary ? `/app/${p.apps.app_store_id || p.apps.id}` : null;

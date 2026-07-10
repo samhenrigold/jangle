@@ -3,7 +3,10 @@ export type SortDir = 'asc' | 'desc';
 
 export function coerceSortKey(input: any): SortKey {
   const s = String(input || '').toLowerCase();
-  return (s === 'date' || s === 'version' || s === 'build' || s === 'ios' || s === 'id') ? s : 'build';
+  // Default to semantic version, NOT build: build numbers are non-monotonic
+  // across an app's history (e.g. Netflix v9.55.0=build 1812 but v7.2.5=build
+  // 3005564), so a build-desc default sinks the newest versions to the bottom.
+  return (s === 'date' || s === 'version' || s === 'build' || s === 'ios' || s === 'id') ? s : 'version';
 }
 
 export function coerceDir(input: any): SortDir {

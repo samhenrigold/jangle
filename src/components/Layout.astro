@@ -26,5 +26,50 @@ const {
     <main class="site-main">
       <slot />
     </main>
+
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <span class="footer-brand">Legacy Store</span>
+        <span class="footer-sep">·</span>
+        <a href="/colophon">Colophon</a>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com/samhenrigold/jangle" rel="noopener">Source</a>
+        <span class="footer-sep">·</span>
+        <a href="https://archive.org/" rel="noopener">Files on the Internet Archive</a>
+      </div>
+      <p class="footer-note">A metadata-only preservation archive. App binaries are hosted by the Internet Archive, not here.</p>
+    </footer>
+
+    <style>
+      .site-footer {
+        border-top: 1px solid #e1e1e1;
+        margin-top: 24px;
+        padding: 16px 8px 28px 8px;
+        text-align: center;
+        color: #8e8e93;
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .site-footer-inner a {
+        color: #385487;
+        font-weight: bold;
+      }
+
+      .footer-brand {
+        font-weight: bold;
+        color: #666;
+      }
+
+      .footer-sep {
+        margin: 0 6px;
+        color: #c7c7cc;
+      }
+
+      .footer-note {
+        margin: 6px auto 0 auto;
+        max-width: 460px;
+      }
+    </style>
   </body>
 </html>

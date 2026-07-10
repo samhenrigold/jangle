@@ -9,7 +9,8 @@ import { formatDate, formatFileSize } from '../../lib/format';
 import { dedupeFilesByHash, fileLabel, sortGroupsByPreference } from '../../lib/files';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { formatNumber } from '../../lib/format';
-import { getChartTypes, getGenreNames, deviceOf, starString, sampleEvenly, formatMonthYear, formatPrice, waybackUrl } from '../../lib/timemachine';
+import { getChartTypes, getGenreNames, deviceOf, starString, sampleEvenly, formatMonthYear, formatPrice, formatApproxMonthYear } from '../../lib/timemachine';
+import { pickOldestIcon } from '../../lib/appicons';
 
 const { id } = Astro.params;
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
@@ -204,7 +205,7 @@ if (!dbError && appStoreId) {
       if (cached) return cached;
       const { data, error } = await supabase
         .from('chart_positions')
-        .select('position, chart_snapshots(snapshot_date, genre_id, chart_type_id, source_url, captured_ts)')
+        .select('position, chart_snapshots(snapshot_date, genre_id, chart_type_id, source_url)')
         .eq('app_store_id', appStoreId)
         .limit(1000);
       if (error) {
@@ -237,7 +238,7 @@ if (!dbError && appStoreId) {
       if (cached) return cached;
       const { data, error, count } = await supabase
         .from('app_reviews')
-        .select('review_id, stars, title, body, author, app_version, vote_sum, vote_count', { count: 'exact' })
+        .select('review_id, stars, title, body, author, app_version, vote_sum, vote_count, reviewed_at, first_seen_ts', { count: 'exact' })
         .eq('app_store_id', appStoreId)
         .order('vote_sum', { ascending: false })
         .order('review_id', { ascending: false })
@@ -291,8 +292,6 @@ if (!dbError && chartHistory.length) {
       g.points.push({
         date: snap.snapshot_date,
         position: Number(row.position),
-        ts: snap.captured_ts || null,
-        url: snap.source_url || '',
       });
     }
     for (const g of groups.values()) {
@@ -302,9 +301,7 @@ if (!dbError && chartHistory.length) {
       for (const p of g.points) if (!byDate.has(p.date)) byDate.set(p.date, p);
       g.points = Array.from(byDate.values());
       g.peak = Math.min(...g.points.map((p: any) => p.position));
-      const peakPoint = g.points.find((p: any) => p.position === g.peak);
-      g.peakDate = peakPoint?.date;
-      g.peakWayback = peakPoint ? waybackUrl(peakPoint.ts, peakPoint.url) : '';
+      g.peakDate = g.points.find((p: any) => p.position === g.peak)?.date;
       g.first = g.points[0].date;
       g.last = g.points[g.points.length - 1].date;
     }
@@ -341,18 +338,26 @@ for (const f of ipaFiles) {
 
 const binaryOf = (f: any) => (f?.binary_sha1 ? binariesBySha1.get(f.binary_sha1) : undefined);
 
-// The app header shows the icon extracted from the newest archived binary
-// (era-accurate, R2-hosted) before falling back to the iTunes CDN icon_url.
-// Scan in semantic version order — release_date sorts null-dated (often
-// mislabeled) versions first and can surface a repack's icon.
-let eraIconSha: string | null = null;
-for (const v of sortVersions(versions || [], 'version', 'desc')) {
-  for (const g of sortGroupsByPreference(dedupeFilesByHash(filesByVersionId.get(v.id) || []), binaryOf, v.minimum_os_version)) {
-    const sha = binaryOf(g.file)?.icon_sha256;
-    if (sha) { eraIconSha = sha; break; }
-  }
-  if (eraIconSha) break;
-}
+// The app header shows the OLDEST archived icon (period-authentic) extracted
+// from the app's own binaries, before falling back to the iTunes CDN icon_url.
+// pickOldestIcon takes the earliest version carrying an icon and its least
+// anachronistic copy. (Time-scoped surfaces — version rows, Time Machine —
+// instead show the icon closest to that moment.)
+const oldestIconSha = pickOldestIcon(
+  (versions || []).flatMap((v: any) =>
+    (filesByVersionId.get(v.id) || []).map((f: any) => {
+      const bin = binaryOf(f);
+      return {
+        version_string: v.version_string,
+        minimum_os_version: v.minimum_os_version,
+        icon_sha256: bin?.icon_sha256 || null,
+        install_status: bin?.install_status,
+        architectures: bin?.architectures,
+        has_extensions: bin?.has_extensions,
+      };
+    })
+  )
+);
 
 const installableVersionCount = (versions || []).filter((v: any) =>
   (filesByVersionId.get(v.id) || []).some((f: any) => binaryOf(f)?.install_status === 'installable')
@@ -428,7 +433,7 @@ const SORT_OPTIONS: [string, string][] = [
 ];
 
 const appTitle = appData ? (appData.app_store_name || appData.display_name || appData.bundle_id) : 'App';
-const appIcon = eraIconSha ? `/icon/${eraIconSha}` : (appData ? iconSrc(appData.icon_url) : '');
+const appIcon = oldestIconSha ? `/icon/${oldestIconSha}` : (appData ? iconSrc(appData.icon_url) : '');
 const genreName = appData?.genres?.genre_name;
 const developerName = appData?.developers?.artist_name;
 const versionNoun = versions.length === 1 ? 'archived version' : 'archived versions';
@@ -639,7 +644,6 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
                     </div>
                     <div class="meta">
                       Peaked at #{g.peak}{g.peakDate ? ` (${formatDate(g.peakDate)})` : ''} · {n} archived {n === 1 ? 'capture' : 'captures'} · {span}
-                      {g.peakWayback && <> · <a class="history-wb" href={g.peakWayback} rel="noopener">archive.org &#8599;</a></>}
                     </div>
                     {n >= 3 && (
                       <div class="spark" title="Chart position over time — taller is higher">
@@ -705,7 +709,12 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
                     {r.title && <strong class="review-title">{r.title}</strong>}
                   </div>
                   <div class="meta">
-                    {[r.author ? `by ${r.author}` : '', r.app_version ? `v${r.app_version}` : '', r.vote_count > 0 ? `${r.vote_sum} of ${r.vote_count} found helpful` : ''].filter(Boolean).join(' · ')}
+                    {(() => {
+                      const when = r.reviewed_at
+                        ? formatDate(r.reviewed_at)
+                        : (formatApproxMonthYear(r.first_seen_ts) ? `~${formatApproxMonthYear(r.first_seen_ts)}` : '');
+                      return [r.author ? `by ${r.author}` : '', when, r.app_version ? `v${r.app_version}` : '', r.vote_count > 0 ? `${r.vote_sum} of ${r.vote_count} found helpful` : ''].filter(Boolean).join(' · ');
+                    })()}
                   </div>
                   {r.body && <p class="review-body">{r.body}</p>}
                 </div>
@@ -886,11 +895,6 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       line-height: 15px;
       padding-top: 2px;
       word-break: break-all;
-    }
-
-    .history-wb {
-      color: #385487;
-      font-weight: bold;
     }
 
     .copies-toggle {

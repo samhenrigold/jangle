@@ -7,6 +7,7 @@ import { setCacheHeaders, setDegraded } from '../lib/http';
 import { FEATURED_APP_STORE_IDS } from '../lib/featured';
 import { iconSrc } from '../lib/icons';
 import { formatDate } from '../lib/format';
+import { getOldestIcons } from '../lib/appicons';
 import {
   getChartTypes,
   getSnapshotIndex,
@@ -89,12 +90,14 @@ if (!dbError && (snapshotIndex || []).length) {
   }
 }
 
-// Peak-chart badges for the curated list.
+// Peak-chart badges + period-authentic (oldest) icons for the curated list.
 let peakLines: Map<number, string> | undefined;
+let iconShas: Map<number, string> | undefined;
 if (!dbError && featuredApps && featuredApps.length) {
   const lines = await getPeakLines(supabase, FEATURED_APP_STORE_IDS, 'featured');
   if (lines === null) dbError = true;
   else peakLines = lines;
+  iconShas = await getOldestIcons(supabase, featuredApps.map((a: any) => Number(a.id)));
 }
 
 const heroDateLabel = heroSnapshot ? formatDate(heroSnapshot.snapshot_date) : '';
@@ -123,7 +126,7 @@ if (dbError) setDegraded(Astro.response);
               </div>
               <ul class="hero-list">
                 {heroEntries.map((p: any) => {
-                  const icon = iconSrc(p.apps?.icon_url) || iconSrc(p.artwork_url);
+                  const icon = iconSrc(p.artwork_url) || iconSrc(p.apps?.icon_url);
                   const price = formatPrice(p.price_amount, p.price_currency);
                   const href = p.apps ? `/app/${p.apps.app_store_id || p.apps.id}` : null;
                   const inner = (
@@ -150,7 +153,7 @@ if (dbError) setDegraded(Astro.response);
           <h2 class="section-title">Featured</h2>
           <span class="section-detail">greatest hits from the archive</span>
         </div>
-        <AppList list={featuredApps} peakLines={peakLines} />
+        <AppList list={featuredApps} peakLines={peakLines} iconShas={iconShas} />
       </>
     )}
   </div>
