@@ -2,9 +2,20 @@
 // deploy replaces those hashed files, so any HTML still cached at the edge from
 // a previous deploy points at assets that now 404 — the page renders unstyled
 // until its edge entry expires. Capping the edge TTL bounds that post-deploy
-// skew window (e.g. categories was s-maxage=86400 → up to 24h of broken pages).
-// Raise this only alongside a purge-on-deploy hook.
-const MAX_HTML_CDN_SECONDS = 300;
+// skew window; the cap and a purge-on-deploy hook are two halves of one knob.
+//
+// At 300s every page's requested TTL (600/3600/86400) was flattened to 5 min,
+// so expensive RPC-backed pages re-ran ~12×/hr per PoP under bot crawl. Raised
+// to 1h: the worst-case post-deploy skew becomes ≤1h (acceptable for the
+// pre-launch beta with infrequent manual deploys), and per-page TTLs below 1h
+// (e.g. search at 600) are now honored as authored rather than clamped.
+//
+// To lift this to 86400 (categories/stats/colophon are genuinely daily) without
+// any skew risk, purge the edge cache on deploy, e.g. in the deploy step:
+//   curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
+//     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+//     --data '{"purge_everything":true}'
+const MAX_HTML_CDN_SECONDS = 3600;
 
 // Sets shared-cache headers. Browser TTL stays short so users pick up
 // fixes; the CDN TTL does the heavy lifting (bounded by MAX_HTML_CDN_SECONDS).

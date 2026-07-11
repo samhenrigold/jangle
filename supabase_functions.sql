@@ -6,6 +6,15 @@
 -- instead of aggregating all of app_versions on every call. Return type no
 -- longer includes search_vector (was pure egress waste). Return-type change
 -- requires DROP+CREATE rather than CREATE OR REPLACE.
+--
+-- app_store_id is BIGINT: apps.app_store_id is bigint and 19 modern apps
+-- (Fortnite, GTA III/SA, ...) exceed the int4 max, so an INTEGER return column
+-- threw "integer out of range" for any page containing one (audit item 1).
+--
+-- The ORDER BY is split into two static branches rather than CASE-wrapping the
+-- sort keys: a CASE-based ORDER BY is opaque to the planner and cannot use
+-- idx_apps_version_count_name (it sorted the whole filtered set, ~330ms mean);
+-- the static DESC branch does an index top-N (~1ms) (audit item 2).
 DROP FUNCTION IF EXISTS get_apps_sorted_by_version_count(integer,integer,bigint,boolean,text);
 CREATE FUNCTION get_apps_sorted_by_version_count(
   p_limit INTEGER DEFAULT 20, p_offset INTEGER DEFAULT 0,
@@ -13,34 +22,55 @@ CREATE FUNCTION get_apps_sorted_by_version_count(
   p_search_query TEXT DEFAULT NULL
 )
 RETURNS TABLE (
-  id BIGINT, bundle_id TEXT, app_store_id INTEGER, app_store_name TEXT,
+  id BIGINT, bundle_id TEXT, app_store_id BIGINT, app_store_name TEXT,
   developer_id BIGINT, genre_id BIGINT, copyright TEXT, icon_url TEXT,
   display_name TEXT, executable_name TEXT, created_at TIMESTAMPTZ,
   developer_artist_name TEXT, genre_genre_name TEXT,
   version_count BIGINT, first_version_date TIMESTAMPTZ
 )
-LANGUAGE SQL STABLE
+LANGUAGE plpgsql STABLE
 SET search_path = public, pg_temp
 AS $$
-  SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
-         a.developer_id, a.genre_id, a.copyright, a.icon_url,
-         a.display_name, a.executable_name, a.created_at,
-         d.artist_name, g.genre_name,
-         a.version_count::bigint, a.first_version_date
-  FROM apps a
-  LEFT JOIN developers d ON a.developer_id = d.id
-  LEFT JOIN genres g ON a.genre_id = g.id
-  WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
-    AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
-  ORDER BY
-    CASE WHEN p_ascending THEN a.version_count END ASC,
-    CASE WHEN NOT p_ascending THEN a.version_count END DESC,
-    a.display_name ASC
-  LIMIT p_limit OFFSET p_offset;
+BEGIN
+  IF p_ascending THEN
+    RETURN QUERY
+      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
+             a.developer_id, a.genre_id, a.copyright, a.icon_url,
+             a.display_name, a.executable_name, a.created_at,
+             d.artist_name, g.genre_name,
+             a.version_count::bigint, a.first_version_date
+      FROM apps a
+      LEFT JOIN developers d ON a.developer_id = d.id
+      LEFT JOIN genres g ON a.genre_id = g.id
+      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+      ORDER BY a.version_count ASC, a.display_name ASC
+      LIMIT p_limit OFFSET p_offset;
+  ELSE
+    RETURN QUERY
+      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
+             a.developer_id, a.genre_id, a.copyright, a.icon_url,
+             a.display_name, a.executable_name, a.created_at,
+             d.artist_name, g.genre_name,
+             a.version_count::bigint, a.first_version_date
+      FROM apps a
+      LEFT JOIN developers d ON a.developer_id = d.id
+      LEFT JOIN genres g ON a.genre_id = g.id
+      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+      ORDER BY a.version_count DESC, a.display_name ASC
+      LIMIT p_limit OFFSET p_offset;
+  END IF;
+END;
 $$;
 GRANT EXECUTE ON FUNCTION get_apps_sorted_by_version_count(integer,integer,bigint,boolean,text) TO anon, authenticated;
 
 -- Function to get apps sorted by first version date (precomputed column).
+-- Same bigint + branched-ORDER-BY treatment as above. Default null placement
+-- (ASC -> NULLS LAST, DESC -> NULLS FIRST) reproduces the old CASE-based null
+-- handling exactly (nulls behave as +infinity). NOTE: the descending path here
+-- still lacks a matching index (there is no index on first_version_date) and
+-- falls back to a sort; add apps(first_version_date) to make it an index top-N.
 DROP FUNCTION IF EXISTS get_apps_sorted_by_first_version_date(integer,integer,bigint,boolean,text);
 CREATE FUNCTION get_apps_sorted_by_first_version_date(
   p_limit INTEGER DEFAULT 20, p_offset INTEGER DEFAULT 0,
@@ -48,31 +78,46 @@ CREATE FUNCTION get_apps_sorted_by_first_version_date(
   p_search_query TEXT DEFAULT NULL
 )
 RETURNS TABLE (
-  id BIGINT, bundle_id TEXT, app_store_id INTEGER, app_store_name TEXT,
+  id BIGINT, bundle_id TEXT, app_store_id BIGINT, app_store_name TEXT,
   developer_id BIGINT, genre_id BIGINT, copyright TEXT, icon_url TEXT,
   display_name TEXT, executable_name TEXT, created_at TIMESTAMPTZ,
   developer_artist_name TEXT, genre_genre_name TEXT,
   version_count BIGINT, first_version_date TIMESTAMPTZ
 )
-LANGUAGE SQL STABLE
+LANGUAGE plpgsql STABLE
 SET search_path = public, pg_temp
 AS $$
-  SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
-         a.developer_id, a.genre_id, a.copyright, a.icon_url,
-         a.display_name, a.executable_name, a.created_at,
-         d.artist_name, g.genre_name,
-         a.version_count::bigint, a.first_version_date
-  FROM apps a
-  LEFT JOIN developers d ON a.developer_id = d.id
-  LEFT JOIN genres g ON a.genre_id = g.id
-  WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
-    AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
-  ORDER BY
-    CASE WHEN p_ascending THEN (a.first_version_date IS NULL) ELSE (a.first_version_date IS NOT NULL) END,
-    CASE WHEN p_ascending THEN a.first_version_date END ASC,
-    CASE WHEN NOT p_ascending THEN a.first_version_date END DESC,
-    a.display_name ASC
-  LIMIT p_limit OFFSET p_offset;
+BEGIN
+  IF p_ascending THEN
+    RETURN QUERY
+      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
+             a.developer_id, a.genre_id, a.copyright, a.icon_url,
+             a.display_name, a.executable_name, a.created_at,
+             d.artist_name, g.genre_name,
+             a.version_count::bigint, a.first_version_date
+      FROM apps a
+      LEFT JOIN developers d ON a.developer_id = d.id
+      LEFT JOIN genres g ON a.genre_id = g.id
+      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+      ORDER BY a.first_version_date ASC, a.display_name ASC
+      LIMIT p_limit OFFSET p_offset;
+  ELSE
+    RETURN QUERY
+      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
+             a.developer_id, a.genre_id, a.copyright, a.icon_url,
+             a.display_name, a.executable_name, a.created_at,
+             d.artist_name, g.genre_name,
+             a.version_count::bigint, a.first_version_date
+      FROM apps a
+      LEFT JOIN developers d ON a.developer_id = d.id
+      LEFT JOIN genres g ON a.genre_id = g.id
+      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+      ORDER BY a.first_version_date DESC, a.display_name ASC
+      LIMIT p_limit OFFSET p_offset;
+  END IF;
+END;
 $$;
 GRANT EXECUTE ON FUNCTION get_apps_sorted_by_first_version_date(integer,integer,bigint,boolean,text) TO anon, authenticated;
 

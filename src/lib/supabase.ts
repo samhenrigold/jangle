@@ -40,5 +40,12 @@ export function getSupabaseClient(runtimeEnv?: RuntimeEnv) {
   }
   return createClient(supabaseUrl, supabaseAnonKey, {
     auth: { persistSession: false },
+    global: {
+      // The degraded convention catches errors but not hangs: without a
+      // client-side deadline a slow/stuck PostgREST request rides the platform
+      // limit and holds the isolate. An 8s abort turns a hang into a normal
+      // error, so callers fall through to setDegraded() (503, no-store) instead.
+      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(8000) }),
+    },
   });
 }

@@ -11,7 +11,14 @@ const BLANK_GIF = Uint8Array.from(
 function blank(status = 200): Response {
   return new Response(BLANK_GIF, {
     status,
-    headers: { 'Content-Type': 'image/gif', 'Cache-Control': 'public, max-age=86400' },
+    headers: {
+      'Content-Type': 'image/gif',
+      // Pin the negative result at the edge too (s-maxage), not just the browser.
+      // The miss path does up to N upstream fetches; without an edge-cached blank,
+      // a crawler hitting many distinct unresolvable ?u= URLs re-pays that cost on
+      // every request — the shape of the earlier free-tier-exhaustion incident.
+      'Cache-Control': 'public, max-age=86400, s-maxage=86400',
+    },
   });
 }
 
@@ -28,7 +35,10 @@ function resurrectionUrls(target: URL): string[] {
   if (!m) return [];
   const [, poolDir, base] = m;
   // 512x512 covers our largest icon slot (57px @2x) with headroom.
-  return ['png', 'jpg', 'jpeg', 'tif'].map(
+  // Cap the fan-out at the two extensions that actually resolve in practice
+  // (png originals, jpg fallback) — each extra tried extension is another
+  // upstream subrequest paid on every miss before we give up.
+  return ['png', 'jpg'].map(
     (ext) => `https://is1-ssl.mzstatic.com/image/thumb/${poolDir}/${base}.${ext}/512x512bb.jpg`
   );
 }
