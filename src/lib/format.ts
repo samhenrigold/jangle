@@ -12,7 +12,7 @@ export function formatNumber(n: unknown): string {
 
 // UTC so a date never shifts across the server's timezone.
 const dateFmt = new Intl.DateTimeFormat('en-US', {
-  month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+  month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC',
 });
 
 // "Mar 12, 2011"

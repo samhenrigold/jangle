@@ -193,7 +193,7 @@ if (stats) {
   notes = [
     `Release dates are known or calibrated for ${formatNumber(stats.versions_dated)} of ${formatNumber(stats.versions)} versions; the "releases by year" chart counts only those.`,
     `Store availability has been checked for ${formatNumber(stats.apps_checked)} apps so far — ${formatNumber(stats.apps_delisted)} of them (${pct(Number(stats.apps_delisted), Number(stats.apps_checked))}%) are no longer on the App Store.`,
-    `${formatNumber(stats.armv6_only_installable)} installable binaries are armv6-only — they run on nothing newer than an iPhone 4 or iPad 1, and Legacy Store is likely the only storefront that still serves them.`,
+    `${formatNumber(stats.armv6_only_installable)} installable binaries are armv6-only — they run on nothing newer than an iPhone 4 or the first generation iPad, and Legacy Store is likely the only storefront that still serves them.`,
     `Prices are recorded for ${formatNumber(stats.prices?.known)} versions (${formatNumber(stats.prices?.paid)} paid, ${formatNumber(stats.prices?.free)} free at the time). Categories are known for ${formatNumber(stats.apps_with_genre)} apps.`,
     `The oldest datable version was released ${formatDate(stats.oldest_version)} — before the App Store itself opened on July 10, 2008. Chart captures span ${stats.chart_years?.min}–${stats.chart_years?.max}.`,
   ];
