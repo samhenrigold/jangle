@@ -47,13 +47,13 @@ const {
 
     <footer class="site-footer">
       <div class="site-footer-inner">
-        <span class="footer-brand">Legacy Store</span>
+        <a class="footer-brand" href="/">Legacy Store</a>
         <span class="footer-sep">·</span>
         <a href="/colophon">Colophon</a>
         <span class="footer-sep">·</span>
-        <a href="https://github.com/samhenrigold/jangle" rel="noopener">Source</a>
-        <span class="footer-sep">·</span>
         <a href="/stats">Stats</a>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com/samhenrigold/jangle" rel="noopener">Source</a>
       </div>
       <p class="footer-note">A metadata-only preservation archive. App binaries are hosted by the Internet Archive, not here.</p>
     </footer>
@@ -87,6 +87,7 @@ const {
       .footer-note {
         margin: 6px auto 0 auto;
         max-width: 460px;
+        text-wrap: balance;
       }
     </style>
   </body>

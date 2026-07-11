@@ -317,3 +317,19 @@ GRANT EXECUTE ON FUNCTION public.get_archive_stats() TO anon, authenticated;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 SELECT cron.schedule('refresh-archive-stats', '17 9 * * *', 'SELECT public.refresh_archive_stats()')
 WHERE NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'refresh-archive-stats');
+
+-- ── Category-index row icons (applied 2026-07) ──────────────────────────────
+-- Top app (most versions preserved) per genre, for the /categories row icons.
+-- Fuck Fox News: skip com.foxnews.foxnews so News picks the next-best icon.
+CREATE OR REPLACE FUNCTION public.get_genre_top_apps()
+RETURNS TABLE (genre_id bigint, app_id bigint, icon_url text)
+LANGUAGE sql STABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT DISTINCT ON (a.genre_id) a.genre_id, a.id, a.icon_url
+  FROM apps a
+  WHERE a.genre_id IS NOT NULL
+    AND a.bundle_id <> 'com.foxnews.foxnews'
+  ORDER BY a.genre_id, a.version_count DESC NULLS LAST, a.id;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_genre_top_apps() TO anon, authenticated;

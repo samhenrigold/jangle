@@ -10,7 +10,8 @@ import { dedupeFilesByHash, fileLabel, sortGroupsByPreference } from '../../lib/
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { formatNumber } from '../../lib/format';
 import { getChartTypes, getGenreNames, deviceOf, starString, sampleEvenly, formatMonthYear, formatPrice, formatApproxMonthYear } from '../../lib/timemachine';
-import { pickOldestIcon } from '../../lib/appicons';
+import { pickOldestIcon, getOldestIcons } from '../../lib/appicons';
+import AppList from '../../components/AppList.astro';
 import { osRequirementLabel, osShortLabel } from '../../lib/devices';
 import { lineChartSVG } from '../../lib/charts';
 
@@ -401,12 +402,14 @@ const currentDir = coerceDir(searchParams.get('dir') || 'desc');
 // explicit ?ios=<major> choice — a distinct, cacheable URL per selection.
 if (!dbError) setCacheHeaders(Astro.response, 3600);
 
-// Best-copy-only is the default; ?copies=all expands every archived copy.
-const showAllCopies = searchParams.get('copies') === 'all';
-function copiesToggleHref(all: boolean): string {
+// By default we show only installable, available versions (best copy each).
+// ?all=1 ("Show everything") reveals every copy, plus unavailable and
+// encrypted-only versions.
+const showEverything = searchParams.get('all') === '1';
+function everythingHref(on: boolean): string {
   const sp = new URLSearchParams(searchParams);
-  if (all) sp.set('copies', 'all');
-  else sp.delete('copies');
+  if (on) sp.set('all', '1');
+  else sp.delete('all');
   const q = sp.toString();
   return q ? `${pathname}?${q}` : pathname;
 }
@@ -434,7 +437,13 @@ const filtered = iosFilter == null
   ? (versions || [])
   : (versions || []).filter((v: any) => { const mm = minOsMajor(v); return mm == null || mm <= iosFilter; });
 
-const sortedVersions = sortVersions(filtered, 'date', currentDir);
+// Chronological key source: the estimated date, else a trustworthy release_date
+// (day precision). Undated versions get placed by ext id / version number.
+const chronoDateOf = (v: any) =>
+  v?.estimated_release_date
+    ? String(v.estimated_release_date).slice(0, 10)
+    : (isTrustworthyDate(v?.release_date) ? String(v.release_date).slice(0, 10) : null);
+const sortedVersions = sortVersions(filtered, 'date', currentDir, chronoDateOf);
 
 // Flip the sort direction, preserving the other params.
 function sortToggleHref(): string {
@@ -516,7 +525,11 @@ const versionRows = (sortedVersions || []).map((v: any) => {
     binaryOf,
     v.minimum_os_version
   );
-  const inlineGroups = showAllCopies ? groups : groups.slice(0, INLINE_COPY_CAP);
+  const inlineGroups = showEverything ? groups : groups.slice(0, INLINE_COPY_CAP);
+  // Hidden unless "Show everything": versions with no available copy, or whose
+  // only copies are FairPlay-encrypted (install but won't launch).
+  const hasInstallable = groups.some((g: any) => binaryOf(g.file)?.install_status === 'installable');
+  const hideByDefault = !hasInstallable;
   const versionLabel = v.version_string || v.build_number || 'Unknown version';
   const showBuild = v.build_number && v.build_number !== versionLabel;
   const vIconSha = groups.map((g: any) => iconShaOf(g.file)).find(Boolean);
@@ -538,17 +551,41 @@ const versionRows = (sortedVersions || []).map((v: any) => {
   const extras = inlineGroups.slice(1).map((g: any) => describeCopy(g.file, multi));
   const nofileText = groups.length === 0
     ? (unavailableCountByVersion.get(v.id)
-        ? 'The copies of this version are no longer available on archive.org.'
-        : 'No file in the archive for this version.')
+        ? 'This version is no longer available on archive.org'
+        : 'No file in the archive for this version')
     : null;
-  return { v, versionLabel, showBuild, vIconSha, metaLines, minosMajor, isUniversal, primary, extras, nofileText };
+  return { v, versionLabel, showBuild, vIconSha, metaLines, minosMajor, isUniversal, hideByDefault, primary, extras, nofileText };
 });
+const shownByDefaultCount = versionRows.filter((r: any) => !r.hideByDefault).length;
+
+// Other apps by the same developer ("More from {developer}").
+let moreFromDev: any[] = [];
+let moreFromIcons: Map<number, string> | undefined;
+if (!dbError && appData?.developer_id) {
+  const key = `morefrom:${appData.developer_id}:${appData.id}`;
+  const cached = cacheGet<any[]>(key);
+  if (cached) {
+    moreFromDev = cached;
+  } else {
+    const { data } = await supabase
+      .from('apps')
+      .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url, version_count')
+      .eq('developer_id', appData.developer_id)
+      .neq('id', appData.id)
+      .order('version_count', { ascending: false })
+      .limit(12);
+    moreFromDev = data || [];
+    cacheSet(key, moreFromDev, 10 * 60 * 1000);
+  }
+  if (moreFromDev.length) moreFromIcons = await getOldestIcons(supabase, moreFromDev.map((a: any) => Number(a.id)));
+}
 
 // Bundle size over time — the largest copy per dated version, chronological.
 // Uses every version (not the current sort/filter) so the trend is complete.
 const sizePoints = (versions || [])
   .map((v: any) => {
-    const files = filesByVersionId.get(v.id) || [];
+    // Encrypted copies are excluded — they're not a real installable size.
+    const files = (filesByVersionId.get(v.id) || []).filter((f: any) => binaryOf(f)?.install_status !== 'encrypted');
     const bytes = files.reduce((mx: number, f: any) => Math.max(mx, Number(f.file_size) || 0), 0);
     const dateStr = v.estimated_release_date || (isTrustworthyDate(v.release_date) ? v.release_date : null);
     const t = dateStr ? Date.parse(dateStr) : NaN;
@@ -585,7 +622,13 @@ if (sizePoints.length >= 3) {
           {appIcon && <span class="app-icon"><img src={appIcon} alt="" /><span class="icon-mask"></span></span>}
           <div class="app-titles">
             <h1 class="app-name">{appTitle}<span class="app-bundle">{appData.bundle_id}</span></h1>
-            {developerName && <div class="app-byline">{developerName}</div>}
+            {developerName && (
+              <div class="app-byline">
+                {appData.developer_id
+                  ? <a class="app-dev-link" href={`/developer/${appData.developer_id}`}>{developerName}</a>
+                  : developerName}
+              </div>
+            )}
             {genreName && appData.genre_id && (
               <div class="app-facts">
                 <a class="app-genre" href={`/categories/${appData.genre_id}`}>{genreName}</a>
@@ -596,11 +639,11 @@ if (sizePoints.length >= 3) {
         </div>
 
         <div class="filter-bar">
-          <a class="filter-chip" href={sortToggleHref()}>Date {currentDir === 'asc' ? '↑ Ascending' : '↓ Descending'}</a>
+          <a class="filter-chip" href={sortToggleHref()}>Sort by Date {currentDir === 'asc' ? '↑' : '↓'}</a>
           {iosMajors.length > 1 && (
             <form class="filter-runs" method="get" action={pathname}>
               {currentDir === 'asc' && <input type="hidden" name="dir" value="asc" />}
-              {showAllCopies && <input type="hidden" name="copies" value="all" />}
+              {showEverything && <input type="hidden" name="all" value="1" />}
               <label class="filter-label">Runs on
                 <select name="ios" class="js-ios-select">
                   <option value="" selected={iosFilter == null}>Any</option>
@@ -612,19 +655,17 @@ if (sizePoints.length >= 3) {
               <noscript><button type="submit" class="filter-go">Go</button></noscript>
             </form>
           )}
-          {anyMultiCopy && (
-            <a
-              class="filter-chip js-copies-toggle"
-              href={copiesToggleHref(!showAllCopies)}
-              data-expand="Show all copies"
-              data-collapse="Show best copy only"
-            >{showAllCopies ? 'Show best copy only' : 'Show all copies'}</a>
-          )}
+          <a
+            class="filter-chip js-everything-toggle"
+            href={everythingHref(!showEverything)}
+            data-expand="Show everything"
+            data-collapse="Show best only"
+          >{showEverything ? 'Show best only' : 'Show everything'}</a>
         </div>
 
-        <div class={showAllCopies ? 'versions copies-all' : 'versions'}>
+        <div class={showEverything ? 'versions show-everything' : 'versions'}>
           {versionRows.map((row: any) => (
-            <div class="version" id={`v${row.v.id}`} data-minos={row.minosMajor != null && row.minosMajor > 0 ? String(row.minosMajor) : undefined}>
+            <div class={row.hideByDefault ? 'version v-hidden-default' : 'version'} id={`v${row.v.id}`} data-minos={row.minosMajor != null && row.minosMajor > 0 ? String(row.minosMajor) : undefined}>
               {/* Lockup: masked icon + stacked title/meta on the left; the best
                   copy's action button opposite, with size + badge stacked under
                   it. Universal apps get the fat-binary "+" on the button. */}
@@ -640,19 +681,26 @@ if (sizePoints.length >= 3) {
                   ))}
                   {row.nofileText && <div class="v-fact v-nofile">{row.nofileText}</div>}
                 </div>
-                {row.primary && (
+                {row.primary ? (
                   <span class="file-actions">
-                    {row.primary.ipaUrl && (
+                    {row.primary.ipaUrl ? (
                       <span class="file-buttons">
                         <a class={`navbtn navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(row.primary.manifestUrl)}`}><span class="navbtn-label">Install</span></a>
                         <a class={`navbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={row.primary.ipaUrl} download><span class="navbtn-label">Download</span></a>
                       </span>
+                    ) : (
+                      <span class="file-buttons"><span class="navbtn navbtn-disabled"><span class="navbtn-label">Download</span></span></span>
                     )}
                     <span class="file-stat">
+                      {row.primary.detail && <span class="file-stat-size">{row.primary.detail}</span>}
+                      {!row.primary.ipaUrl && <span class="file-stat-size">File source unavailable</span>}
                       {row.primary.encrypted && <span class="chip chip-warn">Encrypted</span>}
-                      {row.primary.detail && <span>{row.primary.detail}</span>}
-                      {!row.primary.ipaUrl && <span>File source unavailable</span>}
                     </span>
+                  </span>
+                ) : (
+                  // No available copy: still show a (disabled) action so the row reads consistently.
+                  <span class="file-actions">
+                    <span class="file-buttons"><span class="navbtn navbtn-disabled"><span class="navbtn-label">Download</span></span></span>
                   </span>
                 )}
               </div>
@@ -661,9 +709,9 @@ if (sizePoints.length >= 3) {
                   {row.extras.map((c: any) => (
                     <div class="file-row v-extra">
                       <span class="file-detail">
-                        {c.encrypted && <span class="chip chip-warn">Encrypted</span>}
                         {c.detail && <span class="file-name">{c.detail}</span>}
                         {!c.ipaUrl && <span class="file-name">File source unavailable</span>}
+                        {c.encrypted && <span class="file-chip"><span class="chip chip-warn">Encrypted</span></span>}
                       </span>
                       {c.ipaUrl && (
                         <span class="file-actions">
@@ -679,13 +727,15 @@ if (sizePoints.length >= 3) {
               )}
             </div>
           ))}
-          {versionRows.length === 0 && (
+          {versionRows.length === 0 ? (
             iosFilter != null && (versions || []).length > 0 ? (
               <p class="applist-empty">None of the {versions.length} {versionNoun} run on iOS {iosFilter} — <a class="copies-link" href={iosFilterHref(null)}>show all</a>.</p>
             ) : (
               <p class="applist-empty">No versions in the archive yet.</p>
             )
-          )}
+          ) : (!showEverything && shownByDefaultCount === 0 && (
+            <p class="applist-empty">Every archived version here is encrypted or no longer available — <a class="copies-link" href={everythingHref(true)}>show everything</a>.</p>
+          ))}
         </div>
 
         {sizeChart && (
@@ -703,7 +753,7 @@ if (sizePoints.length >= 3) {
           <>
             <div class="section-header">
               <h2 class="section-title">Chart History</h2>
-              <span class="section-detail"><a class="tm-more" href="/time-machine">Time Machine ›</a></span>
+              <span class="section-detail"><a class="tm-more" href="/time-machine">Charts ›</a></span>
             </div>
             <div class="history-card">
               {chartGroups.map((g: any) => {
@@ -807,6 +857,16 @@ if (sizePoints.length >= 3) {
             <p class="history-note">Period reviews recovered from Apple's customer-review feeds via the Wayback Machine.</p>
           </>
         )}
+
+        {moreFromDev.length > 0 && (
+          <>
+            <div class="section-header">
+              <h2 class="section-title">More from {developerName}</h2>
+              {appData.developer_id && <span class="section-detail"><a class="tm-more" href={`/developer/${appData.developer_id}`}>All apps ›</a></span>}
+            </div>
+            <AppList list={moreFromDev} iconShas={moreFromIcons} />
+          </>
+        )}
       </>
     )}
   </div>
@@ -870,6 +930,11 @@ if (sizePoints.length >= 3) {
       color: #666;
       font-size: 14px;
       line-height: 18px;
+    }
+
+    .app-dev-link {
+      color: #385487;
+      font-weight: bold;
     }
 
     .app-facts {
@@ -983,16 +1048,22 @@ if (sizePoints.length >= 3) {
       line-height: 16px;
     }
 
-    /* Extra copies, listed under the lockup when "Show all copies" is on;
-       indented past the icon so they align with the body above. */
+    /* Extra copies, listed under the lockup when "Show everything" is on.
+       Indented past the icon and boxed off so each copy reads as its own row. */
     .v-copies {
-      margin: 4px 0 0 54px;
+      margin: 8px 0 0 54px;
+      border-top: 1px solid #ededed;
     }
 
     .file-row {
       display: flex;
       align-items: center;
-      margin-top: 6px;
+      padding: 8px 0;
+      border-bottom: 1px solid #ededed;
+    }
+
+    .file-row:last-child {
+      border-bottom: none;
     }
 
     .file-detail {
@@ -1023,8 +1094,18 @@ if (sizePoints.length >= 3) {
       line-height: 15px;
     }
 
+    /* Size on one line, Encrypted badge on its own line underneath. */
+    .file-stat .file-stat-size {
+      display: block;
+    }
+
     .file-stat .chip {
-      margin-right: 3px;
+      margin-top: 3px;
+    }
+
+    /* Disabled action (no available file): looks like a button, does nothing. */
+    .navbtn-disabled {
+      opacity: 0.4;
     }
 
     /* Universal ("fat binary") apps: Apple's + badge, rendered as a pseudo-
@@ -1052,8 +1133,10 @@ if (sizePoints.length >= 3) {
       word-break: break-all;
     }
 
-    .copies-toggle {
-      margin-top: 2px;
+    /* Encrypted badge sits on its own line below the file name in a copy row. */
+    .file-chip {
+      display: block;
+      margin-top: 3px;
     }
 
     .copies-link {
@@ -1076,14 +1159,20 @@ if (sizePoints.length >= 3) {
 
     /* --- Progressive-enhancement hooks (each defaults to the no-JS state) --- */
 
-    /* Extra copies of a version stay hidden until revealed — by the JS toggle,
-       or by the ?copies=all server class on the no-JS path. */
-    .v-extra {
+    /* "Show everything" reveals extra copies AND versions hidden by default
+       (unavailable, or encrypted-only). Toggled by the JS class, or the ?all=1
+       server class on the no-JS path. */
+    .v-extra,
+    .v-hidden-default {
       display: none;
     }
 
-    .copies-all .v-extra {
+    .show-everything .v-extra {
       display: flex;
+    }
+
+    .show-everything .v-hidden-default {
+      display: block;
     }
 
     /* Versions too new for the visitor's device, hidden by the client-side
@@ -1286,24 +1375,24 @@ if (sizePoints.length >= 3) {
       ready(function () {
         var i;
 
-        // 1) Global "Show all copies" toggle.
+        // 1) Global "Show everything" toggle (extra copies + hidden versions).
         var versionsRoot = document.querySelector('.versions');
-        var copyToggles = document.querySelectorAll('a.js-copies-toggle');
-        for (i = 0; i < copyToggles.length; i++) {
+        var everythingToggles = document.querySelectorAll('a.js-everything-toggle');
+        for (i = 0; i < everythingToggles.length; i++) {
           (function (link) {
             link.onclick = function (e) {
               if (!versionsRoot) return true;
-              if (hasClass(versionsRoot, 'copies-all')) {
-                removeClass(versionsRoot, 'copies-all');
+              if (hasClass(versionsRoot, 'show-everything')) {
+                removeClass(versionsRoot, 'show-everything');
                 link.innerHTML = link.getAttribute('data-expand');
               } else {
-                addClass(versionsRoot, 'copies-all');
+                addClass(versionsRoot, 'show-everything');
                 link.innerHTML = link.getAttribute('data-collapse');
               }
               if (e && e.preventDefault) e.preventDefault();
               return false;
             };
-          })(copyToggles[i]);
+          })(everythingToggles[i]);
         }
 
         // 2) "Runs on" filter: hide versions whose minimum OS is newer than the

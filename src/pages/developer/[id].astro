@@ -1,0 +1,89 @@
+---
+import { getSupabaseClient } from '../../lib/supabase';
+import Layout from '../../components/Layout.astro';
+import AppList from '../../components/AppList.astro';
+import { cacheGet, cacheSet } from '../../lib/cache';
+import { formatNumber } from '../../lib/format';
+import { setCacheHeaders, setDegraded } from '../../lib/http';
+import { getOldestIcons } from '../../lib/appicons';
+
+const { id } = Astro.params;
+const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+let dbError = false;
+
+// Developer details. maybeSingle separates "no such developer" (404) from a
+// transient DB failure (503, uncacheable).
+const devCacheKey = `developer:${id}`;
+let developer = cacheGet<any>(devCacheKey);
+if (!developer) {
+  const { data, error } = await supabase
+    .from('developers')
+    .select('id, artist_name')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    console.error('developer fetch failed:', error.message);
+    dbError = true;
+  }
+  developer = data;
+  if (developer) cacheSet(devCacheKey, developer, 30 * 60 * 1000);
+}
+
+if (!developer && !dbError) {
+  return Astro.rewrite('/404');
+}
+
+setCacheHeaders(Astro.response, 3600);
+
+// All apps by this developer, most-preserved first.
+const listCacheKey = `developer_apps:${id}`;
+let list = cacheGet<any[]>(listCacheKey);
+if (!dbError && !list) {
+  const { data, error } = await supabase
+    .from('apps')
+    .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url, version_count')
+    .eq('developer_id', id)
+    .order('version_count', { ascending: false })
+    .order('app_store_name', { ascending: true })
+    .limit(300);
+  list = data || [];
+  if (error) {
+    console.error('developer apps failed:', error.message);
+    dbError = true;
+  } else {
+    cacheSet(listCacheKey, list, 10 * 60 * 1000);
+  }
+}
+
+// Period-authentic (oldest) icons for the list.
+let iconShas: Map<number, string> | undefined;
+if (!dbError && (list || []).length) {
+  iconShas = await getOldestIcons(supabase, (list || []).map((a: any) => Number(a.id)));
+}
+
+if (dbError) setDegraded(Astro.response);
+
+const developerName = developer?.artist_name || 'Developer';
+const appCount = (list || []).length;
+const appNoun = appCount === 1 ? 'app' : 'apps';
+---
+
+<Layout
+  title={`${developerName} — Legacy Store`}
+  activeTab="none"
+  description={`Apps by ${developerName} on Legacy Store — archived versions of classic iPhone and iPad apps, installable on old iOS devices.`}
+>
+  <div class="content">
+    {dbError ? (
+      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+    ) : (
+      <>
+        <div class="section-header">
+          <h1 class="section-title">{developerName}</h1>
+          {appCount > 0 && <span class="section-detail">{formatNumber(appCount)} {appNoun} in the archive</span>}
+        </div>
+        <AppList list={list} iconShas={iconShas} />
+      </>
+    )}
+  </div>
+</Layout>

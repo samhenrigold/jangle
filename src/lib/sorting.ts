@@ -68,50 +68,76 @@ function epochOf(d: any): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
-// Chronological ordering key per version. release_date is unreliable (bulk-import
-// + scrape-date artifacts), so we ignore it: estimated_release_date and Apple's
-// globally-monotonic external_identifier are the trustworthy, mutually-agreeing
-// signals. Key = the version's est date where known; where it's missing but an
-// external_identifier exists, interpolate a date from the (ext_id → est_date)
-// anchors in the same list. Versions with neither signal get no key (sorted last).
-export function buildChronoKeys<T extends Record<string, any>>(list: T[]): Map<T, number> {
-  const keys = new Map<T, number>();
-  const anchors: { x: number; e: number }[] = [];
-  for (const v of list || []) {
-    const e = epochOf(v?.estimated_release_date);
-    const x = v?.external_identifier == null ? null : Number(v.external_identifier);
-    if (e != null) {
-      keys.set(v, e);
-      if (x != null && Number.isFinite(x)) anchors.push({ x, e });
+// A monotonic scalar from a version string ("3.0.1.11" → packs the components),
+// so undated versions can be placed by version number. Components clamp at 999.
+function versionScalar(s: any): number | null {
+  const nums = extractNumbers(s);
+  if (!nums.length) return null;
+  let scalar = 0;
+  for (let i = 0; i < 5; i++) scalar = scalar * 1000 + Math.min(999, nums[i] ?? 0);
+  return scalar;
+}
+
+// Linear interpolation of a value against (x → e) anchors sorted by x, clamped.
+function interpolate(anchors: { x: number; e: number }[], x: number): number {
+  if (x <= anchors[0].x) return anchors[0].e;
+  const last = anchors[anchors.length - 1];
+  if (x >= last.x) return last.e;
+  for (let i = 1; i < anchors.length; i++) {
+    if (x <= anchors[i].x) {
+      const lo = anchors[i - 1], hi = anchors[i];
+      const t = hi.x === lo.x ? 0 : (x - lo.x) / (hi.x - lo.x);
+      return lo.e + t * (hi.e - lo.e);
     }
   }
+  return last.e;
+}
+
+// Chronological ordering key per version. A version's known date (via dateOf —
+// estimated_release_date, or a trustworthy release_date supplied by the caller)
+// anchors it directly. Versions missing a date are placed by interpolating
+// against the dated versions — first by Apple's monotonic external_identifier,
+// then by version number — so nothing that has *any* ordering signal falls to
+// the bottom. Versions with no date, no ext id, and no version number get no key.
+export function buildChronoKeys<T extends Record<string, any>>(
+  list: T[],
+  dateOf?: (v: T) => string | null | undefined
+): Map<T, number> {
+  const dateFn = dateOf || ((v: any) => v?.estimated_release_date);
+  const keys = new Map<T, number>();
+  const extAnchors: { x: number; e: number }[] = [];
+  const verAnchors: { x: number; e: number }[] = [];
+  for (const v of list || []) {
+    const e = epochOf(dateFn(v));
+    if (e == null) continue;
+    keys.set(v, e);
+    const x = v?.external_identifier == null ? null : Number(v.external_identifier);
+    if (x != null && Number.isFinite(x)) extAnchors.push({ x, e });
+    const vs = versionScalar(v?.version_string);
+    if (vs != null) verAnchors.push({ x: vs, e });
+  }
   if (!keys.size) return keys;
-  anchors.sort((a, b) => a.x - b.x);
-  if (anchors.length) {
-    for (const v of list || []) {
-      if (keys.has(v)) continue;
-      const x = v?.external_identifier == null ? null : Number(v.external_identifier);
-      if (x == null || !Number.isFinite(x)) continue;
-      // Linear interpolation between the bracketing ext_id anchors (clamped).
-      if (x <= anchors[0].x) { keys.set(v, anchors[0].e); continue; }
-      if (x >= anchors[anchors.length - 1].x) { keys.set(v, anchors[anchors.length - 1].e); continue; }
-      for (let i = 1; i < anchors.length; i++) {
-        if (x <= anchors[i].x) {
-          const lo = anchors[i - 1], hi = anchors[i];
-          const t = hi.x === lo.x ? 0 : (x - lo.x) / (hi.x - lo.x);
-          keys.set(v, lo.e + t * (hi.e - lo.e));
-          break;
-        }
-      }
-    }
+  extAnchors.sort((a, b) => a.x - b.x);
+  verAnchors.sort((a, b) => a.x - b.x);
+  for (const v of list || []) {
+    if (keys.has(v)) continue;
+    const x = v?.external_identifier == null ? null : Number(v.external_identifier);
+    if (x != null && Number.isFinite(x) && extAnchors.length) { keys.set(v, interpolate(extAnchors, x)); continue; }
+    const vs = versionScalar(v?.version_string);
+    if (vs != null && verAnchors.length) { keys.set(v, interpolate(verAnchors, vs)); continue; }
   }
   return keys;
 }
 
-export function sortVersions<T extends Record<string, any>>(list: T[], sortKey: SortKey, dir: SortDir): T[] {
+export function sortVersions<T extends Record<string, any>>(
+  list: T[],
+  sortKey: SortKey,
+  dir: SortDir,
+  dateOf?: (v: T) => string | null | undefined
+): T[] {
   const dirMult = dir === 'asc' ? 1 : -1;
   // 'date' is a true chronological sort; keys are precomputed over the whole list.
-  const chrono = sortKey === 'date' ? buildChronoKeys(list) : null;
+  const chrono = sortKey === 'date' ? buildChronoKeys(list, dateOf) : null;
 
   const cmpMap: Record<SortKey, (a: T, b: T) => number> = {
     date: (a, b) => {

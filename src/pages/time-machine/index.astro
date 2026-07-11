@@ -17,6 +17,7 @@ import {
   formatWaybackTs,
   type Device,
 } from '../../lib/timemachine';
+import { getOldestIcons } from '../../lib/appicons';
 
 setCacheHeaders(Astro.response, 3600);
 
@@ -75,8 +76,6 @@ const snapshot =
       ? nearestSnapshot(dates, dateParam)
       : dates[0] || null;
 const snapIdx = snapshot ? dates.findIndex((s) => s.id === snapshot.id) : -1;
-const prevSnap = snapIdx > 0 ? dates[snapIdx - 1] : null;
-const nextSnap = snapIdx >= 0 && snapIdx < dates.length - 1 ? dates[snapIdx + 1] : null;
 
 // Year jump links: first capture date of each year present.
 const firstDateOfYear = new Map<string, string>();
@@ -126,6 +125,44 @@ if (!dbError && snapshot) {
   }
 }
 
+// Prev/next skip over adjacent days whose chart is identical to this one (same
+// ordered app_store_ids), landing on the next day the chart actually changed.
+// Bounded so a long identical run doesn't fan out into many queries.
+async function chartFingerprint(snapId: number): Promise<string> {
+  const key = `tm:fp:${snapId}`;
+  const c = cacheGet<string>(key);
+  if (c != null) return c;
+  const { data } = await supabase
+    .from('chart_positions')
+    .select('app_store_id')
+    .eq('chart_snapshot_id', snapId)
+    .order('position', { ascending: true })
+    .limit(300);
+  const fp = (data || []).map((r: any) => r.app_store_id).join(',');
+  cacheSet(key, fp, 30 * 60 * 1000);
+  return fp;
+}
+async function nextDifferentSnap(step: number): Promise<any> {
+  if (dbError || snapIdx < 0) return null;
+  const currentFp = positions.map((p: any) => p.app_store_id).join(',');
+  let idx = snapIdx + step;
+  for (let n = 0; n < 20 && idx >= 0 && idx < dates.length; n++, idx += step) {
+    if ((await chartFingerprint(dates[idx].id)) !== currentFp) return dates[idx];
+  }
+  return null;
+}
+const prevSnap = await nextDifferentSnap(-1);
+const nextSnap = await nextDifferentSnap(1);
+
+// Period-authentic (oldest extracted) icons, used as a fallback when the
+// archived chart artwork and the iTunes CDN icon are both missing — that's why
+// some rows (e.g. Puzzloop) showed no icon in the list but did on the app page.
+let chartIconShas: Map<number, string> | undefined;
+if (!dbError && positions.length) {
+  const ids = Array.from(new Set(positions.map((p: any) => Number(p.apps?.id)).filter(Boolean)));
+  if (ids.length) chartIconShas = await getOldestIcons(supabase, ids);
+}
+
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);
 
@@ -139,11 +176,11 @@ const chartCore = chartType
   : '';
 const headline = chartType
   ? `${chartCore}${genreName ? ` ${genreName}` : ''} for ${deviceLabel}`
-  : 'Time Machine';
+  : 'Charts';
 const sourceLink = snapshot ? waybackUrl(snapshot.captured_ts, snapshot.source_url) : '';
 const pageTitle = snapshot
-  ? `${headline} — ${snapshotDateLabel} — Time Machine — Legacy Store`
-  : 'Time Machine — Legacy Store';
+  ? `${headline} — ${snapshotDateLabel} — Legacy Store`
+  : 'Charts — Legacy Store';
 ---
 
 <Layout
@@ -156,14 +193,6 @@ const pageTitle = snapshot
       <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
     ) : (
       <>
-        <div class="section-header">
-          <h1 class="section-title">Time Machine</h1>
-          <span class="section-detail">{formatNumber((snapshotIndex || []).length)} charts captured, 2010–2025</span>
-        </div>
-        <p class="tm-blurb">
-          Real App Store charts, recovered from Apple's RSS feeds archived by the Wayback Machine.
-        </p>
-
         <div class="tm-controls">
           <div class="tm-typerow">
             {(chartTypes || []).map((t) => (
@@ -228,7 +257,8 @@ const pageTitle = snapshot
               {positions.map((p: any) => {
                 // Period artwork from the capture itself is closest to the
                 // moment; fall back to the app's current library icon.
-                const icon = iconSrc(p.artwork_url) || iconSrc(p.apps?.icon_url);
+                const oldSha = p.apps?.id && chartIconShas ? chartIconShas.get(Number(p.apps.id)) : null;
+                const icon = iconSrc(p.artwork_url) || (oldSha ? `/icon/${oldSha}` : '') || iconSrc(p.apps?.icon_url);
                 const price = formatPrice(p.price_amount, p.price_currency);
                 const inLibrary = !!p.apps;
                 const href = inLibrary ? `/app/${p.apps.app_store_id || p.apps.id}` : null;
@@ -260,10 +290,6 @@ const pageTitle = snapshot
               <span>{snapshotDateLabel}</span>
               {nextSnap && <a href={qs({ date: nextSnap.snapshot_date })}>{formatDate(nextSnap.snapshot_date)} &#9654;</a>}
             </div>
-
-            <p class="tm-source">
-              Apps marked with &#8250; are in the archive — tap through to install that era's version.
-            </p>
 
             <a class="tm-top25" href="/charts">
               <span class="tm-top25-chevron">&#8250;</span>
