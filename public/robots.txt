@@ -3,4 +3,6 @@ Disallow: /search
 Disallow: /manifest/
 Disallow: /img
 Disallow: /time-machine?
+Disallow: /charts?
+Disallow: /app/*?
 Sitemap: https://legacystore.app/sitemap.xml
