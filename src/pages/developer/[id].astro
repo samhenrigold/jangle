@@ -1,6 +1,7 @@
 ---
-import { getSupabaseClient } from '../../lib/supabase';
+import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
+import DbError from '../../components/DbError.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { formatNumber } from '../../lib/format';
@@ -8,7 +9,7 @@ import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getOldestIcons } from '../../lib/appicons';
 
 const { id } = Astro.params;
-const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+const supabase = supabaseFor(Astro);
 let dbError = false;
 
 // Developer details. maybeSingle separates "no such developer" (404) from a
@@ -75,7 +76,7 @@ const appNoun = appCount === 1 ? 'app' : 'apps';
 >
   <div class="content">
     {dbError ? (
-      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+      <DbError />
     ) : (
       <>
         <div class="section-header">

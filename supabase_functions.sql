@@ -241,26 +241,52 @@ ALTER FUNCTION public.get_genres_with_counts() SET search_path = public, pg_temp
 -- refreshes a one-row cache nightly, and the public get_archive_stats() just
 -- reads the cache (synchronous refresh only as a cron-failed fallback).
 
+-- Optimized 2026-07-11 (~9.8s -> ~1.6s): single-pass CTEs collapse the repeated
+-- app_versions (~10x) and ipa_files (~4x) scans into one FILTER-ed scan each
+-- (exact, identical numbers); the two multi-million-row internal "scale" counts
+-- (chart_positions was ~3.6s of heap-fetches, wayback_captures ~0.7s) use O(1)
+-- reltuples estimates (autovacuum keeps them within tolerance; every other count
+-- stays exact). If you need those two exact, swap the reltuples lines back to
+-- count(*) and accept the multi-second scans.
 CREATE OR REPLACE FUNCTION public.compute_archive_stats()
 RETURNS jsonb
 LANGUAGE sql STABLE
 SET search_path = public, pg_temp
 AS $$
+WITH av AS (
+  SELECT
+    count(*) FILTER (WHERE coalesce(release_date, estimated_release_date::timestamptz) IS NOT NULL) AS versions_dated,
+    min(coalesce(release_date, estimated_release_date::timestamptz))
+      FILTER (WHERE coalesce(release_date, estimated_release_date::timestamptz) >= timestamptz '2008-01-01') AS oldest_version,
+    count(*) FILTER (WHERE device_family::text[] @> ARRAY['1','2']) AS df_universal,
+    count(*) FILTER (WHERE device_family::text[] @> ARRAY['1'] AND NOT device_family::text[] @> ARRAY['2']) AS df_iphone,
+    count(*) FILTER (WHERE device_family::text[] @> ARRAY['2'] AND NOT device_family::text[] @> ARRAY['1']) AS df_ipad,
+    count(*) FILTER (WHERE price IS NOT NULL) AS p_known,
+    count(*) FILTER (WHERE price = 0) AS p_free,
+    count(*) FILTER (WHERE price > 0) AS p_paid
+  FROM app_versions
+),
+ipf AS (
+  SELECT count(*) AS copies,
+         count(*) FILTER (WHERE available) AS copies_available,
+         sum(file_size) AS total_bytes
+  FROM ipa_files
+)
 SELECT jsonb_build_object(
   'apps',              (SELECT count(*) FROM apps),
   'developers',        (SELECT count(*) FROM developers),
   'versions',          (SELECT count(*) FROM app_versions),
   'binaries',          (SELECT count(*) FROM binaries),
-  'copies',            (SELECT count(*) FROM ipa_files),
-  'copies_available',  (SELECT count(*) FROM ipa_files WHERE available),
+  'copies',            ipf.copies,
+  'copies_available',  ipf.copies_available,
   'archive_items',     (SELECT count(*) FROM archive_items),
-  'total_bytes',       (SELECT sum(file_size) FROM ipa_files),
+  'total_bytes',       ipf.total_bytes,
   'distinct_icons',    (SELECT count(DISTINCT coalesce(bundle_icon_sha256, icon_sha256)) FROM binaries),
-  'wayback_captures',  (SELECT count(*) FROM wayback_captures),
+  'wayback_captures',  (SELECT reltuples::bigint FROM pg_class WHERE oid = 'public.wayback_captures'::regclass),
   'listing_snapshots', (SELECT count(*) FROM app_listing_snapshots),
   'reviews',           (SELECT count(*) FROM app_reviews),
   'review_stars',      (SELECT jsonb_object_agg(stars, n) FROM (SELECT stars, count(*) n FROM app_reviews WHERE stars BETWEEN 1 AND 5 GROUP BY 1) s),
-  'chart_positions',   (SELECT count(*) FROM chart_positions),
+  'chart_positions',   (SELECT reltuples::bigint FROM pg_class WHERE oid = 'public.chart_positions'::regclass),
   'chart_snapshots',   (SELECT count(*) FROM chart_snapshots),
   'chart_years',       (SELECT jsonb_build_object('min', min(substr(captured_ts, 1, 4)), 'max', max(substr(captured_ts, 1, 4))) FROM chart_snapshots),
   'install',           (SELECT jsonb_object_agg(coalesce(install_status, 'unknown'), n) FROM (SELECT install_status, count(*) n FROM binaries GROUP BY 1) s),
@@ -276,20 +302,13 @@ SELECT jsonb_build_object(
                           WHERE coalesce(release_date, estimated_release_date::timestamptz)
                                 BETWEEN timestamptz '2008-01-01' AND now()
                           GROUP BY 1) s),
-  'versions_dated',    (SELECT count(*) FROM app_versions WHERE coalesce(release_date, estimated_release_date::timestamptz) IS NOT NULL),
-  'oldest_version',    (SELECT min(coalesce(release_date, estimated_release_date::timestamptz)) FROM app_versions
-                          WHERE coalesce(release_date, estimated_release_date::timestamptz) >= timestamptz '2008-01-01'),
+  'versions_dated',    av.versions_dated,
+  'oldest_version',    av.oldest_version,
   'min_os',            (SELECT jsonb_object_agg(v, n) FROM (
                           SELECT split_part(minimum_os_version, '.', 1) v, count(*) n
                           FROM app_versions WHERE minimum_os_version ~ '^[0-9]+' GROUP BY 1) s),
-  'device_family',     jsonb_build_object(
-                         'universal',   (SELECT count(*) FROM app_versions WHERE device_family::text[] @> ARRAY['1','2']),
-                         'iphone_only', (SELECT count(*) FROM app_versions WHERE device_family::text[] @> ARRAY['1'] AND NOT device_family::text[] @> ARRAY['2']),
-                         'ipad_only',   (SELECT count(*) FROM app_versions WHERE device_family::text[] @> ARRAY['2'] AND NOT device_family::text[] @> ARRAY['1'])),
-  'prices',            jsonb_build_object(
-                         'known', (SELECT count(*) FROM app_versions WHERE price IS NOT NULL),
-                         'free',  (SELECT count(*) FROM app_versions WHERE price = 0),
-                         'paid',  (SELECT count(*) FROM app_versions WHERE price > 0)),
+  'device_family',     jsonb_build_object('universal', av.df_universal, 'iphone_only', av.df_iphone, 'ipad_only', av.df_ipad),
+  'prices',            jsonb_build_object('known', av.p_known, 'free', av.p_free, 'paid', av.p_paid),
   -- price integers mix currencies; ranking only makes sense within one, so USD
   'priciest',          (SELECT jsonb_agg(x) FROM (
                           SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url, 'price', v.price_display) x
@@ -312,7 +331,8 @@ SELECT jsonb_build_object(
                           FROM apps a JOIN genres g ON g.id = a.genre_id
                           GROUP BY g.genre_name, g.id ORDER BY count(*) DESC LIMIT 10) s),
   'apps_with_genre',   (SELECT count(*) FROM apps WHERE genre_id IS NOT NULL)
-);
+)
+FROM av, ipf;
 $$;
 REVOKE EXECUTE ON FUNCTION public.compute_archive_stats() FROM PUBLIC, anon, authenticated;
 

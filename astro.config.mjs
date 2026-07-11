@@ -6,6 +6,13 @@ import cloudflare from '@astrojs/cloudflare';
 export default defineConfig({
   output: 'server',
   adapter: cloudflare(),
+  // The historical App Store charts browser moved /time-machine -> /charts (and
+  // the old /charts "Top 25 Most Archived" -> /most-archived). Redirect the old
+  // charts-browser URL so existing links/bookmarks keep working; the query string
+  // is preserved by the platform.
+  redirects: {
+    '/time-machine': '/charts',
+  },
   vite: {
     build: {
       // Vite's default CSS minifier (esbuild) rewrites top/right/bottom/left:0

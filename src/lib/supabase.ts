@@ -57,3 +57,10 @@ export function getSupabaseClient(runtimeEnv?: RuntimeEnv, options?: SupabaseCli
     },
   });
 }
+
+// Convenience wrapper so pages don't repeat the `(Astro.locals as any)?.runtime?.env`
+// incantation. Reads the Cloudflare runtime env off an Astro context; options pass
+// through (e.g. the localhost live-stats timeout).
+export function supabaseFor(astro: { locals?: any }, options?: SupabaseClientOptions) {
+  return getSupabaseClient((astro?.locals as any)?.runtime?.env, options);
+}

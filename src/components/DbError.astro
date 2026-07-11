@@ -1,0 +1,12 @@
+---
+// Shared degraded-state message (transient DB failure). Styling lives in
+// global.css (.db-error). Pass `message` to override the default copy.
+interface Props {
+  message?: string;
+}
+const {
+  message = 'The archive is having trouble loading right now. Please try again in a minute.',
+} = Astro.props;
+---
+
+<p class="db-error">{message}</p>

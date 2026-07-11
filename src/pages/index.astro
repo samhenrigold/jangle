@@ -1,6 +1,7 @@
 ---
-import { getSupabaseClient } from '../lib/supabase';
+import { supabaseFor } from '../lib/supabase';
 import Layout from '../components/Layout.astro';
+import DbError from '../components/DbError.astro';
 import AppList from '../components/AppList.astro';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { setCacheHeaders, setDegraded } from '../lib/http';
@@ -21,7 +22,7 @@ import {
 
 setCacheHeaders(Astro.response, 3600);
 
-const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+const supabase = supabaseFor(Astro);
 let dbError = false;
 
 // Featured: hand-picked greatest hits (src/lib/featured.ts) until the
@@ -101,8 +102,8 @@ if (!dbError && featuredApps && featuredApps.length) {
 
 const heroDateLabel = heroSnapshot ? formatDate(heroSnapshot.snapshot_date) : '';
 const heroHref = heroSnapshot && heroType
-  ? `/time-machine?${heroType.slug !== 'top-free' ? `type=${heroType.slug}&` : ''}date=${heroSnapshot.snapshot_date}`
-  : '/time-machine';
+  ? `/charts?${heroType.slug !== 'top-free' ? `type=${heroType.slug}&` : ''}date=${heroSnapshot.snapshot_date}`
+  : '/charts';
 
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);
@@ -111,7 +112,7 @@ if (dbError) setDegraded(Astro.response);
 <Layout title="Legacy Store" activeTab="featured" description="Browse and install archived versions of classic iPhone and iPad apps, directly on your old iOS device.">
   <div class="content">
     {dbError ? (
-      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+      <DbError />
     ) : (
       <>
         {heroSnapshot && heroEntries.length > 0 && (
@@ -121,7 +122,7 @@ if (dbError) setDegraded(Astro.response);
             </div>
             <div class="hero-card">
               <div class="hero-head">
-                <span class="hero-chart">{heroType.name}</span> · the real App Store chart from {heroDateLabel}
+                <span class="hero-chart">{heroType.name}</span> as of {heroDateLabel}
               </div>
               <ul class="hero-list">
                 {heroEntries.map((p: any) => {
@@ -143,7 +144,7 @@ if (dbError) setDegraded(Astro.response);
                   );
                 })}
               </ul>
-              <a class="hero-cta" href={heroHref}>See the full chart in Charts <span class="hero-cta-chevron">&#8250;</span></a>
+              <a class="hero-cta" href={heroHref}>See the full chart<span class="hero-cta-chevron">&#8250;</span></a>
             </div>
           </>
         )}

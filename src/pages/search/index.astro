@@ -1,6 +1,8 @@
 ---
-import { getSupabaseClient } from '../../lib/supabase';
+import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
+import DbError from '../../components/DbError.astro';
+import Pagination from '../../components/Pagination.astro';
 import SearchForm from '../../components/SearchForm.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
@@ -24,7 +26,7 @@ const page = clampPage(url.searchParams.get('page'));
 const pageSize = clampPageSize(url.searchParams.get('per_page'));
 const offset = (page - 1) * pageSize;
 
-const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+const supabase = supabaseFor(Astro);
 let dbError = false;
 
 // Fetch genres for the filter bar
@@ -136,7 +138,7 @@ function pageHref(p: number) {
 <Layout title={pageTitle} activeTab="search" searchQuery={q} mobileSearch={true} description="Search Legacy Store — archived versions of classic iPhone and iPad apps, by name or bundle ID.">
   <div class="content">
     {dbError ? (
-      <p class="db-error">The archive is having trouble searching right now. Please try again in a minute.</p>
+      <DbError message="The archive is having trouble searching right now. Please try again in a minute." />
     ) : !q && !genreId ? (
       <>
         <div class="search-intro">
@@ -162,17 +164,7 @@ function pageHref(p: number) {
               {Number(total) > 0 && <span class="section-detail">{formatNumber(total)} found</span>}
             </div>
             <AppList list={searchResults} />
-            {totalPages > 1 && (
-              <div class="pagination">
-                {page > 1 && (
-                  <a href={pageHref(page - 1)}>&#9664; Previous</a>
-                )}
-                <span>Page {page} of {totalPages}</span>
-                {page < totalPages && (
-                  <a href={pageHref(page + 1)}>Next &#9654;</a>
-                )}
-              </div>
-            )}
+            {totalPages > 1 && <Pagination page={page} totalPages={totalPages} hrefFor={pageHref} />}
           </>
         ) : (
           <div class="no-results">

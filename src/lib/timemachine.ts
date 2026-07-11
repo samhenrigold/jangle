@@ -1,5 +1,5 @@
 // Shared helpers for the Wayback "Time Machine" features (plan 010 Phase 5):
-// the historical charts browser (/time-machine) and the app-page history
+// the historical charts browser (/charts) and the app-page history
 // sections (chart trajectory, rating history, archived reviews).
 
 import { cacheGet, cacheSet } from './cache';
@@ -67,7 +67,7 @@ export function limitOf(sourceUrl: string): number {
 }
 
 // The full snapshot index (~1.3k rows) in one query; every navigation control
-// on /time-machine derives from it, so it's cached as a unit.
+// on /charts derives from it, so it's cached as a unit.
 export async function getSnapshotIndex(supabase: any): Promise<SnapshotMeta[] | null> {
   const cached = cacheGet<SnapshotMeta[]>('tm:snapshot_index');
   if (cached) return cached;
@@ -103,7 +103,7 @@ export async function getSnapshotIndex(supabase: any): Promise<SnapshotMeta[] | 
   return index;
 }
 
-// Chart entries for one capture, ranked. Shared by /time-machine and the
+// Chart entries for one capture, ranked. Shared by /charts and the
 // Featured page's "years ago this week" module.
 export async function getSnapshotPositions(supabase: any, snapshotId: number): Promise<any[] | null> {
   const key = `tm:positions:${snapshotId}`;

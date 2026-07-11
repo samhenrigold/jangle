@@ -1,0 +1,19 @@
+---
+// Shared Previous / "Page X of Y" / Next control. Callers supply hrefFor(page)
+// so each list keeps its own query-string shape. Styling is global (.pagination).
+interface Props {
+  page: number;
+  totalPages: number;
+  hrefFor: (p: number) => string;
+  nextLabel?: string;
+}
+const { page, totalPages, hrefFor, nextLabel = 'Next' } = Astro.props;
+---
+
+{totalPages > 1 && (
+  <div class="pagination">
+    {page > 1 && <a href={hrefFor(page - 1)}>&#9664; Previous</a>}
+    <span>Page {page} of {totalPages}</span>
+    {page < totalPages && <a href={hrefFor(page + 1)}>{nextLabel} &#9654;</a>}
+  </div>
+)}

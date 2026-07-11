@@ -1,6 +1,7 @@
 ---
-import { getSupabaseClient } from '../../lib/supabase';
+import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
+import DbError from '../../components/DbError.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { sortVersions, coerceDir } from '../../lib/sorting';
 import { generateIpaDownloadUrl } from '../../lib/urls';
@@ -22,7 +23,7 @@ import { lineChartSVG } from '../../lib/charts';
 const INLINE_COPY_CAP = 12;
 
 const { id } = Astro.params;
-const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+const supabase = supabaseFor(Astro);
 let dbError = false;
 
 // App details: prefer App Store ID in the URL, then bundle_id, fallback to internal DB id
@@ -615,7 +616,7 @@ if (sizePoints.length >= 3) {
 >
   <div class="content">
     {dbError ? (
-      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+      <DbError />
     ) : (
       <>
         <div class="app-header">
@@ -753,7 +754,7 @@ if (sizePoints.length >= 3) {
           <>
             <div class="section-header">
               <h2 class="section-title">Chart History</h2>
-              <span class="section-detail"><a class="tm-more" href="/time-machine">Charts ›</a></span>
+              <span class="section-detail"><a class="tm-more" href="/charts">Charts ›</a></span>
             </div>
             <div class="history-card">
               {chartGroups.map((g: any) => {
@@ -774,7 +775,7 @@ if (sizePoints.length >= 3) {
                   <div class="history-row">
                     <div class="history-title">
                       <strong>{bits.join(' · ')}</strong>
-                      <a class="history-link" href={`/time-machine?${sp.toString()}`}>View chart ›</a>
+                      <a class="history-link" href={`/charts?${sp.toString()}`}>View chart ›</a>
                     </div>
                     <div class="meta">
                       Peaked at #{g.peak}{g.peakDate ? ` (${formatDate(g.peakDate)})` : ''} · {n} archived {n === 1 ? 'capture' : 'captures'} · {span}

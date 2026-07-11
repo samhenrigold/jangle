@@ -1,6 +1,7 @@
 ---
-import { getSupabaseClient } from '../../lib/supabase';
+import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
+import DbError from '../../components/DbError.astro';
 import { sortGenres, fetchGenresWithCounts } from '../../lib/genres';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
@@ -9,7 +10,7 @@ import { getOldestIcons } from '../../lib/appicons';
 
 setCacheHeaders(Astro.response, 86400);
 
-const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+const supabase = supabaseFor(Astro);
 let dbError = false;
 
 // Fetch genres for categories
@@ -45,7 +46,7 @@ if (dbError) setDegraded(Astro.response);
 <Layout title="Categories — Legacy Store" activeTab="categories" description="Browse classic iPhone and iPad apps by category — games, entertainment, utilities, and more, archived for old iOS devices.">
   <div class="content">
     {dbError ? (
-      <p class="db-error">The archive is having trouble loading right now. Please try again in a minute.</p>
+      <DbError />
     ) : (
       <ul class="cat-list">
         {topLevelGenres.map((genre: any) => (
