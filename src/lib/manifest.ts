@@ -8,6 +8,18 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
+// Schema below is verified against the iOS 6.1.3 (build 10B329) `itunesstored`
+// binary (iTunesStore.framework). The external-manifest parser reads exactly
+// these keys and no others:
+//   top level        : items                                    (_parsePropertyList:)
+//   each item        : assets, metadata          (initWithExternalManifestDictionary:)
+//   metadata dict    : kind, bundle-identifier, bundle-version, title, subtitle
+//   each asset dict  : kind, url, needs-shine, md5s, md5-size
+// Asset `kind` values it dispatches on: software-package, display-image,
+//   full-size-image, newsstand-image, vpn-plugin-package, transit-data.
+// Notably ABSENT from the binary: `sizeInBytes`, `platform-identifier` — those
+// are silently ignored on this OS, so we don't emit them.
+
 export function buildItmsManifestPlist(params: {
   bundleId: string;
   title: string;
@@ -18,18 +30,25 @@ export function buildItmsManifestPlist(params: {
   /** 512x512 PNG. Higher-res source so the placeholder isn't upscaled from 57px. */
   largeIconUrl?: string | null;
   /**
-   * Whether SpringBoard should add the glossy shine to the placeholder.
-   * Set this to match the real app: `true` when the IPA's Info.plist does NOT
-   * set UIPrerenderedIcon (or sets it false). Otherwise the placeholder looks
-   * flat and "pops" glossy only after install. Defaults to false.
+   * Whether SpringBoard should add the glossy shine to the placeholder icon.
+   * Set to match the real app: `true` when the IPA's Info.plist does NOT set
+   * UIPrerenderedIcon. Otherwise the placeholder looks flat then "pops" glossy
+   * after install. (asset key `needs-shine`, read at 0x851be.)
    */
   needsShine?: boolean;
-  /** Second line in the install alert — e.g. version or "via Internet Archive". */
+  /** Second line in the install alert. (metadata key `subtitle`, read at 0x84d92.) */
   subtitle?: string | null;
-  /** Total IPA size so itunesstored can show an accurate size/progress up front. */
-  sizeInBytes?: number | null;
-  /** Ignored pre-iOS 7, harmless. Defaults to com.apple.platform.iphoneos. */
-  platformIdentifier?: string | null;
+  /**
+   * Per-chunk MD5 hashes of the IPA, in order. Lets itunesstored verify the
+   * download against `md5-size` byte chunks (asset keys `md5s` + `md5-size`,
+   * read at 0x8583a / 0x8584c). Big win for flaky Internet Archive fetches:
+   * a truncated/corrupt download fails verification instead of installing
+   * broken. Compute server-side by MD5'ing consecutive `md5ChunkSize`-byte
+   * chunks of the .ipa. Omit both to skip integrity checking.
+   */
+  ipaMd5s?: string[] | null;
+  /** Chunk size in bytes that each entry of `ipaMd5s` covers. */
+  md5ChunkSize?: number | null;
 }): string {
   const {
     bundleId,
@@ -40,8 +59,8 @@ export function buildItmsManifestPlist(params: {
     largeIconUrl,
     needsShine = false,
     subtitle,
-    sizeInBytes,
-    platformIdentifier = 'com.apple.platform.iphoneos',
+    ipaMd5s,
+    md5ChunkSize,
   } = params;
 
   const shineTag = needsShine ? '<true/>' : '<false/>';
@@ -63,10 +82,19 @@ export function buildItmsManifestPlist(params: {
   parts.push('<dict>');
   parts.push('<key>assets</key>');
   parts.push('<array>');
-  // software-package (required)
+  // software-package (required) — the IPA, optionally integrity-checked
   parts.push('<dict>');
   parts.push('<key>kind</key><string>software-package</string>');
   parts.push('<key>url</key><string>' + escapeXml(ipaUrl) + '</string>');
+  if (ipaMd5s && ipaMd5s.length > 0 && typeof md5ChunkSize === 'number' && md5ChunkSize > 0) {
+    parts.push('<key>md5-size</key><integer>' + Math.floor(md5ChunkSize) + '</integer>');
+    parts.push('<key>md5s</key>');
+    parts.push('<array>');
+    for (const h of ipaMd5s) {
+      parts.push('<string>' + escapeXml(h) + '</string>');
+    }
+    parts.push('</array>');
+  }
   parts.push('</dict>');
   // display-image — the home-screen placeholder icon during download
   if (iconUrl) {
@@ -84,12 +112,6 @@ export function buildItmsManifestPlist(params: {
   parts.push('<key>bundle-identifier</key><string>' + escapeXml(bundleId) + '</string>');
   parts.push('<key>bundle-version</key><string>' + escapeXml(version || '1.0') + '</string>');
   parts.push('<key>kind</key><string>software</string>');
-  if (platformIdentifier) {
-    parts.push('<key>platform-identifier</key><string>' + escapeXml(platformIdentifier) + '</string>');
-  }
-  if (typeof sizeInBytes === 'number' && Number.isFinite(sizeInBytes) && sizeInBytes > 0) {
-    parts.push('<key>sizeInBytes</key><integer>' + Math.floor(sizeInBytes) + '</integer>');
-  }
   parts.push('<key>title</key><string>' + escapeXml(title || bundleId) + '</string>');
   if (subtitle) {
     parts.push('<key>subtitle</key><string>' + escapeXml(subtitle) + '</string>');

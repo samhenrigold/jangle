@@ -7,7 +7,10 @@ import { blankGif } from '../../lib/http';
 // iOS the cross-host TLS handshake.
 const R2_ICON_BASE = 'https://pub-6cf9918644fd4d31bee31970d321985b.r2.dev/icons';
 
-const blank = (status: number) => blankGif(status, 'public, max-age=86400');
+// s-maxage pins misses at the edge too — a miss costs two R2 probes, and a
+// backfill-gap sha referenced from a popular page would otherwise re-pay that
+// on every request (the /img free-tier-exhaustion shape).
+const blank = (status: number) => blankGif(status, 'public, max-age=86400, s-maxage=86400');
 
 export const GET: APIRoute = async (ctx) => {
   const sha = ctx.params.sha || '';

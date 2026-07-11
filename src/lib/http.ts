@@ -1,3 +1,7 @@
+// The public origin — canonical links and the sitemap must not echo whatever
+// host the request came in on (previews, localhost).
+export const SITE_ORIGIN = 'https://legacystore.app';
+
 // HTML responses reference content-hashed CSS/JS assets. A Cloudflare Pages
 // deploy replaces those hashed files, so any HTML still cached at the edge from
 // a previous deploy points at assets that now 404 — the page renders unstyled

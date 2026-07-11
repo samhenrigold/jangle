@@ -2,6 +2,7 @@
 import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { iconSrc } from '../../lib/icons';
@@ -133,23 +134,35 @@ async function chartFingerprint(snapId: number): Promise<string> {
 async function nextDifferentSnap(step: number): Promise<any> {
   if (dbError || snapIdx < 0) return null;
   const currentFp = positions.map((p: any) => p.app_store_id).join(',');
-  let idx = snapIdx + step;
-  for (let n = 0; n < 20 && idx >= 0 && idx < dates.length; n++, idx += step) {
-    if ((await chartFingerprint(dates[idx].id)) !== currentFp) return dates[idx];
+  const candidates: any[] = [];
+  for (let idx = snapIdx + step, n = 0; n < 20 && idx >= 0 && idx < dates.length; n++, idx += step) {
+    candidates.push(dates[idx]);
+  }
+  // The answer is almost always a capture or two away — warm the nearest few
+  // fingerprints concurrently so the common case is one parallel burst, not a
+  // serial walk. The loop then reads them back from cache; only a long run of
+  // identical charts (rare) pays for the sequential tail.
+  await Promise.all(candidates.slice(0, 6).map((s) => chartFingerprint(s.id)));
+  for (const s of candidates) {
+    if ((await chartFingerprint(s.id)) !== currentFp) return s;
   }
   return null;
 }
-// Independent walks in each direction — run them together.
-const [prevSnap, nextSnap] = await Promise.all([nextDifferentSnap(-1), nextDifferentSnap(1)]);
-
 // Period-authentic (oldest extracted) icons, used as a fallback when the
 // archived chart artwork and the iTunes CDN icon are both missing — that's why
 // some rows (e.g. Puzzloop) showed no icon in the list but did on the app page.
-let chartIconShas: Map<number, string> | undefined;
-if (!dbError && positions.length) {
+const loadChartIcons = async (): Promise<Map<number, string> | undefined> => {
+  if (dbError || !positions.length) return undefined;
   const ids = Array.from(new Set(positions.map((p: any) => Number(p.apps?.id)).filter(Boolean)));
-  if (ids.length) chartIconShas = await getOldestIcons(supabase, ids);
-}
+  return ids.length ? getOldestIcons(supabase, ids) : undefined;
+};
+
+// The two direction walks and the icon lookup are independent — one burst.
+const [prevSnap, nextSnap, chartIconShas] = await Promise.all([
+  nextDifferentSnap(-1),
+  nextDifferentSnap(1),
+  loadChartIcons(),
+]);
 
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);
@@ -232,14 +245,11 @@ const pageTitle = snapshot
 
         {snapshot ? (
           <>
-            <div class="section-header">
-              <h2 class="section-title">{headline}</h2>
-              <span class="section-detail">
-                {sourceLink
-                  ? <><a class="tm-link" href={sourceLink} rel="noopener">Snapshot</a> captured {formatWaybackTs(snapshot.captured_ts) || snapshotDateLabel}</>
-                  : <>Snapshot from {snapshotDateLabel}</>}
-              </span>
-            </div>
+            <SectionHeader title={headline}>
+              {sourceLink
+                ? <><a class="tm-link" href={sourceLink} rel="noopener">Snapshot</a> captured {formatWaybackTs(snapshot.captured_ts) || snapshotDateLabel}</>
+                : <>Snapshot from {snapshotDateLabel}</>}
+            </SectionHeader>
 
             <ul class="applist">
               {positions.map((p: any) => {

@@ -1,0 +1,22 @@
+---
+// iOS grouped-table section header: title with an optional detail line stacked
+// under it. Plain-text details go in the `detail` prop (undefined = no line);
+// details that carry markup (links) go in the slot. Styling lives in
+// global.css (.section-header/.section-title/.section-detail).
+interface Props {
+  title: string;
+  detail?: string | null;
+  // h2 by default; pages whose list IS the page use their one h1 here.
+  level?: 1 | 2;
+  class?: string;
+}
+const { title, detail, level = 2, class: className } = Astro.props;
+const cls = className ? `section-header ${className}` : 'section-header';
+---
+
+<div class={cls}>
+  {level === 1 ? <h1 class="section-title">{title}</h1> : <h2 class="section-title">{title}</h2>}
+  {detail
+    ? <span class="section-detail">{detail}</span>
+    : Astro.slots.has('default') && <span class="section-detail"><slot /></span>}
+</div>

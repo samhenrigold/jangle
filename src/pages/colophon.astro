@@ -1,9 +1,9 @@
 ---
 import Layout from '../components/Layout.astro';
-import { setCacheHeaders } from '../lib/http';
 
-// Static prose — cache hard at the edge.
-setCacheHeaders(Astro.response, 86400, 3600);
+// Static prose with no data dependencies: prerendered at build time and served
+// as a plain static asset — no worker invocation, no runtime headers needed.
+export const prerender = true;
 ---
 
 <Layout

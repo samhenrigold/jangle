@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import TopNavigation from './TopNavigation.astro';
+import { SITE_ORIGIN } from '../lib/http';
 
 const {
   title = 'Legacy Store',
@@ -8,6 +9,10 @@ const {
   description = 'Legacy Store — install archived versions of classic iPhone and iPad apps directly on old iOS devices.',
   searchQuery = '',
   mobileSearch = false,
+  // Set on pages reachable under several URLs (an app has app_store_id,
+  // internal-id, and bundle-id aliases plus filter params) so search engines
+  // consolidate them. Omit everywhere else.
+  canonicalPath = '',
 } = Astro.props;
 ---
 <!DOCTYPE html>
@@ -18,6 +23,7 @@ const {
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    {canonicalPath && <link rel="canonical" href={SITE_ORIGIN + canonicalPath} />}
     <title>{title}</title>
     <!-- Tag <html> with the device type before paint, so device-specific CSS
          (e.g. Install vs Download on app pages) applies without a flash. Pages

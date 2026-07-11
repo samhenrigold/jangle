@@ -13,29 +13,31 @@ setCacheHeaders(Astro.response, 86400);
 const supabase = supabaseFor(Astro);
 let dbError = false;
 
-// Fetch genres for categories
-const { genres, error: genresError } = await fetchGenresWithCounts(supabase);
+// Row icons: the most-preserved app in each genre, using its period-authentic
+// (oldest) extracted icon where we have one, else the iTunes CDN icon.
+// Decorative, and independent of the genre list — the chains run concurrently.
+const genreIcon = new Map<number, string>();
+const loadGenreIcons = async () => {
+  const { data: tops, error } = await supabase.rpc('get_genre_top_apps');
+  if (error || !tops) return;
+  const iconShas = await getOldestIcons(supabase, tops.map((t: any) => Number(t.app_id)));
+  for (const t of tops) {
+    const sha = iconShas?.get(Number(t.app_id));
+    const src = sha ? `/icon/${sha}` : iconSrc(t.icon_url);
+    if (src) genreIcon.set(Number(t.genre_id), src);
+  }
+};
+
+const [{ genres, error: genresError }] = await Promise.all([
+  fetchGenresWithCounts(supabase),
+  loadGenreIcons(),
+]);
 if (genresError) dbError = true;
 
 // The App Store game subgenres (genre_id 70xx) are populated only where an app's
 // PRIMARY genre happens to be the subgenre — a tiny, misleading fraction of the
 // ~10k games — so hide them here; the top-level genres are the real index.
 const topLevelGenres = sortGenres(genres ?? []).filter((g: any) => !isGameSubgenre(g));
-
-// Row icons: the most-preserved app in each genre, using its period-authentic
-// (oldest) extracted icon where we have one, else the iTunes CDN icon.
-const genreIcon = new Map<number, string>();
-if (!dbError) {
-  const { data: tops, error } = await supabase.rpc('get_genre_top_apps');
-  if (!error && tops) {
-    const iconShas = await getOldestIcons(supabase, tops.map((t: any) => Number(t.app_id)));
-    for (const t of tops) {
-      const sha = iconShas?.get(Number(t.app_id));
-      const src = sha ? `/icon/${sha}` : iconSrc(t.icon_url);
-      if (src) genreIcon.set(Number(t.genre_id), src);
-    }
-  }
-}
 
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);

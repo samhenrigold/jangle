@@ -3,6 +3,7 @@ import { supabaseFor } from '../lib/supabase';
 import Layout from '../components/Layout.astro';
 import DbError from '../components/DbError.astro';
 import AppList from '../components/AppList.astro';
+import SectionHeader from '../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { setCacheHeaders, setDegraded } from '../lib/http';
 import { FEATURED_APP_STORE_IDS } from '../lib/featured';
@@ -25,20 +26,31 @@ setCacheHeaders(Astro.response, 3600);
 const supabase = supabaseFor(Astro);
 let dbError = false;
 
+let featuredApps: any[] | undefined;
+let iconShas: Map<number, string> | undefined;
+let peakLines: Map<number, string> | undefined;
+let heroSnapshot: any = null;
+let heroType: any = null;
+let heroEntries: any[] = [];
+let heroYearsAgo = 0;
+
 // Featured: hand-picked greatest hits (src/lib/featured.ts) until the
-// editorial charts layer ships.
-const featuredCacheKey = 'featured_apps_v2';
-let featuredApps = cacheGet<any[]>(featuredCacheKey);
-if (!featuredApps) {
-  const { data, error } = await supabase
-    .from('apps')
-    .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
-    .in('app_store_id', FEATURED_APP_STORE_IDS);
-  if (error) {
-    console.error('featured query failed:', error.message);
-    featuredApps = [];
-    dbError = true;
-  } else {
+// editorial charts layer ships. The only chain allowed to set dbError; its
+// era icons chain onto it.
+const loadFeatured = async () => {
+  const featuredCacheKey = 'featured_apps_v2';
+  featuredApps = cacheGet<any[]>(featuredCacheKey);
+  if (!featuredApps) {
+    const { data, error } = await supabase
+      .from('apps')
+      .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
+      .in('app_store_id', FEATURED_APP_STORE_IDS);
+    if (error) {
+      console.error('featured query failed:', error.message);
+      featuredApps = [];
+      dbError = true;
+      return;
+    }
     // Collapse duplicate app_store_id rows to the lowest internal id (matches
     // /app/ routing), then lay out in curated order.
     const byStoreId = new Map<number, any>();
@@ -52,25 +64,20 @@ if (!featuredApps) {
       .map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
     cacheSet(featuredCacheKey, featuredApps, 10 * 60 * 1000);
   }
-}
+  // Period-authentic (oldest) icons — best-effort (empty = fallback icons).
+  if (featuredApps.length) iconShas = await getOldestIcons(supabase, featuredApps.map((a: any) => Number(a.id)));
+};
 
-// --- "This week, years ago" module (plan 010 charts) ------------------------
-// Deterministic per calendar week so the page stays edge-cacheable: the week
-// number picks Top Free vs Top Paid, and the capture nearest to this
-// month/day 15 years back is shown.
-// Everything below is decorative enrichment — a slow/failed query here must
-// leave the Featured list standing, never 503 the page. Only the core featured
-// query (above) is allowed to set dbError.
-const [chartTypes, snapshotIndex] = await Promise.all([
-  getChartTypes(supabase),
-  getSnapshotIndex(supabase),
-]);
-
-let heroSnapshot: any = null;
-let heroType: any = null;
-let heroEntries: any[] = [];
-let heroYearsAgo = 0;
-if (!dbError && chartTypes && snapshotIndex && snapshotIndex.length) {
+// "This week, years ago" module (plan 010 charts): deterministic per calendar
+// week so the page stays edge-cacheable — the week number picks Top Free vs
+// Top Paid, and the capture nearest to this month/day 15 years back is shown.
+// Decorative: a failure leaves the Featured list standing, never 503s.
+const loadHero = async () => {
+  const [chartTypes, snapshotIndex] = await Promise.all([
+    getChartTypes(supabase),
+    getSnapshotIndex(supabase),
+  ]);
+  if (!chartTypes || !snapshotIndex || !snapshotIndex.length) return;
   const now = new Date();
   const week = Math.floor((now.getTime() - Date.UTC(now.getUTCFullYear(), 0, 1)) / (7 * 86400000));
   const slug = week % 2 ? 'top-paid' : 'top-free';
@@ -89,16 +96,15 @@ if (!dbError && chartTypes && snapshotIndex && snapshotIndex.length) {
     if (positions) heroEntries = positions.slice(0, 5);
     else heroSnapshot = null;
   }
-}
+};
 
-// Peak-chart badges + period-authentic (oldest) icons for the curated list —
-// both best-effort (null/empty just means no badges / fallback icons).
-let peakLines: Map<number, string> | undefined;
-let iconShas: Map<number, string> | undefined;
-if (!dbError && featuredApps && featuredApps.length) {
+// Peak-chart badges for the curated list — keyed off the static id list, so
+// it doesn't need to wait for the featured query at all.
+const loadPeaks = async () => {
   peakLines = (await getPeakLines(supabase, FEATURED_APP_STORE_IDS, 'featured')) || undefined;
-  iconShas = await getOldestIcons(supabase, featuredApps.map((a: any) => Number(a.id)));
-}
+};
+
+await Promise.all([loadFeatured(), loadHero(), loadPeaks()]);
 
 const heroDateLabel = heroSnapshot ? formatDate(heroSnapshot.snapshot_date) : '';
 const heroHref = heroSnapshot && heroType
@@ -117,9 +123,7 @@ if (dbError) setDegraded(Astro.response);
       <>
         {heroSnapshot && heroEntries.length > 0 && (
           <>
-            <div class="section-header">
-              <h2 class="section-title">{heroYearsAgo} Years Ago This Week</h2>
-            </div>
+            <SectionHeader title={`${heroYearsAgo} Years Ago This Week`} />
             <div class="hero-card">
               <div class="hero-head">
                 <span class="hero-chart">{heroType.name}</span> as of {heroDateLabel}
@@ -149,10 +153,7 @@ if (dbError) setDegraded(Astro.response);
           </>
         )}
 
-        <div class="section-header">
-          <h2 class="section-title">Featured</h2>
-          <span class="section-detail">greatest hits from the archive</span>
-        </div>
+        <SectionHeader title="Featured" detail="greatest hits from the archive" />
         <AppList list={featuredApps} peakLines={peakLines} iconShas={iconShas} />
       </>
     )}

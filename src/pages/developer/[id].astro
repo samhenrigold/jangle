@@ -3,6 +3,7 @@ import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
 import AppList from '../../components/AppList.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
@@ -79,10 +80,11 @@ const appNoun = appCount === 1 ? 'app' : 'apps';
       <DbError />
     ) : (
       <>
-        <div class="section-header">
-          <h1 class="section-title">{developerName}</h1>
-          {appCount > 0 && <span class="section-detail">{formatNumber(appCount)} {appNoun} in the archive</span>}
-        </div>
+        <SectionHeader
+          title={developerName}
+          level={1}
+          detail={appCount > 0 ? `${formatNumber(appCount)} ${appNoun} in the archive` : undefined}
+        />
         <AppList list={list} iconShas={iconShas} />
       </>
     )}

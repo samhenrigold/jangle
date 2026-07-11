@@ -4,6 +4,7 @@ import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
 import Pagination from '../../components/Pagination.astro';
 import AppList from '../../components/AppList.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
@@ -21,10 +22,14 @@ const offset = (page - 1) * pageSize;
 const supabase = supabaseFor(Astro);
 let dbError = false;
 
-// Fetch top charts apps (sorted by most versions)
-const topChartsCacheKey = `topcharts:${page}:${pageSize}`;
-let topChartsApps = cacheGet<any[]>(topChartsCacheKey);
-if (!topChartsApps) {
+// The ranked list and the total count are independent — fetch concurrently.
+let topChartsApps: any[] | undefined;
+let total: number | undefined;
+
+const loadList = async () => {
+  const topChartsCacheKey = `topcharts:${page}:${pageSize}`;
+  topChartsApps = cacheGet<any[]>(topChartsCacheKey);
+  if (topChartsApps) return;
   const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', {
     p_limit: pageSize,
     p_offset: offset,
@@ -39,12 +44,12 @@ if (!topChartsApps) {
   } else {
     cacheSet(topChartsCacheKey, topChartsApps, 5 * 60 * 1000);
   }
-}
+};
 
-// Get total count for pagination
-const countCacheKey = 'topcharts_count';
-let total = cacheGet<number>(countCacheKey);
-if (!dbError && typeof total !== 'number') {
+const loadCount = async () => {
+  const countCacheKey = 'topcharts_count';
+  total = cacheGet<number>(countCacheKey);
+  if (typeof total === 'number') return;
   const { data: totalCountArr, error } = await supabase.rpc('get_apps_count', { p_genre_id: null, p_search_query: null });
   total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
   if (error) {
@@ -53,18 +58,21 @@ if (!dbError && typeof total !== 'number') {
   } else {
     cacheSet(countCacheKey, Number(total) || 0, 10 * 60 * 1000);
   }
-}
+};
 
+await Promise.all([loadList(), loadCount()]);
 const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 
-// Historical peak badges + period-authentic icons — both decorative, so a
-// failure here just drops the badges/icons rather than 503-ing the list.
+// Historical peak badges + period-authentic icons — both decorative (a
+// failure just drops badges/icons rather than 503-ing) and independent.
 let peakLines: Map<number, string> | undefined;
 let iconShas: Map<number, string> | undefined;
 if (!dbError && (topChartsApps || []).length) {
   const ids = (topChartsApps || []).map((a: any) => Number(a.app_store_id)).filter(Boolean);
-  peakLines = (await getPeakLines(supabase, ids, `top25:${page}:${pageSize}`)) || undefined;
-  iconShas = await getOldestIcons(supabase, (topChartsApps || []).map((a: any) => Number(a.id)));
+  [peakLines, iconShas] = await Promise.all([
+    getPeakLines(supabase, ids, `top25:${page}:${pageSize}`).then((p) => p || undefined),
+    getOldestIcons(supabase, (topChartsApps || []).map((a: any) => Number(a.id))),
+  ]);
 }
 
 // A transient DB failure must not render as a cacheable empty page.
@@ -77,10 +85,7 @@ if (dbError) setDegraded(Astro.response);
       <DbError />
     ) : (
       <>
-        <div class="section-header">
-          <h1 class="section-title">Top 25 Most Archived</h1>
-          <span class="section-detail">Ranked by how many versions the archive holds — not by popularity.</span>
-        </div>
+        <SectionHeader title="Top 25 Most Archived" level={1} detail="Ranked by how many versions the archive holds — not by popularity." />
         <AppList list={topChartsApps} startRank={offset + 1} peakLines={peakLines} iconShas={iconShas} />
 
         {totalPages > 1 && <Pagination page={page} totalPages={totalPages} hrefFor={(p) => `/most-archived?page=${p}${pageSize !== 25 ? `&per_page=${pageSize}` : ''}`} nextLabel={`Next ${pageSize}`} />}

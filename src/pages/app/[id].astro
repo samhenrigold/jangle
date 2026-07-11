@@ -16,6 +16,7 @@ import {
 } from '../../lib/timemachine';
 import { pickOldestIcon, getOldestIcons } from '../../lib/appicons';
 import AppList from '../../components/AppList.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
 import { osRequirementLabel, osShortLabel } from '../../lib/devices';
 import { lineChartSVG } from '../../lib/charts';
 
@@ -44,9 +45,33 @@ if (!appData && !dbError) {
   return Astro.rewrite('/404');
 }
 
-// Versions with IPA links
+// Wayback history is keyed by app_store_id — apps without one (delisted, no
+// iTunesMetadata) simply don't get those sections.
+const appStoreId = appData?.app_store_id ? Number(appData.app_store_id) : null;
+const genreName = appData?.genres?.genre_name;
+
 let versions: any[] = [];
-if (appData) {
+let ipaFiles: any[] = [];
+const binariesBySha1 = new Map<string, any>();
+
+let chartHistory: any[] = [];
+let ratingHistory: any[] = [];
+let archivedReviews: any[] = [];
+let reviewTotal = 0;
+let chartTypesById = new Map<number, { name: string; slug: string }>();
+let genreNamesMap: Map<number, string> = new Map();
+
+let subgenre: string | null = null;
+let moreFromDev: any[] = [];
+let moreFromIcons: Map<number, string> | undefined;
+
+// --- Data loading: four independent chains, run concurrently (this page used
+// to await every stage in sequence — 8+ serial round trips of TTFB on a cold
+// hit). Only the core chain may 503 the page; the other three are decorative
+// and drop their section on failure.
+
+// A. versions → archived copies → binary enrichment (each stage needs the last).
+const loadCore = async () => {
   const versionsCacheKey = `versions:${appData.id}`;
   const cachedVersions = cacheGet<any[]>(versionsCacheKey);
   if (cachedVersions) {
@@ -63,16 +88,13 @@ if (appData) {
       console.error('versions query failed:', error.message);
       dbError = true;
       setDegraded(Astro.response);
-    } else {
-      cacheSet(versionsCacheKey, versions, 5 * 60 * 1000);
+      return;
     }
+    cacheSet(versionsCacheKey, versions, 5 * 60 * 1000);
   }
-}
 
-// Fetch IPA files for these versions
-const versionIds = (versions || []).map((v: any) => v.id);
-let ipaFiles: any[] = [];
-if (!dbError && versionIds.length) {
+  const versionIds = versions.map((v: any) => v.id);
+  if (!versionIds.length) return;
   // Bounded key (version sets change only at ingest); a cached empty array is a
   // hit, not a perpetual refetch.
   const ipaCacheKey = `ipa_files:${appData.id}:${versionIds.length}`;
@@ -89,22 +111,20 @@ if (!dbError && versionIds.length) {
       console.error('ipa files query failed:', error.message);
       dbError = true;
       setDegraded(Astro.response);
-    } else {
-      cacheSet(ipaCacheKey, ipaFiles, 5 * 60 * 1000);
+      return;
     }
+    cacheSet(ipaCacheKey, ipaFiles, 5 * 60 * 1000);
   }
-}
+  if (!ipaFiles.length) return;
 
-// Binary enrichment (plan 009): install_status ("will it actually launch"),
-// architectures, and the icon extracted from the IPA itself. Keyed by content
-// hash — many mirrored files share one binaries row. No FK from
-// ipa_files.binary_sha1, so this is a second chunked lookup.
-const binariesBySha1 = new Map<string, any>();
-if (!dbError && ipaFiles.length) {
+  // Binary enrichment (plan 009): install_status ("will it actually launch"),
+  // architectures, and the icon extracted from the IPA itself. Keyed by content
+  // hash — many mirrored files share one binaries row. No FK from
+  // ipa_files.binary_sha1, so this is a second chunked lookup. Decorative: if
+  // it fails, render the downloads without badges — never 503 the whole page.
   const shas = Array.from(new Set(ipaFiles.map((f: any) => f.binary_sha1).filter(Boolean)));
   const binCacheKey = `binaries:${appData.id}:${shas.length}`;
-  const cachedBins = cacheGet<any[]>(binCacheKey);
-  let bins: any[] | null = cachedBins ?? null;
+  let bins: any[] | null = cacheGet<any[]>(binCacheKey) ?? null;
   if (!bins) {
     bins = [];
     const CHUNK = 150; // keeps the in() filter well under URL-length limits
@@ -114,8 +134,6 @@ if (!dbError && ipaFiles.length) {
         .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app, has_extensions')
         .in('sha1', shas.slice(i, i + CHUNK));
       if (error) {
-        // Binary enrichment is decorative (install badges, era icons). If it
-        // fails, render the downloads without it — never 503 the whole page.
         console.error('binaries query failed:', error.message);
         bins = null;
         break;
@@ -125,77 +143,129 @@ if (!dbError && ipaFiles.length) {
     if (bins) cacheSet(binCacheKey, bins, 5 * 60 * 1000);
   }
   for (const b of bins || []) binariesBySha1.set(b.sha1, b);
-}
+};
 
-// --- Wayback time-machine history (plan 010 Phase 5): chart trajectory,
-// rating history, and archived reviews. All keyed by app_store_id — apps
-// without one (delisted, no iTunesMetadata) simply don't get these sections.
-const appStoreId = appData?.app_store_id ? Number(appData.app_store_id) : null;
-let chartHistory: any[] = [];
-let ratingHistory: any[] = [];
-let archivedReviews: any[] = [];
-let reviewTotal = 0;
-
-if (!dbError && appStoreId) {
+// B. Wayback time-machine history (plan 010 Phase 5): chart trajectory,
+// rating history, and archived reviews — then the lookup-table labels the
+// chart section needs. Each is independently best-effort.
+const loadHistory = async () => {
+  if (!appStoreId) return;
   const [charts, ratings, reviews] = await Promise.all([
     getAppChartHistory(supabase, appStoreId),
     getAppRatingHistory(supabase, appStoreId),
     getAppReviews(supabase, appStoreId, 8),
   ]);
-  // History (charts / ratings / reviews) is decorative — a failure drops those
-  // sections, it does not 503 the app page. Each is independently best-effort.
   if (charts) chartHistory = charts;
   if (ratings) ratingHistory = ratings;
   if (reviews) {
     archivedReviews = reviews.rows;
     reviewTotal = reviews.total;
   }
+  if (!chartHistory.length) return;
+  // Labels for the chart-history section; if they fail, skip the section.
+  const [types, genreNames] = await Promise.all([getChartTypes(supabase), getGenreNames(supabase)]);
+  if (types && genreNames) {
+    chartTypesById = new Map(types.map((t: any) => [Number(t.id), { name: t.name, slug: t.slug }]));
+    genreNamesMap = genreNames;
+  }
+};
+
+// C. Game subgenre (Arcade, Puzzle, …): Apple's game categories are the 7xxx
+// genre codes recorded in archived listing snapshots. Only worth a lookup for
+// games, and it's fine if there's no data (many apps have none).
+const loadSubgenre = async () => {
+  if (!appStoreId || genreName !== 'Games') return;
+  const key = `subgenre:${appStoreId}`;
+  const cached = cacheGet<string | null>(key);
+  if (cached !== undefined) {
+    subgenre = cached;
+    return;
+  }
+  const { data } = await supabase
+    .from('app_listing_snapshots')
+    .select('genre_ids')
+    .eq('app_store_id', appStoreId)
+    .not('genre_ids', 'is', null)
+    .limit(20);
+  const counts = new Map<number, number>();
+  for (const row of data || []) {
+    for (const gid of (row as any).genre_ids || []) {
+      const n = Number(gid);
+      if (n >= 7000 && n < 8000) counts.set(n, (counts.get(n) || 0) + 1);
+    }
+  }
+  let bestId: number | null = null;
+  let bestN = 0;
+  for (const [gid, n] of counts) if (n > bestN) { bestId = gid; bestN = n; }
+  if (bestId != null) {
+    const { data: g } = await supabase.from('genres').select('genre_name').eq('genre_id', bestId).maybeSingle();
+    subgenre = (g as any)?.genre_name || null;
+  }
+  cacheSet(key, subgenre, 30 * 60 * 1000);
+};
+
+// D. Other apps by the same developer ("More from {developer}"), with their
+// period-authentic (oldest) icons.
+const loadMoreFromDev = async () => {
+  if (!appData.developer_id) return;
+  const key = `morefrom:${appData.developer_id}:${appData.id}`;
+  const cached = cacheGet<any[]>(key);
+  if (cached) {
+    moreFromDev = cached;
+  } else {
+    const { data } = await supabase
+      .from('apps')
+      .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url, version_count')
+      .eq('developer_id', appData.developer_id)
+      .neq('id', appData.id)
+      .order('version_count', { ascending: false })
+      .limit(12);
+    moreFromDev = data || [];
+    cacheSet(key, moreFromDev, 10 * 60 * 1000);
+  }
+  if (moreFromDev.length) moreFromIcons = await getOldestIcons(supabase, moreFromDev.map((a: any) => Number(a.id)));
+};
+
+if (appData) {
+  await Promise.all([loadCore(), loadHistory(), loadSubgenre(), loadMoreFromDev()]);
 }
 
 // Fold raw chart rows into one group per (chart type, device, genre): peak,
 // span, and a chronological trajectory for the sparkline.
 let chartGroups: any[] = [];
-let chartTypesById = new Map<number, { name: string; slug: string }>();
-let genreNamesMap: Map<number, string> = new Map();
-if (!dbError && chartHistory.length) {
-  const [types, genreNames] = await Promise.all([getChartTypes(supabase), getGenreNames(supabase)]);
-  // Labels for the chart-history section; if they fail, skip the section.
-  if (types && genreNames) {
-    chartTypesById = new Map(types.map((t: any) => [Number(t.id), { name: t.name, slug: t.slug }]));
-    genreNamesMap = genreNames;
-    const groups = new Map<string, any>();
-    for (const row of chartHistory) {
-      const snap = row.chart_snapshots;
-      if (!snap) continue;
-      const device = deviceOf(snap.source_url || '');
-      const genreId = snap.genre_id == null ? null : Number(snap.genre_id);
-      const typeId = Number(snap.chart_type_id);
-      const key = `${typeId}:${device}:${genreId ?? 'all'}`;
-      let g = groups.get(key);
-      if (!g) {
-        g = { typeId, device, genreId, points: [] };
-        groups.set(key, g);
-      }
-      g.points.push({
-        date: snap.snapshot_date,
-        position: Number(row.position),
-      });
+if (!dbError && chartHistory.length && chartTypesById.size) {
+  const groups = new Map<string, any>();
+  for (const row of chartHistory) {
+    const snap = row.chart_snapshots;
+    if (!snap) continue;
+    const device = deviceOf(snap.source_url || '');
+    const genreId = snap.genre_id == null ? null : Number(snap.genre_id);
+    const typeId = Number(snap.chart_type_id);
+    const key = `${typeId}:${device}:${genreId ?? 'all'}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = { typeId, device, genreId, points: [] };
+      groups.set(key, g);
     }
-    for (const g of groups.values()) {
-      // One point per date (duplicate captures of the same feed) — best rank wins.
-      g.points.sort((a: any, b: any) => a.date.localeCompare(b.date) || a.position - b.position);
-      const byDate = new Map<string, any>();
-      for (const p of g.points) if (!byDate.has(p.date)) byDate.set(p.date, p);
-      g.points = Array.from(byDate.values());
-      g.peak = Math.min(...g.points.map((p: any) => p.position));
-      g.peakDate = g.points.find((p: any) => p.position === g.peak)?.date;
-      g.first = g.points[0].date;
-      g.last = g.points[g.points.length - 1].date;
-    }
-    chartGroups = Array.from(groups.values()).sort(
-      (a, b) => Number(a.genreId != null) - Number(b.genreId != null) || b.points.length - a.points.length || a.peak - b.peak
-    );
+    g.points.push({
+      date: snap.snapshot_date,
+      position: Number(row.position),
+    });
   }
+  for (const g of groups.values()) {
+    // One point per date (duplicate captures of the same feed) — best rank wins.
+    g.points.sort((a: any, b: any) => a.date.localeCompare(b.date) || a.position - b.position);
+    const byDate = new Map<string, any>();
+    for (const p of g.points) if (!byDate.has(p.date)) byDate.set(p.date, p);
+    g.points = Array.from(byDate.values());
+    g.peak = Math.min(...g.points.map((p: any) => p.position));
+    g.peakDate = g.points.find((p: any) => p.position === g.peak)?.date;
+    g.first = g.points[0].date;
+    g.last = g.points[g.points.length - 1].date;
+  }
+  chartGroups = Array.from(groups.values()).sort(
+    (a, b) => Number(a.genreId != null) - Number(b.genreId != null) || b.points.length - a.points.length || a.peak - b.peak
+  );
 }
 
 // Rating snapshots arrive in bursts (several captures of the same listing
@@ -335,43 +405,8 @@ function sortToggleHref(): string {
 
 const appTitle = appData ? appTitleOf(appData) : 'App';
 const appIcon = oldestIconSha ? `/icon/${oldestIconSha}` : (appData ? iconSrc(appData.icon_url) : '');
-const genreName = appData?.genres?.genre_name;
 const developerName = appData?.developers?.artist_name;
 const versionNoun = versions.length === 1 ? 'archived version' : 'archived versions';
-
-// Game subgenre (Arcade, Puzzle, …): Apple's game categories are the 7xxx genre
-// codes recorded in archived listing snapshots. Only worth a lookup for games,
-// and it's fine if there's no data (many apps have none).
-let subgenre: string | null = null;
-if (!dbError && appStoreId && genreName === 'Games') {
-  const key = `subgenre:${appStoreId}`;
-  const cached = cacheGet<string | null>(key);
-  if (cached !== undefined) {
-    subgenre = cached;
-  } else {
-    const { data } = await supabase
-      .from('app_listing_snapshots')
-      .select('genre_ids')
-      .eq('app_store_id', appStoreId)
-      .not('genre_ids', 'is', null)
-      .limit(20);
-    const counts = new Map<number, number>();
-    for (const row of data || []) {
-      for (const gid of (row as any).genre_ids || []) {
-        const n = Number(gid);
-        if (n >= 7000 && n < 8000) counts.set(n, (counts.get(n) || 0) + 1);
-      }
-    }
-    let bestId: number | null = null;
-    let bestN = 0;
-    for (const [gid, n] of counts) if (n > bestN) { bestId = gid; bestN = n; }
-    if (bestId != null) {
-      const { data: g } = await supabase.from('genres').select('genre_name').eq('genre_id', bestId).maybeSingle();
-      subgenre = (g as any)?.genre_name || null;
-    }
-    cacheSet(key, subgenre, 30 * 60 * 1000);
-  }
-}
 
 // One archived copy of a version → its display detail + download affordances.
 function describeCopy(f: any, withFilename: boolean) {
@@ -439,28 +474,6 @@ const versionRows = (sortedVersions || []).map((v: any) => {
 });
 const shownByDefaultCount = versionRows.filter((r: any) => !r.hideByDefault).length;
 
-// Other apps by the same developer ("More from {developer}").
-let moreFromDev: any[] = [];
-let moreFromIcons: Map<number, string> | undefined;
-if (!dbError && appData?.developer_id) {
-  const key = `morefrom:${appData.developer_id}:${appData.id}`;
-  const cached = cacheGet<any[]>(key);
-  if (cached) {
-    moreFromDev = cached;
-  } else {
-    const { data } = await supabase
-      .from('apps')
-      .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url, version_count')
-      .eq('developer_id', appData.developer_id)
-      .neq('id', appData.id)
-      .order('version_count', { ascending: false })
-      .limit(12);
-    moreFromDev = data || [];
-    cacheSet(key, moreFromDev, 10 * 60 * 1000);
-  }
-  if (moreFromDev.length) moreFromIcons = await getOldestIcons(supabase, moreFromDev.map((a: any) => Number(a.id)));
-}
-
 // Bundle size over time — the largest copy per dated version, chronological.
 // Uses every version (not the current sort/filter) so the trend is complete.
 const sizePoints = (versions || [])
@@ -493,6 +506,7 @@ if (sizePoints.length >= 3) {
   title={`${appTitle} — Legacy Store`}
   activeTab="none"
   description={appData ? `${appTitle}${developerName ? ` by ${developerName}` : ''} — ${versions.length} ${versionNoun} for old iOS devices, installable directly on iPhone, iPad, and iPod touch.` : 'Legacy Store'}
+  canonicalPath={appData ? `/app/${appData.app_store_id || appData.id}` : ''}
 >
   <div class="content">
     {dbError ? (
@@ -621,9 +635,7 @@ if (sizePoints.length >= 3) {
 
         {sizeChart && (
           <>
-            <div class="section-header size-header">
-              <h2 class="section-title">Bundle Size Over Time</h2>
-            </div>
+            <SectionHeader title="Bundle Size Over Time" class="size-header" />
             <div class="history-card size-chart">
               <Fragment set:html={sizeChart} />
             </div>
@@ -632,9 +644,7 @@ if (sizePoints.length >= 3) {
 
         {chartGroups.length > 0 && (
           <>
-            <div class="section-header">
-              <h2 class="section-title">Chart History</h2>
-            </div>
+            <SectionHeader title="Chart History" />
             <div class="history-card">
               {chartGroups.map((g: any) => {
                 const type = chartTypesById.get(g.typeId);
@@ -679,12 +689,10 @@ if (sizePoints.length >= 3) {
 
         {ratingRows.length > 0 && (
           <>
-            <div class="section-header">
-              <h2 class="section-title">Ratings Over Time</h2>
-              {ratingRows.length < ratingHistory.length && (
-                <span class="section-detail">sampled from {formatNumber(ratingHistory.length)} archived captures</span>
-              )}
-            </div>
+            <SectionHeader
+              title="Ratings Over Time"
+              detail={ratingRows.length < ratingHistory.length ? `sampled from ${formatNumber(ratingHistory.length)} archived captures` : undefined}
+            />
             <div class="history-card">
               <table class="ratings-table">
                 <thead>
@@ -709,12 +717,10 @@ if (sizePoints.length >= 3) {
 
         {archivedReviews.length > 0 && (
           <>
-            <div class="section-header">
-              <h2 class="section-title">Archived Reviews</h2>
-              {reviewTotal > archivedReviews.length && (
-                <span class="section-detail">{archivedReviews.length} of {formatNumber(reviewTotal)}</span>
-              )}
-            </div>
+            <SectionHeader
+              title="Archived Reviews"
+              detail={reviewTotal > archivedReviews.length ? `${archivedReviews.length} of ${formatNumber(reviewTotal)}` : undefined}
+            />
             <div class="history-card">
               {archivedReviews.map((r: any) => (
                 <div class="review">
@@ -740,10 +746,9 @@ if (sizePoints.length >= 3) {
 
         {moreFromDev.length > 0 && (
           <>
-            <div class="section-header">
-              <h2 class="section-title">More from {developerName}</h2>
-              {appData.developer_id && <span class="section-detail"><a class="tm-more" href={`/developer/${appData.developer_id}`}>All apps ›</a></span>}
-            </div>
+            <SectionHeader title={`More from ${developerName}`}>
+              <a class="tm-more" href={`/developer/${appData.developer_id}`}>All apps ›</a>
+            </SectionHeader>
             <AppList list={moreFromDev} iconShas={moreFromIcons} />
           </>
         )}
@@ -1017,8 +1022,10 @@ if (sizePoints.length >= 3) {
       color: #8e8e93;
     }
 
-    /* Extra breathing room between the versions list and the chart. */
-    .size-header {
+    /* Extra breathing room between the versions list and the chart. Global
+       because the class rides on SectionHeader's div, which carries that
+       component's scope hash, not this page's. */
+    :global(.size-header) {
       margin-top: 24px;
     }
 

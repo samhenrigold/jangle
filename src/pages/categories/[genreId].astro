@@ -4,6 +4,7 @@ import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
 import Pagination from '../../components/Pagination.astro';
 import AppList from '../../components/AppList.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
 import { formatNumber } from '../../lib/format';
@@ -46,12 +47,22 @@ if (!genre && !dbError) {
 
 setCacheHeaders(Astro.response, 3600);
 
-// Fetch apps in this genre
-const countArgs = { p_genre_id: Number(genreId), p_search_query: null };
-const countCacheKey = `genre_count:${genreId}`;
-let total = cacheGet<number>(countCacheKey);
-if (!dbError && typeof total !== 'number') {
-  const { data: totalCountArr, error } = await supabase.rpc('get_apps_count', countArgs);
+// Count, list (+ its era icons), and the charts teaser are independent —
+// run the three chains concurrently instead of stacking four round trips.
+let total: number | undefined;
+let list: any[] | undefined;
+let iconShas: Map<number, string> | undefined;
+type GenreChartRow = { slug: string; name: string; years: { year: string; date: string }[] };
+let genreCharts: GenreChartRow[] = [];
+
+const loadCount = async () => {
+  const countCacheKey = `genre_count:${genreId}`;
+  total = cacheGet<number>(countCacheKey);
+  if (typeof total === 'number') return;
+  const { data: totalCountArr, error } = await supabase.rpc('get_apps_count', {
+    p_genre_id: Number(genreId),
+    p_search_query: null,
+  });
   total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
   if (error) {
     console.error('genre count failed:', error.message);
@@ -59,65 +70,58 @@ if (!dbError && typeof total !== 'number') {
   } else {
     cacheSet(countCacheKey, Number(total) || 0, 5 * 60 * 1000);
   }
-}
-
-const rpcArgs = {
-  p_limit: pageSize,
-  p_offset: offset,
-  p_genre_id: Number(genreId),
-  p_ascending: false,
-  p_search_query: null,
 };
 
-const listCacheKey = `genre_apps:${genreId}:${page}:${pageSize}`;
-let list = cacheGet<any[]>(listCacheKey);
-if (!dbError && !list) {
-  const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
-  list = data || [];
-  if (error) {
-    console.error('genre list failed:', error.message);
-    dbError = true;
-  } else {
+// Apps in this genre, then their period-authentic (oldest) icons.
+const loadList = async () => {
+  const listCacheKey = `genre_apps:${genreId}:${page}:${pageSize}`;
+  list = cacheGet<any[]>(listCacheKey);
+  if (!list) {
+    const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', {
+      p_limit: pageSize,
+      p_offset: offset,
+      p_genre_id: Number(genreId),
+      p_ascending: false,
+      p_search_query: null,
+    });
+    list = data || [];
+    if (error) {
+      console.error('genre list failed:', error.message);
+      dbError = true;
+      return;
+    }
     cacheSet(listCacheKey, list, 5 * 60 * 1000);
   }
-}
-
-const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
-
-// Period-authentic (oldest) icons for the list.
-let iconShas: Map<number, string> | undefined;
-if (!dbError && (list || []).length) {
-  iconShas = await getOldestIcons(supabase, (list || []).map((a: any) => Number(a.id)));
-}
+  if (list.length) iconShas = await getOldestIcons(supabase, list.map((a: any) => Number(a.id)));
+};
 
 // Time Machine module: archived chart captures exist for ~30 genres
 // (chart_snapshots.genre_id = genres.id). One row per chart type with the
-// years we can show.
-type GenreChartRow = { slug: string; name: string; years: { year: string; date: string }[] };
-// Decorative teaser — a failure here drops the module, never 503s the category.
-let genreCharts: GenreChartRow[] = [];
-if (!dbError) {
+// years we can show. Decorative — a failure drops the module, never 503s.
+const loadGenreCharts = async () => {
   const [types, index] = await Promise.all([getChartTypes(supabase), getSnapshotIndex(supabase)]);
-  if (types && index) {
-    for (const t of types) {
-      // iPhone feeds only — the genre module is a teaser, not a full browser.
-      const snaps = index.filter(
-        (s) => s.genre_id === Number(genreId) && s.chart_type_id === Number(t.id) && deviceOf(s.source_url) === 'iphone'
-      );
-      if (!snaps.length) continue;
-      const firstOfYear = new Map<string, string>();
-      for (const s of snaps) {
-        const y = s.snapshot_date.slice(0, 4);
-        if (!firstOfYear.has(y)) firstOfYear.set(y, s.snapshot_date);
-      }
-      genreCharts.push({
-        slug: t.slug,
-        name: t.name,
-        years: Array.from(firstOfYear.entries()).map(([year, date]) => ({ year, date })),
-      });
+  if (!types || !index) return;
+  for (const t of types) {
+    // iPhone feeds only — the genre module is a teaser, not a full browser.
+    const snaps = index.filter(
+      (s) => s.genre_id === Number(genreId) && s.chart_type_id === Number(t.id) && deviceOf(s.source_url) === 'iphone'
+    );
+    if (!snaps.length) continue;
+    const firstOfYear = new Map<string, string>();
+    for (const s of snaps) {
+      const y = s.snapshot_date.slice(0, 4);
+      if (!firstOfYear.has(y)) firstOfYear.set(y, s.snapshot_date);
     }
+    genreCharts.push({
+      slug: t.slug,
+      name: t.name,
+      years: Array.from(firstOfYear.entries()).map(([year, date]) => ({ year, date })),
+    });
   }
-}
+};
+
+await Promise.all([loadCount(), loadList(), loadGenreCharts()]);
+const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
 
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);
@@ -131,20 +135,18 @@ const genreName = genre?.genre_name || 'Category';
       <DbError />
     ) : (
       <>
-        <div class="section-header">
-          <h1 class="section-title">{genreName}</h1>
-          {typeof total === 'number' && total > 0 && <span class="section-detail">{formatNumber(total)} apps</span>}
-        </div>
+        <SectionHeader
+          title={genreName}
+          level={1}
+          detail={typeof total === 'number' && total > 0 ? `${formatNumber(total)} apps` : undefined}
+        />
         <AppList list={list} startRank={offset + 1} iconShas={iconShas} />
 
         {totalPages > 1 && <Pagination page={page} totalPages={totalPages} hrefFor={(p) => `/categories/${genreId}?page=${p}${pageSize !== 25 ? `&per_page=${pageSize}` : ''}`} nextLabel={`Next ${pageSize}`} />}
 
         {genreCharts.length > 0 && (
           <>
-            <div class="section-header">
-              <h2 class="section-title">Charts</h2>
-              <span class="section-detail">archived {genreName} charts</span>
-            </div>
+            <SectionHeader title="Charts" detail={`archived ${genreName} charts`} />
             <div class="genre-charts">
               {genreCharts.map((row) => (
                 <div class="genre-chart-row">

@@ -5,6 +5,7 @@ import DbError from '../../components/DbError.astro';
 import Pagination from '../../components/Pagination.astro';
 import SearchForm from '../../components/SearchForm.astro';
 import AppList from '../../components/AppList.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { buildPrefixTsquery, clampPage, clampPageSize } from '../../lib/search';
 import { sortGenres, fetchGenresWithCounts } from '../../lib/genres';
@@ -30,12 +31,9 @@ const offset = (page - 1) * pageSize;
 const supabase = supabaseFor(Astro);
 let dbError = false;
 
-// Fetch genres for the filter bar
-const { genres, error: genresError } = await fetchGenresWithCounts(supabase);
-if (genresError) dbError = true;
-
-// Group Game subgenres after the parent Games genre (returns a copy)
-const sortedGenres = sortGenres(genres);
+// Genres for the filter bar — independent of the search queries below, so it
+// starts now and is awaited alongside them.
+const genresPromise = fetchGenresWithCounts(supabase);
 
 let searchResults: any[] = [];
 let total = 0;
@@ -52,15 +50,16 @@ if (q || genreId) {
     searchResults = [];
     totalPages = 1;
   } else {
-    const countArgs: Record<string, any> = {
-      p_genre_id: genreId ? Number(genreId) : null,
-      p_search_query: tsquery,
-    };
+    const pGenreId = genreId ? Number(genreId) : null;
 
-    const countCacheKey = `search_count:${genreId||''}:${tsquery||''}`;
-    total = cacheGet<number>(countCacheKey);
-    if (typeof total !== 'number') {
-      const { data: totalCountArr, error: countError } = await supabase.rpc('get_apps_count', countArgs);
+    const loadCount = async () => {
+      const countCacheKey = `search_count:${genreId||''}:${tsquery||''}`;
+      total = cacheGet<number>(countCacheKey);
+      if (typeof total === 'number') return;
+      const { data: totalCountArr, error: countError } = await supabase.rpc('get_apps_count', {
+        p_genre_id: pGenreId,
+        p_search_query: tsquery,
+      });
       total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
       if (countError) {
         console.error('search count failed:', countError.message);
@@ -68,19 +67,19 @@ if (q || genreId) {
       } else {
         cacheSet(countCacheKey, Number(total) || 0, 2 * 60 * 1000);
       }
-    }
-
-    const rpcArgs = {
-      p_limit: pageSize,
-      p_offset: offset,
-      p_genre_id: countArgs.p_genre_id,
-      p_ascending: false,
-      p_search_query: countArgs.p_search_query,
     };
 
-    const listCacheKey = `search_list:${sort}:${genreId||''}:${tsquery||''}:${page}:${pageSize}`;
-    searchResults = cacheGet<any[]>(listCacheKey);
-    if (!searchResults) {
+    const loadList = async () => {
+      const listCacheKey = `search_list:${sort}:${genreId||''}:${tsquery||''}:${page}:${pageSize}`;
+      searchResults = cacheGet<any[]>(listCacheKey);
+      if (searchResults) return;
+      const rpcArgs = {
+        p_limit: pageSize,
+        p_offset: offset,
+        p_genre_id: pGenreId,
+        p_ascending: false,
+        p_search_query: tsquery,
+      };
       let listError: { message: string } | null = null;
       if (sort === 'first_date') {
         const { data, error } = await supabase.rpc('get_apps_sorted_by_first_version_date', rpcArgs);
@@ -112,11 +111,19 @@ if (q || genreId) {
       } else {
         cacheSet(listCacheKey, searchResults, 60 * 1000);
       }
-    }
+    };
 
+    // Count and page are independent — one round trip of latency, not two.
+    await Promise.all([loadCount(), loadList()]);
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   }
 }
+
+const { genres, error: genresError } = await genresPromise;
+if (genresError) dbError = true;
+
+// Group Game subgenres after the parent Games genre (returns a copy)
+const sortedGenres = sortGenres(genres);
 
 // Period-authentic (oldest extracted) icons for the results — same source the
 // rest of the site uses, so search rows aren't stuck on the (often-dead) CDN url.
@@ -165,12 +172,11 @@ function pageHref(p: number) {
         </div>
         {searchResults.length > 0 ? (
           <>
-            <div class="section-header">
-              <h1 class="section-title">
-                {q ? `Results for “${q}”` : `${genreName || 'Genre'} apps`}
-              </h1>
-              {Number(total) > 0 && <span class="section-detail">{formatNumber(total)} found</span>}
-            </div>
+            <SectionHeader
+              title={q ? `Results for “${q}”` : `${genreName || 'Genre'} apps`}
+              level={1}
+              detail={Number(total) > 0 ? `${formatNumber(total)} found` : undefined}
+            />
             <AppList list={searchResults} iconShas={iconShas} />
             {totalPages > 1 && <Pagination page={page} totalPages={totalPages} hrefFor={pageHref} />}
           </>

@@ -1,7 +1,6 @@
 import type { APIRoute } from 'astro';
 import { supabaseFor } from '../lib/supabase';
-
-const SITE = 'https://legacystore.app';
+import { SITE_ORIGIN as SITE } from '../lib/http';
 
 // Fallback pager, used only until the get_sitemap_slugs RPC exists. PostgREST
 // caps responses at 1000 rows, so this costs one round trip per 1000 apps.
