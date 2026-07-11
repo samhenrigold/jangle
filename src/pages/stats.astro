@@ -1,0 +1,519 @@
+---
+import Layout from '../components/Layout.astro';
+import { getSupabaseClient } from '../lib/supabase';
+import { setCacheHeaders, setDegraded } from '../lib/http';
+import { formatNumber, formatDate, formatFileSize } from '../lib/format';
+
+setCacheHeaders(Astro.response, 86400, 3600);
+
+const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+
+let stats: any = null;
+{
+  // Server-side the numbers come precomputed: the RPC reads a one-row cache
+  // that pg_cron refreshes nightly, so this is a single fast round trip.
+  const { data, error } = await supabase.rpc('get_archive_stats');
+  if (error) {
+    console.error('archive stats failed:', error.message);
+    setDegraded(Astro.response);
+  } else {
+    stats = data;
+  }
+}
+
+// "9.5 TB" — sizes on this page get big enough that format.ts's GB ceiling
+// reads awkwardly.
+function formatBigSize(bytes: unknown): string {
+  const b = Number(bytes);
+  if (!Number.isFinite(b) || b <= 0) return '';
+  const tib = 1024 * 1024 * 1024 * 1024;
+  if (b >= tib) return `${(b / tib).toFixed(1)} TB`;
+  return formatFileSize(b);
+}
+
+interface BarRow {
+  label: string;
+  value: number;
+  pct: number; // 0–100, relative to the largest row in the group
+  href?: string;
+  warn?: boolean; // amber fill (matches the encrypted chip)
+}
+
+function toBars(rows: { label: string; value: number; href?: string; warn?: boolean }[]): BarRow[] {
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  return rows.map((r) => ({ ...r, pct: Math.max(1, Math.round((r.value / max) * 100)) }));
+}
+
+let asOf = '';
+let tiles: { n: string; label: string }[] = [];
+let yearBars: BarRow[] = [];
+let installBars: BarRow[] = [];
+let osBars: BarRow[] = [];
+let archBars: BarRow[] = [];
+let deviceBars: BarRow[] = [];
+let genreBars: BarRow[] = [];
+let starBars: BarRow[] = [];
+let records: { title: string; entries: { text: string; detail: string; href?: string }[] }[] = [];
+let notes: string[] = [];
+
+if (stats) {
+  asOf = formatDate(stats.computed_at);
+
+  tiles = [
+    { n: formatNumber(stats.apps), label: 'apps' },
+    { n: formatNumber(stats.versions), label: 'versions' },
+    { n: formatNumber(stats.binaries), label: 'distinct binaries' },
+    { n: formatNumber(stats.copies), label: 'archived copies' },
+    { n: formatBigSize(stats.total_bytes), label: 'of apps indexed' },
+    { n: formatNumber(stats.developers), label: 'developers' },
+    { n: formatNumber(stats.distinct_icons), label: 'unique icons' },
+    { n: formatNumber(stats.wayback_captures), label: 'archived pages read' },
+    { n: formatNumber(stats.listing_snapshots), label: 'store-page snapshots' },
+    { n: formatNumber(stats.reviews), label: 'period reviews' },
+    { n: formatNumber(stats.chart_positions), label: 'chart placements' },
+    { n: formatNumber(stats.chart_snapshots), label: 'weekly chart captures' },
+  ];
+
+  const byYear = stats.by_year || {};
+  yearBars = toBars(
+    Object.keys(byYear)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((y) => ({ label: String(y), value: Number(byYear[y]) || 0 }))
+  );
+
+  const install = stats.install || {};
+  installBars = toBars([
+    { label: 'Installable', value: Number(install.installable) || 0 },
+    { label: 'FairPlay-encrypted', value: Number(install.encrypted) || 0, warn: true },
+    { label: 'Not yet analyzed', value: Number(install.unknown) || 0 },
+  ]);
+
+  // Fold iOS 11+ together — the archive's heart is 2–10.
+  const minOs = stats.min_os || {};
+  const osRows: { label: string; value: number }[] = [];
+  let osLater = 0;
+  for (const key of Object.keys(minOs)) {
+    const major = parseInt(key, 10);
+    const n = Number(minOs[key]) || 0;
+    if (!Number.isFinite(major) || major < 2) continue; // "1"/junk keys
+    if (major <= 10) osRows.push({ label: `iOS ${major}`, value: n });
+    else osLater += n;
+  }
+  osRows.sort((a, b) => parseInt(a.label.slice(4), 10) - parseInt(b.label.slice(4), 10));
+  if (osLater > 0) osRows.push({ label: 'iOS 11+', value: osLater });
+  osBars = toBars(osRows);
+
+  const archs = stats.archs || {};
+  archBars = toBars(
+    ['armv6', 'armv7', 'armv7s', 'arm64']
+      .filter((a) => archs[a])
+      .map((a) => ({ label: a, value: Number(archs[a]) || 0 }))
+  );
+
+  const fam = stats.device_family || {};
+  deviceBars = toBars([
+    { label: 'Universal', value: Number(fam.universal) || 0 },
+    { label: 'iPhone / iPod touch', value: Number(fam.iphone_only) || 0 },
+    { label: 'iPad only', value: Number(fam.ipad_only) || 0 },
+  ]);
+
+  genreBars = toBars(
+    (stats.top_genres || []).map((g: any) => ({
+      label: String(g.g),
+      value: Number(g.n) || 0,
+      href: g.gid ? `/categories/${g.gid}` : undefined,
+    }))
+  );
+
+  const revStars = stats.review_stars || {};
+  starBars = toBars(
+    [5, 4, 3, 2, 1].map((s) => ({ label: `${s} star${s === 1 ? '' : 's'}`, value: Number(revStars[s]) || 0 }))
+  );
+
+  records = [
+    {
+      title: 'Most versions preserved',
+      entries: (stats.most_versions || []).map((a: any) => ({
+        text: String(a.name),
+        detail: `${formatNumber(a.n)} versions`,
+        href: a.id ? `/app/${a.id}` : undefined,
+      })),
+    },
+    {
+      title: 'Biggest downloads',
+      entries: (stats.biggest || []).map((a: any) => ({
+        text: String(a.name),
+        detail: formatFileSize(a.bytes),
+        href: a.id ? `/app/${a.id}` : undefined,
+      })),
+    },
+    {
+      title: 'Steepest price tags',
+      entries: (stats.priciest || []).map((a: any) => ({
+        text: String(a.name),
+        detail: String(a.price),
+        href: a.id ? `/app/${a.id}` : undefined,
+      })),
+    },
+  ];
+
+  const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+  notes = [
+    `Release dates are known or calibrated for ${formatNumber(stats.versions_dated)} of ${formatNumber(stats.versions)} versions; the "releases by year" chart counts only those.`,
+    `Store availability has been checked for ${formatNumber(stats.apps_checked)} apps so far — ${formatNumber(stats.apps_delisted)} of them (${pct(Number(stats.apps_delisted), Number(stats.apps_checked))}%) are no longer on the App Store.`,
+    `${formatNumber(stats.armv6_only_installable)} installable binaries are armv6-only — they run on nothing newer than an iPhone 4 or iPad 1, and Legacy Store is likely the only storefront that still serves them.`,
+    `Prices are recorded for ${formatNumber(stats.prices?.known)} versions (${formatNumber(stats.prices?.paid)} paid, ${formatNumber(stats.prices?.free)} free at the time). Categories are known for ${formatNumber(stats.apps_with_genre)} apps.`,
+    `The oldest datable version was released ${formatDate(stats.oldest_version)} — before the App Store itself opened on July 10, 2008. Chart captures span ${stats.chart_years?.min}–${stats.chart_years?.max}.`,
+  ];
+}
+---
+
+<Layout
+  title="Stats — Legacy Store"
+  activeTab="none"
+  description="The Legacy Store archive by the numbers: apps, versions, binaries, and fifteen years of App Store history."
+>
+  {!stats ? (
+    <div class="db-error">
+      <p>The stats are having a moment. Please try again shortly.</p>
+    </div>
+  ) : (
+    <div class="content stats">
+      <h1 class="stats-title">Stats</h1>
+      <p class="stats-lede">The archive, by the numbers. As of {asOf}.</p>
+
+      <div class="tiles">
+        {tiles.map((t) => (
+          <div class="tile">
+            <span class="tile-n">{t.n}</span>
+            <span class="tile-label">{t.label}</span>
+          </div>
+        ))}
+      </div>
+
+      <h2 class="stats-h2">Will it actually run?</h2>
+      <p class="stats-sub">Every distinct binary is labelled up front, so nobody wastes a download on an app that installs but never launches.</p>
+      <table class="bars">
+        {installBars.map((b) => (
+          <tr>
+            <td class="bar-label">{b.label}</td>
+            <td class="bar-cell"><div class={b.warn ? 'bar-fill bar-warn' : 'bar-fill'} style={`width:${b.pct}%`}></div></td>
+            <td class="bar-value">{formatNumber(b.value)}</td>
+          </tr>
+        ))}
+      </table>
+
+      <h2 class="stats-h2">Releases by year</h2>
+      <p class="stats-sub">When the archive's versions shipped. The early gold rush is very visible.</p>
+      <table class="bars">
+        {yearBars.map((b) => (
+          <tr>
+            <td class="bar-label">{b.label}</td>
+            <td class="bar-cell"><div class="bar-fill" style={`width:${b.pct}%`}></div></td>
+            <td class="bar-value">{formatNumber(b.value)}</td>
+          </tr>
+        ))}
+      </table>
+
+      <h2 class="stats-h2">Minimum iOS required</h2>
+      <p class="stats-sub">What each version declares it needs — the whole point is how much of the archive still suits a first-generation device.</p>
+      <table class="bars">
+        {osBars.map((b) => (
+          <tr>
+            <td class="bar-label">{b.label}</td>
+            <td class="bar-cell"><div class="bar-fill" style={`width:${b.pct}%`}></div></td>
+            <td class="bar-value">{formatNumber(b.value)}</td>
+          </tr>
+        ))}
+      </table>
+
+      <div class="half">
+        <h2 class="stats-h2">CPU architectures</h2>
+        <p class="stats-sub">Read from each binary's Mach-O header; fat binaries count once per slice.</p>
+        <table class="bars">
+          {archBars.map((b) => (
+            <tr>
+              <td class="bar-label"><code>{b.label}</code></td>
+              <td class="bar-cell"><div class="bar-fill" style={`width:${b.pct}%`}></div></td>
+              <td class="bar-value">{formatNumber(b.value)}</td>
+            </tr>
+          ))}
+        </table>
+      </div>
+      <div class="half half-right">
+        <h2 class="stats-h2">Devices</h2>
+        <p class="stats-sub">Versions with a known device family.</p>
+        <table class="bars">
+          {deviceBars.map((b) => (
+            <tr>
+              <td class="bar-label">{b.label}</td>
+              <td class="bar-cell"><div class="bar-fill" style={`width:${b.pct}%`}></div></td>
+              <td class="bar-value">{formatNumber(b.value)}</td>
+            </tr>
+          ))}
+        </table>
+      </div>
+
+      <h2 class="stats-h2">Categories</h2>
+      <p class="stats-sub">The ten biggest, of the apps whose category is known. Games was never a fair fight.</p>
+      <table class="bars">
+        {genreBars.map((b) => (
+          <tr>
+            <td class="bar-label">{b.href ? <a href={b.href}>{b.label}</a> : b.label}</td>
+            <td class="bar-cell"><div class="bar-fill" style={`width:${b.pct}%`}></div></td>
+            <td class="bar-value">{formatNumber(b.value)}</td>
+          </tr>
+        ))}
+      </table>
+
+      <h2 class="stats-h2">Record holders</h2>
+      <div class="records">
+        {records.map((group) => (
+          <div class="record-group">
+            <span class="record-title">{group.title}</span>
+            <ul class="record-list">
+              {group.entries.map((e) => (
+                <li>
+                  {e.href ? <a class="record-link" href={e.href}>{e.text}</a> : <span class="record-link">{e.text}</span>}
+                  <span class="record-detail">{e.detail}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      <h2 class="stats-h2">What people said at the time</h2>
+      <p class="stats-sub">{formatNumber(stats.reviews)} customer reviews recovered from archived review feeds, stars and all.</p>
+      <table class="bars">
+        {starBars.map((b) => (
+          <tr>
+            <td class="bar-label">{b.label}</td>
+            <td class="bar-cell"><div class="bar-fill" style={`width:${b.pct}%`}></div></td>
+            <td class="bar-value">{formatNumber(b.value)}</td>
+          </tr>
+        ))}
+      </table>
+
+      <h2 class="stats-h2">The fine print</h2>
+      <ul class="notes">
+        {notes.map((n) => (
+          <li>{n}</li>
+        ))}
+      </ul>
+    </div>
+  )}
+
+  <style>
+    .stats {
+      max-width: 640px;
+      padding-bottom: 32px;
+    }
+
+    .stats-title {
+      margin: 14px 0 2px 0;
+      font-size: 26px;
+      line-height: 30px;
+      color: #4c566c;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+
+    .stats-lede {
+      margin: 0 0 14px 0;
+      color: #8e8e93;
+      font-size: 15px;
+      font-style: italic;
+    }
+
+    .stats-h2 {
+      margin: 26px 0 4px 0;
+      font-size: 18px;
+      line-height: 22px;
+      color: #4c566c;
+      border-top: 1px solid #e1e1e1;
+      padding-top: 18px;
+    }
+
+    .stats-sub {
+      margin: 0 0 10px 0;
+      color: #8e8e93;
+      font-size: 13px;
+      line-height: 17px;
+    }
+
+    /* Headline tiles — inline-block so they reflow on any width and any-era Safari */
+    .tiles {
+      margin: 0 -4px;
+    }
+
+    .tile {
+      display: inline-block;
+      vertical-align: top;
+      width: 31%;
+      margin: 4px 1%;
+      padding: 12px 0 10px 0;
+      text-align: center;
+      background: #f7f7f8;
+      border: 1px solid #e1e1e1;
+      border-radius: 8px;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
+    }
+
+    .tile-n {
+      display: block;
+      font-size: 20px;
+      line-height: 24px;
+      font-weight: bold;
+      color: #385487;
+    }
+
+    .tile-label {
+      display: block;
+      color: #8e8e93;
+      font-size: 11px;
+      line-height: 15px;
+    }
+
+    @media screen and (max-width: 480px) {
+      .tile { width: 48%; }
+      .tile-n { font-size: 17px; line-height: 21px; }
+    }
+
+    /* Bar rows — a table so labels, tracks, and values align without calc()
+       or flexbox, neither of which the oldest supported Safaris have */
+    .bars {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 0 8px 0;
+    }
+
+    .bars td {
+      padding: 3px 0;
+      font-size: 13px;
+      line-height: 17px;
+      vertical-align: middle;
+    }
+
+    .bar-label {
+      padding-right: 8px !important;
+      white-space: nowrap;
+      color: #333;
+      text-align: right;
+      width: 1%;
+    }
+
+    .bar-label a {
+      color: #385487;
+      font-weight: bold;
+    }
+
+    .bar-label code {
+      font-family: Menlo, Monaco, "Courier New", monospace;
+      font-size: 12px;
+    }
+
+    .bar-cell {
+      width: 99%;
+      background: #f3f3f3;
+      border: 1px solid #e1e1e1;
+      border-radius: 4px;
+    }
+
+    .bar-fill {
+      height: 12px;
+      background: #6e83a4;
+      border-right: 1px solid #385487;
+      border-radius: 3px 0 0 3px;
+      min-width: 2px;
+    }
+
+    .bar-warn {
+      background: #ecd39c;
+      border-right-color: #91600e;
+    }
+
+    .bar-value {
+      padding-left: 8px !important;
+      white-space: nowrap;
+      text-align: right;
+      color: #666;
+      width: 1%;
+    }
+
+    /* Side-by-side blocks on wide screens, stacked on phones */
+    .half {
+      display: inline-block;
+      vertical-align: top;
+      width: 48%;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
+    }
+
+    .half-right { margin-left: 3%; }
+
+    @media screen and (max-width: 480px) {
+      .half { display: block; width: auto; }
+      .half-right { margin-left: 0; }
+    }
+
+    /* Record holders */
+    .records {
+      margin: 4px 0 0 0;
+    }
+
+    .record-group {
+      margin: 0 0 14px 0;
+    }
+
+    .record-title {
+      display: block;
+      font-size: 13px;
+      font-weight: bold;
+      color: #666;
+      margin-bottom: 2px;
+    }
+
+    .record-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      border: 1px solid #e1e1e1;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .record-list li {
+      padding: 7px 10px;
+      border-bottom: 1px solid #e1e1e1;
+      font-size: 14px;
+      line-height: 18px;
+      overflow: hidden;
+    }
+
+    .record-list li:last-child { border-bottom: none; }
+
+    .record-link {
+      color: #385487;
+      font-weight: bold;
+    }
+
+    .record-detail {
+      float: right;
+      color: #8e8e93;
+    }
+
+    .notes {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .notes li {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      line-height: 18px;
+      color: #666;
+    }
+  </style>
+</Layout>

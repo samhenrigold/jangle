@@ -1,4 +1,6 @@
 User-agent: *
 Disallow: /search
 Disallow: /manifest/
+Disallow: /img
+Disallow: /time-machine?
 Sitemap: https://legacystore.app/sitemap.xml
