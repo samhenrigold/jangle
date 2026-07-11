@@ -61,7 +61,7 @@ export async function getGenreNames(supabase: any): Promise<Map<number, string> 
 
 // Chart depth from the feed URL (…/limit=100/xml). Cheaper than counting
 // chart_positions per snapshot, which blows the anon statement timeout.
-export function limitOf(sourceUrl: string): number {
+function limitOf(sourceUrl: string): number {
   const m = /limit=(\d+)/.exec(sourceUrl || '');
   return m ? Number(m[1]) : 0;
 }
@@ -131,7 +131,7 @@ export async function getSnapshotPositions(supabase: any, snapshotId: number): P
   return rows;
 }
 
-export type Peak = {
+type Peak = {
   position: number;
   typeId: number;
   date: string;
@@ -141,7 +141,7 @@ export type Peak = {
 // Best all-genre chart placement per app, for badge lines under list rows.
 // !inner + the embedded genre_id filter keeps this to the all-apps charts
 // (a #1 in a niche genre chart isn't "peaked at #1").
-export async function getPeaks(
+async function getPeaks(
   supabase: any,
   appStoreIds: number[],
   cacheKey: string
@@ -172,7 +172,7 @@ export async function getPeaks(
 }
 
 // "Peaked at #1 Top Paid · Dec 2010" — one line under a list row.
-export function peakText(peak: Peak | null | undefined, typesById: Map<number, { name: string }>): string {
+function peakText(peak: Peak | null | undefined, typesById: Map<number, { name: string }>): string {
   if (!peak) return '';
   const typeName = typesById.get(peak.typeId)?.name || 'the charts';
   const device = peak.device === 'ipad' ? ' (iPad)' : '';
@@ -195,6 +195,72 @@ export async function getPeakLines(
   const lines = new Map<number, string>();
   for (const [id, peak] of peaks) lines.set(id, peakText(peak, typesById));
   return lines;
+}
+
+// --- Per-app history (the app page's Chart History / Ratings / Reviews
+// sections). All keyed by app_store_id; each returns null on a query failure
+// so the caller can drop just that section (decorative — never 503 the page).
+
+// Raw chart placements for one app, joined to their snapshot's date/genre/feed.
+export async function getAppChartHistory(supabase: any, appStoreId: number): Promise<any[] | null> {
+  const key = `tm:apphist:${appStoreId}`;
+  const cached = cacheGet<any[]>(key);
+  if (cached) return cached;
+  const { data, error } = await supabase
+    .from('chart_positions')
+    .select('position, chart_snapshots(snapshot_date, genre_id, chart_type_id, source_url)')
+    .eq('app_store_id', appStoreId)
+    .limit(1000);
+  if (error) {
+    console.error('chart history query failed:', error.message);
+    return null;
+  }
+  cacheSet(key, data || [], 10 * 60 * 1000);
+  return data || [];
+}
+
+// Listing-snapshot trail (rating avg/count, version, price), oldest first.
+export async function getAppRatingHistory(supabase: any, appStoreId: number): Promise<any[] | null> {
+  const key = `tm:ratings:${appStoreId}`;
+  const cached = cacheGet<any[]>(key);
+  if (cached) return cached;
+  const { data, error } = await supabase
+    .from('app_listing_snapshots')
+    .select('captured_at, rating_avg, rating_count, version, price_amount, price_currency')
+    .eq('app_store_id', appStoreId)
+    .order('captured_at', { ascending: true })
+    .limit(1000);
+  if (error) {
+    console.error('rating history query failed:', error.message);
+    return null;
+  }
+  cacheSet(key, data || [], 10 * 60 * 1000);
+  return data || [];
+}
+
+// The most-helpful archived reviews plus the app's total review count.
+export async function getAppReviews(
+  supabase: any,
+  appStoreId: number,
+  limit: number
+): Promise<{ rows: any[]; total: number } | null> {
+  const key = `tm:reviews:${appStoreId}`;
+  const cached = cacheGet<{ rows: any[]; total: number }>(key);
+  if (cached) return cached;
+  const { data, error, count } = await supabase
+    .from('app_reviews')
+    .select('review_id, stars, title, body, author, app_version, vote_sum, vote_count, reviewed_at, first_seen_ts', { count: 'exact' })
+    .eq('app_store_id', appStoreId)
+    .order('vote_sum', { ascending: false })
+    .order('review_id', { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error('archived reviews query failed:', error.message);
+    return null;
+  }
+  const result = { rows: data || [], total: count || (data || []).length };
+  cacheSet(key, result, 10 * 60 * 1000);
+  return result;
 }
 
 const waybackTsFmt = new Intl.DateTimeFormat('en-US', {

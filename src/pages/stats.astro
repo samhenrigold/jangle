@@ -1,9 +1,10 @@
 ---
 import Layout from '../components/Layout.astro';
-import { getSupabaseClient } from '../lib/supabase';
+import { supabaseFor } from '../lib/supabase';
 import { setCacheHeaders, setDegraded } from '../lib/http';
 import { formatNumber, formatDate, formatFileSize } from '../lib/format';
 import { iconSrc } from '../lib/icons';
+import { osShortLabel } from '../lib/devices';
 import { barChartSVG, type BarDatum } from '../lib/charts';
 
 // On localhost (astro dev) we want live, uncached numbers so changes to the DB
@@ -19,10 +20,7 @@ if (isDev) {
 
 // The live recompute (localhost only) runs ~8s server-side, so the dev client
 // needs a deadline beyond the usual 8s abort; prod keeps the tight default.
-const supabase = getSupabaseClient(
-  (Astro.locals as any)?.runtime?.env,
-  isDev ? { timeoutMs: 25000 } : undefined
-);
+const supabase = supabaseFor(Astro, isDev ? { timeoutMs: 25000 } : undefined);
 
 let stats: any = null;
 {
@@ -54,11 +52,6 @@ const bar = (label: string, value: number, extra: Partial<BarDatum> = {}): BarDa
   display: formatNumber(value),
   ...extra,
 });
-
-// The OS was "iPhone OS" through 3.x; Apple renamed it "iOS" at version 4 (2010).
-function osLabel(major: number): string {
-  return major <= 3 ? `iPhone OS ${major}` : `iOS ${major}`;
-}
 
 // The "as of" line shows the exact timestamp the numbers were computed — down to
 // the minute (UTC), so on localhost a live recompute is visibly fresh.
@@ -119,7 +112,7 @@ if (stats) {
     const major = parseInt(key, 10);
     const n = Number(minOs[key]) || 0;
     if (!Number.isFinite(major) || major < 2) continue; // "1"/junk keys
-    if (major <= 10) osRows.push(bar(osLabel(major), n));
+    if (major <= 10) osRows.push(bar(osShortLabel(major), n));
     else osLater += n;
   }
   osRows.sort((a, b) => parseInt(a.label.replace(/\D/g, ''), 10) - parseInt(b.label.replace(/\D/g, ''), 10));
@@ -159,34 +152,20 @@ if (stats) {
     { title: 'Reviews by star rating', labelWidth: 62 }
   );
 
+  // Each record group differs only in which rows it reads and how the detail
+  // column is formatted; the name/link/icon shape is identical.
+  const recordEntries = (rows: any[], detailOf: (a: any) => string) =>
+    (rows || []).map((a: any) => ({
+      text: String(a.name),
+      detail: detailOf(a),
+      href: a.id ? `/app/${a.id}` : undefined,
+      icon: a.icon_sha ? `/icon/${a.icon_sha}` : iconSrc(a.icon),
+    }));
+
   records = [
-    {
-      title: 'Most versions preserved',
-      entries: (stats.most_versions || []).map((a: any) => ({
-        text: String(a.name),
-        detail: `${formatNumber(a.n)} versions`,
-        href: a.id ? `/app/${a.id}` : undefined,
-        icon: a.icon_sha ? `/icon/${a.icon_sha}` : iconSrc(a.icon),
-      })),
-    },
-    {
-      title: 'Biggest downloads',
-      entries: (stats.biggest || []).map((a: any) => ({
-        text: String(a.name),
-        detail: formatFileSize(a.bytes),
-        href: a.id ? `/app/${a.id}` : undefined,
-        icon: a.icon_sha ? `/icon/${a.icon_sha}` : iconSrc(a.icon),
-      })),
-    },
-    {
-      title: 'Steepest price tags',
-      entries: (stats.priciest || []).map((a: any) => ({
-        text: String(a.name),
-        detail: String(a.price),
-        href: a.id ? `/app/${a.id}` : undefined,
-        icon: a.icon_sha ? `/icon/${a.icon_sha}` : iconSrc(a.icon),
-      })),
-    },
+    { title: 'Most versions preserved', entries: recordEntries(stats.most_versions, (a) => `${formatNumber(a.n)} versions`) },
+    { title: 'Biggest downloads', entries: recordEntries(stats.biggest, (a) => formatFileSize(a.bytes)) },
+    { title: 'Steepest price tags', entries: recordEntries(stats.priciest, (a) => String(a.price)) },
   ];
 
   const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);

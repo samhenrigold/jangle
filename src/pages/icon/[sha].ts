@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { blankGif } from '../../lib/http';
 
 // binaries.icon_sha256 → content-addressed icon in the public R2 bucket. The
 // object extension varies (.jpg or .png, not recorded in the DB), so this
@@ -6,18 +7,7 @@ import type { APIRoute } from 'astro';
 // iOS the cross-host TLS handshake.
 const R2_ICON_BASE = 'https://pub-6cf9918644fd4d31bee31970d321985b.r2.dev/icons';
 
-// 1x1 transparent GIF for misses — blank box instead of a broken-image glyph.
-const BLANK_GIF = Uint8Array.from(
-  atob('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'),
-  (c) => c.charCodeAt(0)
-);
-
-function blank(status = 404): Response {
-  return new Response(BLANK_GIF, {
-    status,
-    headers: { 'Content-Type': 'image/gif', 'Cache-Control': 'public, max-age=86400' },
-  });
-}
+const blank = (status: number) => blankGif(status, 'public, max-age=86400');
 
 export const GET: APIRoute = async (ctx) => {
   const sha = ctx.params.sha || '';

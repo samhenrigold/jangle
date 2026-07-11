@@ -2,7 +2,7 @@
 import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
-import { sortGenres, fetchGenresWithCounts } from '../../lib/genres';
+import { sortGenres, fetchGenresWithCounts, isGameSubgenre } from '../../lib/genres';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { iconSrc } from '../../lib/icons';
@@ -20,9 +20,7 @@ if (genresError) dbError = true;
 // The App Store game subgenres (genre_id 70xx) are populated only where an app's
 // PRIMARY genre happens to be the subgenre — a tiny, misleading fraction of the
 // ~10k games — so hide them here; the top-level genres are the real index.
-const topLevelGenres = sortGenres(genres ?? []).filter(
-  (g: any) => !(g.genre_id && String(g.genre_id).startsWith('70'))
-);
+const topLevelGenres = sortGenres(genres ?? []).filter((g: any) => !isGameSubgenre(g));
 
 // Row icons: the most-preserved app in each genre, using its period-authentic
 // (oldest) extracted icon where we have one, else the iTunes CDN icon.
@@ -54,7 +52,7 @@ if (dbError) setDegraded(Astro.response);
             <a href={`/categories/${genre.id}`} class="cat-link">
               <span class="chevron">&#8250;</span>
               <span class="cat-count">{formatNumber(genre.app_count)}</span>
-              <span class="cat-icon">{genreIcon.get(Number(genre.id)) && <img src={genreIcon.get(Number(genre.id))} alt="" width="40" height="40" loading="lazy" />}<span class="cat-icon-mask"></span></span>
+              <span class="cat-icon">{genreIcon.get(Number(genre.id)) && <img src={genreIcon.get(Number(genre.id))} alt="" width="40" height="40" loading="lazy" />}<span class="icon-mask"></span></span>
               <span class="cat-name">{genre.genre_name}</span>
             </a>
           </li>
@@ -110,16 +108,6 @@ if (dbError) setDegraded(Astro.response);
       width: 40px;
       height: 40px;
       border-radius: 8px;
-    }
-
-    .cat-icon-mask {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: url('/icon-mask.png') no-repeat;
-      background-size: 100% 100%;
     }
 
     .cat-name {

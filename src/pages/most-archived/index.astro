@@ -44,7 +44,7 @@ if (!topChartsApps) {
 // Get total count for pagination
 const countCacheKey = 'topcharts_count';
 let total = cacheGet<number>(countCacheKey);
-if (typeof total !== 'number') {
+if (!dbError && typeof total !== 'number') {
   const { data: totalCountArr, error } = await supabase.rpc('get_apps_count', { p_genre_id: null, p_search_query: null });
   total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
   if (error) {

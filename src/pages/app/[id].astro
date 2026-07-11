@@ -6,104 +6,33 @@ import { cacheGet, cacheSet } from '../../lib/cache';
 import { sortVersions, coerceDir } from '../../lib/sorting';
 import { generateIpaDownloadUrl } from '../../lib/urls';
 import { iconSrc } from '../../lib/icons';
-import { formatDate, formatFileSize } from '../../lib/format';
+import { formatDate, formatFileSize, formatNumber } from '../../lib/format';
 import { dedupeFilesByHash, fileLabel, sortGroupsByPreference } from '../../lib/files';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
-import { formatNumber } from '../../lib/format';
-import { getChartTypes, getGenreNames, deviceOf, starString, sampleEvenly, formatMonthYear, formatPrice, formatApproxMonthYear } from '../../lib/timemachine';
+import { resolveApp, appTitleOf } from '../../lib/apps';
+import {
+  getChartTypes, getGenreNames, getAppChartHistory, getAppRatingHistory, getAppReviews,
+  deviceOf, starString, sampleEvenly, formatMonthYear, formatPrice, formatApproxMonthYear,
+} from '../../lib/timemachine';
 import { pickOldestIcon, getOldestIcons } from '../../lib/appicons';
 import AppList from '../../components/AppList.astro';
 import { osRequirementLabel, osShortLabel } from '../../lib/devices';
 import { lineChartSVG } from '../../lib/charts';
 
-// Cap on copies rendered inline (hidden) for the client-side "show all copies"
+// Cap on copies rendered inline (hidden) for the client-side "Show everything"
 // reveal. Average copies/version is ~1.4, but a handful of versions have
-// hundreds — rendering those all into the DOM would bloat the page, so versions
-// above the cap keep the ?copies=all server navigation for the overflow.
+// hundreds — rendering those all into the DOM would bloat the page, so the
+// overflow only renders on the ?all=1 server navigation.
 const INLINE_COPY_CAP = 12;
 
 const { id } = Astro.params;
 const supabase = supabaseFor(Astro);
-let dbError = false;
-
-// App details: prefer App Store ID in the URL, then bundle_id, fallback to internal DB id
 const rawParam = id as string;
-const isNumeric = /^\d+$/.test(rawParam);
-const looksLikeBundleId = /\./.test(rawParam);
 
-let appData = undefined as any;
-
-// 1) Numeric param: prefer App Store ID (what public links use), fall back to
-//    internal id. Never match the app_store_id=0 sentinel; break ties by id so
-//    duplicate app_store_ids route deterministically.
-if (isNumeric) {
-  const cacheKey = `appByNumeric:${rawParam}`;
-  const cached = cacheGet<any>(cacheKey);
-  if (cached) {
-    appData = cached;
-  } else {
-    const cols = 'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)';
-    // app_store_id is int4 — an out-of-range param is "no such app", not a
-    // DB failure, so skip the probe rather than trip the 503 path.
-    if (rawParam !== '0' && Number(rawParam) <= 2147483647) {
-      const { data, error } = await supabase
-        .from('apps')
-        .select(cols)
-        .eq('app_store_id', rawParam)
-        .order('id', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (error) dbError = true;
-      if (data) appData = data;
-    }
-    if (!appData && !dbError) {
-      const { data, error } = await supabase
-        .from('apps')
-        .select(cols)
-        .eq('id', rawParam)
-        .maybeSingle();
-      if (error) dbError = true;
-      if (data) appData = data;
-    }
-    if (appData) cacheSet(cacheKey, appData, 10 * 60 * 1000);
-  }
-}
-
-// 2) Try by bundle_id when it looks like a reverse-DNS ID
-if (!appData && !dbError && looksLikeBundleId) {
-  const cacheByBundle = cacheGet<any>(`appByBundle:${rawParam}`);
-  if (cacheByBundle) {
-    appData = cacheByBundle;
-  } else {
-    const { data, error } = await supabase
-      .from('apps')
-      .select('id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
-      .eq('bundle_id', rawParam)
-      .maybeSingle();
-    if (error) dbError = true;
-    if (data) {
-      appData = data;
-      cacheSet(`appByBundle:${rawParam}`, appData, 10 * 60 * 1000);
-    }
-  }
-}
-
-// 3) Fallback to internal DB id
-if (!appData && !dbError) {
-  const cacheById = cacheGet<any>(`app:${rawParam}`);
-  if (cacheById) {
-    appData = cacheById;
-  } else {
-    const { data, error } = await supabase
-      .from('apps')
-      .select('id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)')
-      .eq('id', rawParam)
-      .maybeSingle();
-    if (error) dbError = true;
-    appData = data;
-    if (appData) cacheSet(`app:${rawParam}`, appData, 10 * 60 * 1000);
-  }
-}
+// App Store ID in the URL preferred, then bundle_id, fallback to internal DB id.
+const resolved = await resolveApp(supabase, rawParam);
+const appData = resolved.app;
+let dbError = resolved.dbError;
 
 // A transient DB failure must not become a cached 404 (or a cached empty page).
 if (dbError) {
@@ -182,7 +111,7 @@ if (!dbError && ipaFiles.length) {
     for (let i = 0; i < shas.length; i += CHUNK) {
       const { data, error } = await supabase
         .from('binaries')
-        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app')
+        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app, has_extensions')
         .in('sha1', shas.slice(i, i + CHUNK));
       if (error) {
         // Binary enrichment is decorative (install badges, era icons). If it
@@ -209,58 +138,9 @@ let reviewTotal = 0;
 
 if (!dbError && appStoreId) {
   const [charts, ratings, reviews] = await Promise.all([
-    (async () => {
-      const key = `tm:apphist:${appStoreId}`;
-      const cached = cacheGet<any[]>(key);
-      if (cached) return cached;
-      const { data, error } = await supabase
-        .from('chart_positions')
-        .select('position, chart_snapshots(snapshot_date, genre_id, chart_type_id, source_url)')
-        .eq('app_store_id', appStoreId)
-        .limit(1000);
-      if (error) {
-        console.error('chart history query failed:', error.message);
-        return null;
-      }
-      cacheSet(key, data || [], 10 * 60 * 1000);
-      return data || [];
-    })(),
-    (async () => {
-      const key = `tm:ratings:${appStoreId}`;
-      const cached = cacheGet<any[]>(key);
-      if (cached) return cached;
-      const { data, error } = await supabase
-        .from('app_listing_snapshots')
-        .select('captured_at, rating_avg, rating_count, version, price_amount, price_currency')
-        .eq('app_store_id', appStoreId)
-        .order('captured_at', { ascending: true })
-        .limit(1000);
-      if (error) {
-        console.error('rating history query failed:', error.message);
-        return null;
-      }
-      cacheSet(key, data || [], 10 * 60 * 1000);
-      return data || [];
-    })(),
-    (async () => {
-      const key = `tm:reviews:${appStoreId}`;
-      const cached = cacheGet<{ rows: any[]; total: number }>(key);
-      if (cached) return cached;
-      const { data, error, count } = await supabase
-        .from('app_reviews')
-        .select('review_id, stars, title, body, author, app_version, vote_sum, vote_count, reviewed_at, first_seen_ts', { count: 'exact' })
-        .eq('app_store_id', appStoreId)
-        .order('vote_sum', { ascending: false })
-        .order('review_id', { ascending: false })
-        .limit(8);
-      if (error) {
-        console.error('archived reviews query failed:', error.message);
-        return null;
-      }
-      const result = { rows: data || [], total: count || (data || []).length };
-      cacheSet(key, result, 10 * 60 * 1000);
-      return result;
-    })(),
+    getAppChartHistory(supabase, appStoreId),
+    getAppRatingHistory(supabase, appStoreId),
+    getAppReviews(supabase, appStoreId, 8),
   ]);
   // History (charts / ratings / reviews) is decorative — a failure drops those
   // sections, it does not 503 the app page. Each is independently best-effort.
@@ -444,7 +324,7 @@ const chronoDateOf = (v: any) =>
   v?.estimated_release_date
     ? String(v.estimated_release_date).slice(0, 10)
     : (isTrustworthyDate(v?.release_date) ? String(v.release_date).slice(0, 10) : null);
-const sortedVersions = sortVersions(filtered, 'date', currentDir, chronoDateOf);
+const sortedVersions = sortVersions(filtered, currentDir, chronoDateOf);
 
 // Flip the sort direction, preserving the other params.
 function sortToggleHref(): string {
@@ -453,7 +333,7 @@ function sortToggleHref(): string {
   return `${pathname}?${sp.toString()}`;
 }
 
-const appTitle = appData ? (appData.app_store_name || appData.display_name || appData.bundle_id) : 'App';
+const appTitle = appData ? appTitleOf(appData) : 'App';
 const appIcon = oldestIconSha ? `/icon/${oldestIconSha}` : (appData ? iconSrc(appData.icon_url) : '');
 const genreName = appData?.genres?.genre_name;
 const developerName = appData?.developers?.artist_name;
@@ -754,7 +634,6 @@ if (sizePoints.length >= 3) {
           <>
             <div class="section-header">
               <h2 class="section-title">Chart History</h2>
-              <span class="section-detail"><a class="tm-more" href="/charts">Charts ›</a></span>
             </div>
             <div class="history-card">
               {chartGroups.map((g: any) => {
@@ -895,18 +774,7 @@ if (sizePoints.length >= 3) {
       border-radius: 13px;
     }
 
-    /* Apple's App Store icon treatment: an overlay that rounds the corners and
-       adds the thin border + drop shadow. Its surround is white, so it blends
-       into the white card. background-size lets the one raster serve any size. */
-    .icon-mask {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: url('/icon-mask.png') no-repeat;
-      background-size: 100% 100%;
-    }
+    /* .icon-mask (the App Store rounded-rect overlay) comes from global.css. */
 
     .app-titles {
       overflow: hidden;

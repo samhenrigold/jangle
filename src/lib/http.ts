@@ -34,3 +34,17 @@ export function setDegraded(response: { headers: Headers; status?: number }): vo
   response.headers.set('Cache-Control', 'no-store');
   response.status = 503;
 }
+
+// 1x1 transparent GIF — the image endpoints (/img, /icon) return it on any
+// miss so old Safari shows a blank box instead of a broken-image glyph.
+const BLANK_GIF = Uint8Array.from(
+  atob('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'),
+  (c) => c.charCodeAt(0)
+);
+
+export function blankGif(status: number, cacheControl: string): Response {
+  return new Response(BLANK_GIF, {
+    status,
+    headers: { 'Content-Type': 'image/gif', 'Cache-Control': cacheControl },
+  });
+}

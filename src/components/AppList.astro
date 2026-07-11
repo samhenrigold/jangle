@@ -1,5 +1,6 @@
 ---
 import { iconSrc } from '../lib/icons';
+import { appTitleOf } from '../lib/apps';
 
 // startRank: when set, rows are numbered from it (charts / category "top" lists).
 // peakLines: optional map of app_store_id → "Peaked at #1 Top Paid · Dec 2010"
@@ -8,10 +9,6 @@ import { iconSrc } from '../lib/icons';
 // authentic icon extracted from the app's earliest binary); when present it
 // wins over the modern iTunes CDN icon_url.
 const { list = [], startRank, peakLines, iconShas } = Astro.props;
-
-// app_store_name is the iTunes listing name ("Angry Birds HD Free") and
-// disambiguates the many apps whose bundle display_name is identical.
-const titleOf = (a: any) => a.app_store_name || a.display_name || a.bundle_id;
 ---
 <ul class="applist">
   {list.map((a: any, i: number) => {
@@ -29,7 +26,7 @@ const titleOf = (a: any) => a.app_store_name || a.display_name || a.bundle_id;
           <span class="count">{count}<span class="count-label">{count === 1 ? 'version' : 'versions'}</span></span>
         )}
         <span class="info">
-          <span class="name">{titleOf(a)}</span>
+          <span class="name">{appTitleOf(a)}</span>
           <span class="meta">{[a.developer_artist_name, a.bundle_id].filter(Boolean).join(' · ')}</span>
           {peak && <span class="peak">{peak}</span>}
         </span>

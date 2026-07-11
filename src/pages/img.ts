@@ -1,26 +1,12 @@
 import type { APIRoute } from 'astro';
 import { isProxyableIconHost } from '../lib/icons';
+import { blankGif } from '../lib/http';
 
-// 1x1 transparent GIF — returned when an icon can't be fetched, so old Safari
-// shows a blank box instead of a broken-image glyph.
-const BLANK_GIF = Uint8Array.from(
-  atob('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'),
-  (c) => c.charCodeAt(0)
-);
-
-function blank(status = 200): Response {
-  return new Response(BLANK_GIF, {
-    status,
-    headers: {
-      'Content-Type': 'image/gif',
-      // Pin the negative result at the edge too (s-maxage), not just the browser.
-      // The miss path does up to N upstream fetches; without an edge-cached blank,
-      // a crawler hitting many distinct unresolvable ?u= URLs re-pays that cost on
-      // every request — the shape of the earlier free-tier-exhaustion incident.
-      'Cache-Control': 'public, max-age=86400, s-maxage=86400',
-    },
-  });
-}
+// Pin the negative result at the edge too (s-maxage), not just the browser.
+// The miss path does up to N upstream fetches; without an edge-cached blank,
+// a crawler hitting many distinct unresolvable ?u= URLs re-pays that cost on
+// every request — the shape of the earlier free-tier-exhaustion incident.
+const blank = (status: number) => blankGif(status, 'public, max-age=86400, s-maxage=86400');
 
 // "mzstatic resurrection" (from plan 010): Apple rarely deletes the underlying
 // image even when an old derivative URL 404s. Old-style pool derivatives

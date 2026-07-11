@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { buildItmsManifestPlist } from '../../lib/manifest';
-import { getSupabaseClient } from '../../lib/supabase';
+import { supabaseFor } from '../../lib/supabase';
 import { generateIpaDownloadUrl } from '../../lib/urls';
 import { absoluteIconSrc } from '../../lib/icons';
 
@@ -11,7 +11,7 @@ export const GET: APIRoute = async (ctx) => {
       return new Response('Not found', { status: 404 });
     }
 
-    const supabase = getSupabaseClient((ctx.locals as any)?.runtime?.env);
+    const supabase = supabaseFor(ctx);
 
     const { data: ipa, error } = await supabase
       .from('ipa_files')
