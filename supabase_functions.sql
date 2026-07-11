@@ -378,3 +378,139 @@ AS $$
   ORDER BY a.genre_id, a.version_count DESC NULLS LAST, a.id;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_genre_top_apps() TO anon, authenticated;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Audit follow-up (2026-07-11). The definitions below SUPERSEDE the earlier
+-- get_apps_count / get_genres_with_counts / refresh_app_version_stats above when
+-- this file is run top-to-bottom (CREATE OR REPLACE / DROP+CREATE, last wins).
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- F3/F2: per-genre and total app counts re-aggregated the whole apps table on
+-- every call, and under ingestion the index-only count scans degrade to heavy
+-- heap fetches (idle ~12ms, under load ~200ms). Cache them like archive_stats,
+-- refreshed hourly so pagination totals lag <=1h during ingestion. Idle live
+-- counts are cheap, so search counts stay live+exact; only the unfiltered total
+-- and per-genre counts are served from cache.
+CREATE TABLE IF NOT EXISTS public.genre_counts_cache (
+  id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  counts jsonb NOT NULL,        -- { "<genres.id>": <app_count>, ... }
+  total_apps bigint NOT NULL,
+  computed_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.genre_counts_cache ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read" ON public.genre_counts_cache;
+CREATE POLICY "Public read" ON public.genre_counts_cache FOR SELECT TO anon, authenticated USING (true);
+GRANT SELECT ON public.genre_counts_cache TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.refresh_genre_counts()
+RETURNS void
+LANGUAGE sql SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  INSERT INTO public.genre_counts_cache AS c (id, counts, total_apps, computed_at)
+  VALUES (
+    1,
+    COALESCE((SELECT jsonb_object_agg(genre_id::text, cnt)
+              FROM (SELECT genre_id, count(*) cnt FROM apps WHERE genre_id IS NOT NULL GROUP BY genre_id) s),
+             '{}'::jsonb),
+    (SELECT count(*) FROM apps),
+    now()
+  )
+  ON CONFLICT (id) DO UPDATE
+    SET counts = EXCLUDED.counts, total_apps = EXCLUDED.total_apps, computed_at = EXCLUDED.computed_at;
+$$;
+REVOKE EXECUTE ON FUNCTION public.refresh_genre_counts() FROM PUBLIC, anon, authenticated;
+SELECT public.refresh_genre_counts();
+
+CREATE OR REPLACE FUNCTION public.get_genres_with_counts()
+RETURNS TABLE (
+  id BIGINT, genre_id BIGINT, genre_name TEXT, created_at TIMESTAMPTZ,
+  app_count BIGINT, total_apps BIGINT
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE c jsonb; t bigint; computed timestamptz;
+BEGIN
+  SELECT gc.counts, gc.total_apps, gc.computed_at INTO c, t, computed
+  FROM public.genre_counts_cache gc WHERE gc.id = 1;
+  IF c IS NULL OR computed < now() - interval '6 hours' THEN
+    PERFORM public.refresh_genre_counts();
+    SELECT gc.counts, gc.total_apps INTO c, t FROM public.genre_counts_cache gc WHERE gc.id = 1;
+  END IF;
+  RETURN QUERY
+    SELECT g.id::bigint, g.genre_id::bigint, g.genre_name, g.created_at,
+           COALESCE((c ->> g.id::text)::bigint, 0) AS app_count,
+           t AS total_apps
+    FROM genres g
+    ORDER BY g.genre_name ASC;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_genres_with_counts() TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.get_apps_count(
+  p_genre_id BIGINT DEFAULT NULL, p_search_query TEXT DEFAULT NULL
+)
+RETURNS BIGINT
+LANGUAGE plpgsql STABLE
+SET search_path = public, pg_temp
+AS $$
+DECLARE n bigint;
+BEGIN
+  IF p_search_query IS NULL AND p_genre_id IS NULL THEN
+    SELECT gc.total_apps INTO n FROM genre_counts_cache gc WHERE gc.id = 1;
+    IF n IS NOT NULL THEN RETURN n; END IF;
+  ELSIF p_search_query IS NULL AND p_genre_id IS NOT NULL THEN
+    SELECT (gc.counts ->> p_genre_id::text)::bigint INTO n FROM genre_counts_cache gc WHERE gc.id = 1;
+    IF n IS NOT NULL THEN RETURN n; END IF;
+  END IF;
+  RETURN (SELECT count(*) FROM apps a
+          WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+            AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query)));
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_apps_count(bigint, text) TO anon, authenticated;
+
+SELECT cron.schedule('refresh-genre-counts', '0 * * * *', 'SELECT public.refresh_genre_counts()');
+
+-- F8: the version-stats trigger was FOR EACH ROW, so a bulk version import was
+-- O(rows) re-aggregations of the same apps. Statement-level with transition
+-- tables recomputes each affected app once per statement. Transition tables
+-- forbid multi-event triggers AND column lists, so this is four single-event
+-- triggers sharing one function via the common transition-table alias `chg`
+-- (NEW side for INSERT + UPDATE, OLD side for DELETE + UPDATE).
+CREATE OR REPLACE FUNCTION public.refresh_app_version_stats()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+  UPDATE public.apps a
+  SET version_count = COALESCE(s.cnt, 0), first_version_date = s.first_date
+  FROM (
+    SELECT ids.app_id, count(v.id) AS cnt, min(v.release_date) AS first_date
+    FROM (SELECT DISTINCT app_id FROM chg WHERE app_id IS NOT NULL) ids
+    LEFT JOIN public.app_versions v ON v.app_id = ids.app_id
+    GROUP BY ids.app_id
+  ) s
+  WHERE a.id = s.app_id;
+  RETURN NULL;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_app_version_stats ON public.app_versions;
+DROP TRIGGER IF EXISTS trg_app_version_stats_ins ON public.app_versions;
+DROP TRIGGER IF EXISTS trg_app_version_stats_upd_new ON public.app_versions;
+DROP TRIGGER IF EXISTS trg_app_version_stats_upd_old ON public.app_versions;
+DROP TRIGGER IF EXISTS trg_app_version_stats_del ON public.app_versions;
+CREATE TRIGGER trg_app_version_stats_ins AFTER INSERT ON public.app_versions
+  REFERENCING NEW TABLE AS chg FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_app_version_stats();
+CREATE TRIGGER trg_app_version_stats_upd_new AFTER UPDATE ON public.app_versions
+  REFERENCING NEW TABLE AS chg FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_app_version_stats();
+CREATE TRIGGER trg_app_version_stats_upd_old AFTER UPDATE ON public.app_versions
+  REFERENCING OLD TABLE AS chg FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_app_version_stats();
+CREATE TRIGGER trg_app_version_stats_del AFTER DELETE ON public.app_versions
+  REFERENCING OLD TABLE AS chg FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_app_version_stats();
+
+-- F6: index the two live ORDER BY paths that were seq-scan + sort. Run OUTSIDE a
+-- transaction (CONCURRENTLY) so an active ingestion is never blocked.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_apps_first_version_date
+  ON public.apps (first_version_date DESC, display_name ASC);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_apps_genre_version_count
+  ON public.apps (genre_id, version_count DESC, display_name ASC);
