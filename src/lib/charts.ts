@@ -101,3 +101,71 @@ export function barChartSVG(rows: BarDatum[], opts: BarChartOptions): string {
     `</svg></div>`
   );
 }
+
+export interface LinePoint {
+  t: number; // x position (e.g. a timestamp in ms)
+  y: number; // value
+  label: string; // per-point accessible/hover label, e.g. "5.3 MB — Dec 2010"
+}
+
+interface LineChartOptions {
+  title: string;
+  yFormat: (n: number) => string; // format a y value for the axis (bytes → "5.3 MB")
+  xStartLabel: string; // label under the left edge
+  xEndLabel: string; // label under the right edge
+}
+
+// Static line chart (e.g. bundle size over time). Same static-SVG rules as the
+// bar chart — plain <polyline>/<circle>/<text>, no script — so it renders on
+// iOS 4-6 WebKit. y runs from 0 to the data max; x from the first to last t.
+export function lineChartSVG(points: LinePoint[], opts: LineChartOptions): string {
+  const H = 200;
+  const FONT = 11;
+  const ML = 54; // room for the y-axis labels
+  const MR = 8;
+  const MT = 10;
+  const MB = 22; // room for x-labels
+  const plotW = WIDTH - ML - MR;
+  const plotH = H - MT - MB;
+  const DIV = 4; // y-axis gridline intervals
+
+  const pts = points.slice().sort((a, b) => a.t - b.t);
+  const tMin = pts[0].t;
+  const tMax = pts[pts.length - 1].t;
+  const tSpan = tMax - tMin || 1;
+  const yMax = Math.max(1, ...pts.map((p) => p.y));
+
+  const sx = (t: number) => ML + ((t - tMin) / tSpan) * plotW;
+  const sy = (y: number) => MT + (1 - y / yMax) * plotH;
+
+  const coords = pts.map((p) => `${Math.round(sx(p.t))},${Math.round(sy(p.y))}`).join(' ');
+  const dots = pts
+    .map((p) => `<circle cx="${Math.round(sx(p.t))}" cy="${Math.round(sy(p.y))}" r="2.5" fill="#385487"><title>${esc(p.label)}</title></circle>`)
+    .join('');
+
+  const parts: string[] = [];
+  // Horizontal gridlines with a y-axis label at each.
+  for (let i = 0; i <= DIV; i++) {
+    const val = (yMax * i) / DIV;
+    const y = Math.round(sy(val));
+    parts.push(`<line x1="${ML}" y1="${y}" x2="${WIDTH - MR}" y2="${y}" stroke="${i === 0 ? '#e1e1e1' : '#f0f0f0'}" stroke-width="1"/>`);
+    parts.push(`<text x="${ML - 6}" y="${y + 4}" text-anchor="end" font-family="${SANS}" font-size="${FONT}" fill="#a0a0a5">${esc(opts.yFormat(val))}</text>`);
+  }
+  parts.push(`<polyline points="${coords}" fill="none" stroke="#6e83a4" stroke-width="2"/>`);
+  parts.push(dots);
+  // X-axis endpoint labels.
+  parts.push(`<text x="${ML}" y="${H - 6}" font-family="${SANS}" font-size="${FONT}" fill="#a0a0a5">${esc(opts.xStartLabel)}</text>`);
+  parts.push(`<text x="${WIDTH - MR}" y="${H - 6}" text-anchor="end" font-family="${SANS}" font-size="${FONT}" fill="#a0a0a5">${esc(opts.xEndLabel)}</text>`);
+
+  const desc = pts.map((p) => p.label).join('. ');
+  const ratio = ((H / WIDTH) * 100).toFixed(3);
+  return (
+    `<div class="chart-box" style="position:relative;width:100%;height:0;padding-bottom:${ratio}%">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${H}" ` +
+    `preserveAspectRatio="xMinYMin meet" role="img" ` +
+    `style="position:absolute;top:0;left:0;width:100%;height:100%">` +
+    `<title>${esc(opts.title)}</title><desc>${esc(desc)}</desc>` +
+    parts.join('') +
+    `</svg></div>`
+  );
+}

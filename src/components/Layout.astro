@@ -19,6 +19,24 @@ const {
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>{title}</title>
+    <!-- Tag <html> with the device type before paint, so device-specific CSS
+         (e.g. Install vs Download on app pages) applies without a flash. Pages
+         render identically for every device and edge-cache; this class is the
+         only per-device branch, done on the client. Old-WebKit-safe. -->
+    <script is:inline>
+      (function () {
+        try {
+          var ua = navigator.userAgent, d = document.documentElement;
+          if (/iPhone|iPad|iPod/.test(ua)) {
+            d.className += (d.className ? ' ' : '') + 'is-ios';
+            var m = ua.match(/OS (\d+)_/);
+            if (m) d.setAttribute('data-ios', m[1]);
+          } else {
+            d.className += (d.className ? ' ' : '') + 'is-desktop';
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <TopNavigation activeTab={activeTab} searchQuery={searchQuery} mobileSearch={mobileSearch} />

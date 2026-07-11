@@ -2,7 +2,7 @@
 import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
-import { sortVersions, coerceDir, coerceSortKey, defaultDirForSort } from '../../lib/sorting';
+import { sortVersions, coerceDir } from '../../lib/sorting';
 import { generateIpaDownloadUrl } from '../../lib/urls';
 import { iconSrc } from '../../lib/icons';
 import { formatDate, formatFileSize } from '../../lib/format';
@@ -11,6 +11,14 @@ import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { formatNumber } from '../../lib/format';
 import { getChartTypes, getGenreNames, deviceOf, starString, sampleEvenly, formatMonthYear, formatPrice, formatApproxMonthYear } from '../../lib/timemachine';
 import { pickOldestIcon } from '../../lib/appicons';
+import { osRequirementLabel, osShortLabel } from '../../lib/devices';
+import { lineChartSVG } from '../../lib/charts';
+
+// Cap on copies rendered inline (hidden) for the client-side "show all copies"
+// reveal. Average copies/version is ~1.4, but a handful of versions have
+// hundreds — rendering those all into the DOM would bloat the page, so versions
+// above the cap keep the ?copies=all server navigation for the overflow.
+const INLINE_COPY_CAP = 12;
 
 const { id } = Astro.params;
 const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
@@ -115,7 +123,7 @@ if (appData) {
   } else {
     const { data, error } = await supabase
       .from('app_versions')
-      .select('id, version_string, build_number, minimum_os_version, release_date, estimated_release_date, external_identifier')
+      .select('id, version_string, build_number, minimum_os_version, release_date, estimated_release_date, external_identifier, device_family')
       .eq('app_id', appData.id)
       .order('release_date', { ascending: false })
       .limit(200);
@@ -385,8 +393,8 @@ const pathname = requestUrl.pathname;
 const searchParams = requestUrl.searchParams;
 const origin = requestUrl.origin;
 
-const currentSort = coerceSortKey(searchParams.get('sort'));
-const currentDir = coerceDir(searchParams.get('dir') || defaultDirForSort(currentSort));
+// Versions are always sorted by date now; only the direction toggles.
+const currentDir = coerceDir(searchParams.get('dir') || 'desc');
 
 // The page is rendered identically for every device (no User-Agent sniffing),
 // so it edge-caches. The old auto "hide newer than your iOS" filter is now an
@@ -426,31 +434,141 @@ const filtered = iosFilter == null
   ? (versions || [])
   : (versions || []).filter((v: any) => { const mm = minOsMajor(v); return mm == null || mm <= iosFilter; });
 
-const sortedVersions = sortVersions(filtered, currentSort, currentDir);
+const sortedVersions = sortVersions(filtered, 'date', currentDir);
 
-function toggleSortHref(nextSort: string) {
-  // clicking the same sort toggles dir, otherwise use default dir for that sort
-  const ns = coerceSortKey(nextSort);
-  const nd = ns === currentSort ? (currentDir === 'asc' ? 'desc' : 'asc') : defaultDirForSort(ns);
+// Flip the sort direction, preserving the other params.
+function sortToggleHref(): string {
   const sp = new URLSearchParams(searchParams);
-  sp.set('sort', ns);
-  sp.set('dir', nd);
+  sp.set('dir', currentDir === 'asc' ? 'desc' : 'asc');
   return `${pathname}?${sp.toString()}`;
 }
-
-const SORT_OPTIONS: [string, string][] = [
-  ['date', 'Date'],
-  ['version', 'Version'],
-  ['build', 'Build'],
-  ['ios', 'iOS'],
-  ['id', 'ID'],
-];
 
 const appTitle = appData ? (appData.app_store_name || appData.display_name || appData.bundle_id) : 'App';
 const appIcon = oldestIconSha ? `/icon/${oldestIconSha}` : (appData ? iconSrc(appData.icon_url) : '');
 const genreName = appData?.genres?.genre_name;
 const developerName = appData?.developers?.artist_name;
 const versionNoun = versions.length === 1 ? 'archived version' : 'archived versions';
+
+// Game subgenre (Arcade, Puzzle, …): Apple's game categories are the 7xxx genre
+// codes recorded in archived listing snapshots. Only worth a lookup for games,
+// and it's fine if there's no data (many apps have none).
+let subgenre: string | null = null;
+if (!dbError && appStoreId && genreName === 'Games') {
+  const key = `subgenre:${appStoreId}`;
+  const cached = cacheGet<string | null>(key);
+  if (cached !== undefined) {
+    subgenre = cached;
+  } else {
+    const { data } = await supabase
+      .from('app_listing_snapshots')
+      .select('genre_ids')
+      .eq('app_store_id', appStoreId)
+      .not('genre_ids', 'is', null)
+      .limit(20);
+    const counts = new Map<number, number>();
+    for (const row of data || []) {
+      for (const gid of (row as any).genre_ids || []) {
+        const n = Number(gid);
+        if (n >= 7000 && n < 8000) counts.set(n, (counts.get(n) || 0) + 1);
+      }
+    }
+    let bestId: number | null = null;
+    let bestN = 0;
+    for (const [gid, n] of counts) if (n > bestN) { bestId = gid; bestN = n; }
+    if (bestId != null) {
+      const { data: g } = await supabase.from('genres').select('genre_name').eq('genre_id', bestId).maybeSingle();
+      subgenre = (g as any)?.genre_name || null;
+    }
+    cacheSet(key, subgenre, 30 * 60 * 1000);
+  }
+}
+
+// One archived copy of a version → its display detail + download affordances.
+function describeCopy(f: any, withFilename: boolean) {
+  const bin = binaryOf(f);
+  const size = formatFileSize(f.file_size);
+  const detailBits = withFilename ? [fileLabel(f.filename), size] : [size];
+  if (bin?.has_watch_app) detailBits.push('Watch app');
+  let ipaUrl: string | null = null;
+  try {
+    ipaUrl = generateIpaDownloadUrl({
+      id: f.id,
+      filename: f.filename,
+      info_plist_path: f.info_plist_path,
+      archive_item: { ia_item_id: f.archive_items?.ia_item_id || '' },
+    });
+  } catch {
+    ipaUrl = null;
+  }
+  return {
+    detail: detailBits.filter(Boolean).join(' · '),
+    encrypted: bin?.install_status === 'encrypted',
+    ipaUrl,
+    manifestUrl: `${origin}/manifest/${f.id}.plist`,
+  };
+}
+
+// The best copy fronts the lockup (its stats stacked under the meta, its button
+// centered opposite); the rest are extra copies revealed by "Show all copies".
+const versionRows = (sortedVersions || []).map((v: any) => {
+  const groups = sortGroupsByPreference(
+    dedupeFilesByHash(filesByVersionId.get(v.id) || []),
+    binaryOf,
+    v.minimum_os_version
+  );
+  const inlineGroups = showAllCopies ? groups : groups.slice(0, INLINE_COPY_CAP);
+  const versionLabel = v.version_string || v.build_number || 'Unknown version';
+  const showBuild = v.build_number && v.build_number !== versionLabel;
+  const vIconSha = groups.map((g: any) => iconShaOf(g.file)).find(Boolean);
+  const bin0 = groups.map((g: any) => binaryOf(g.file)).find(Boolean);
+  const machoMinOs = bin0?.macho_min_os;
+  // Each compatibility fact gets its own stacked line (OS requirement + date;
+  // the CPU-architecture line was cut — the iOS requirement is enough).
+  const metaLines: { text: string; title?: string }[] = [];
+  const osReq = osRequirementLabel(v.minimum_os_version) || osRequirementLabel(machoMinOs);
+  if (osReq) metaLines.push({ text: osReq });
+  if (v.estimated_release_date) metaLines.push({ text: formatDate(v.estimated_release_date), title: 'Estimated release date' });
+  else if (isTrustworthyDate(v.release_date)) metaLines.push({ text: `Released ${formatDate(v.release_date)}` });
+  const minosMajor = minOsMajor(v) ?? (machoMinOs ? parseInt(String(machoMinOs).split('.')[0], 10) : null);
+  // Universal (iPhone + iPad) → the App Store's "fat binary" + badge.
+  const df = (v.device_family || []).map((x: any) => String(x));
+  const isUniversal = df.indexOf('1') >= 0 && df.indexOf('2') >= 0;
+  const multi = groups.length > 1;
+  const primary = inlineGroups[0] ? describeCopy(inlineGroups[0].file, false) : null;
+  const extras = inlineGroups.slice(1).map((g: any) => describeCopy(g.file, multi));
+  const nofileText = groups.length === 0
+    ? (unavailableCountByVersion.get(v.id)
+        ? 'The copies of this version are no longer available on archive.org.'
+        : 'No file in the archive for this version.')
+    : null;
+  return { v, versionLabel, showBuild, vIconSha, metaLines, minosMajor, isUniversal, primary, extras, nofileText };
+});
+
+// Bundle size over time — the largest copy per dated version, chronological.
+// Uses every version (not the current sort/filter) so the trend is complete.
+const sizePoints = (versions || [])
+  .map((v: any) => {
+    const files = filesByVersionId.get(v.id) || [];
+    const bytes = files.reduce((mx: number, f: any) => Math.max(mx, Number(f.file_size) || 0), 0);
+    const dateStr = v.estimated_release_date || (isTrustworthyDate(v.release_date) ? v.release_date : null);
+    const t = dateStr ? Date.parse(dateStr) : NaN;
+    return { t, y: bytes, dateStr };
+  })
+  .filter((p: any) => Number.isFinite(p.t) && p.y > 0)
+  .sort((a: any, b: any) => a.t - b.t);
+
+let sizeChart = '';
+if (sizePoints.length >= 3) {
+  sizeChart = lineChartSVG(
+    sizePoints.map((p: any) => ({ t: p.t, y: p.y, label: `${formatFileSize(p.y)} — ${formatDate(p.dateStr)}` })),
+    {
+      title: 'Bundle size over time',
+      yFormat: (n: number) => formatFileSize(n),
+      xStartLabel: formatMonthYear(sizePoints[0].dateStr),
+      xEndLabel: formatMonthYear(sizePoints[sizePoints.length - 1].dateStr),
+    }
+  );
+}
 ---
 
 <Layout
@@ -464,152 +582,104 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
     ) : (
       <>
         <div class="app-header">
-          {appIcon && <span class="app-icon"><img src={appIcon} alt="" width="57" height="57" /></span>}
+          {appIcon && <span class="app-icon"><img src={appIcon} alt="" /><span class="icon-mask"></span></span>}
           <div class="app-titles">
-            <h1 class="app-name">{appTitle}</h1>
+            <h1 class="app-name">{appTitle}<span class="app-bundle">{appData.bundle_id}</span></h1>
             {developerName && <div class="app-byline">{developerName}</div>}
-            <div class="app-facts">
-              {genreName && appData.genre_id && <a class="app-genre" href={`/categories/${appData.genre_id}`}>{genreName}</a>}
-              {genreName && appData.genre_id && ' · '}
-              <span>{versions.length} {versionNoun}</span>
-              {installableVersionCount > 0 && <span> · {installableVersionCount} installable</span>}
-            </div>
-          </div>
-        </div>
-        <div class="app-sub">
-          <span class="meta">{appData.bundle_id}</span>
-          {appData.copyright && <span class="meta"> · {appData.copyright}</span>}
-        </div>
-
-        <div class="section-header">
-          <h2 class="section-title">Versions</h2>
-        </div>
-        <div class="sort-bar">
-          <div class="sort-links">
-            <span class="sort-label">Sort:</span>
-            {SORT_OPTIONS.map(([key, label]) => (
-              <a href={toggleSortHref(key)} class={currentSort === key ? 'sort-link active' : 'sort-link'}>
-                {label}{currentSort === key && <span class="sort-dir">{currentDir === 'asc' ? ' ▲' : ' ▼'}</span>}
-              </a>
-            ))}
-          </div>
-          {anyMultiCopy && (
-            <div class="copies-toggle meta">
-              {showAllCopies
-                ? <>Showing every archived copy · <a class="copies-link" href={copiesToggleHref(false)}>show best copy per version</a></>
-                : <>Showing the best copy per version · <a class="copies-link" href={copiesToggleHref(true)}>show all copies</a></>}
-            </div>
-          )}
-          {iosMajors.length > 1 && (
-            <div class="ios-filter">
-              <span class="sort-label">Runs on:</span>
-              <a href={iosFilterHref(null)} class={iosFilter == null ? 'ios-link active' : 'ios-link'}>Any</a>
-              {iosMajors.map((m) => (
-                <a href={iosFilterHref(m)} class={iosFilter === m ? 'ios-link active' : 'ios-link'}>iOS {m}</a>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div class="versions">
-          {(sortedVersions || []).map((v: any) => {
-            // Byte-identical mirrors (same md5) collapse to one button each;
-            // groups rank best-first (launchable > era-plausible > store rips)
-            // and only the best copy shows unless ?copies=all.
-            const groups = sortGroupsByPreference(
-              dedupeFilesByHash(filesByVersionId.get(v.id) || []),
-              binaryOf,
-              v.minimum_os_version
-            );
-            const visibleGroups = showAllCopies ? groups : groups.slice(0, 1);
-            const hiddenCopies = groups.length - visibleGroups.length;
-            const versionLabel = v.version_string || v.build_number || 'Unknown version';
-            const showBuild = v.build_number && v.build_number !== versionLabel;
-            // Icon closest to this version, from its best copy's build-time
-            // bundle icon (falls back to the legacy icon where not yet extracted).
-            const vIconSha = groups.map((g) => iconShaOf(g.file)).find(Boolean);
-            const metaBits: string[] = [];
-            const machoMinOs = groups.map((g) => binaryOf(g.file)?.macho_min_os).find(Boolean);
-            if (v.minimum_os_version) metaBits.push(`Requires iOS ${v.minimum_os_version}+`);
-            else if (machoMinOs) metaBits.push(`Requires iOS ${machoMinOs}+`);
-            // Per-version date: prefer the estimated release date (month-precision,
-            // shown with a ~), else a trustworthy real release_date.
-            if (v.estimated_release_date) metaBits.push(`~${formatMonthYear(v.estimated_release_date)}`);
-            else if (isTrustworthyDate(v.release_date)) metaBits.push(`Released ${formatDate(v.release_date)}`);
-            return (
-              <div class="version" id={`v${v.id}`}>
-                <span class="v-icon">{vIconSha && <img src={`/icon/${vIconSha}`} alt="" width="29" height="29" loading="lazy" />}</span>
-                <div class="v-body">
-                <div class="v-title">
-                  <strong>{versionLabel}</strong>
-                  {showBuild && <span class="v-build"> ({v.build_number})</span>}
-                </div>
-                {metaBits.length > 0 && <div class="meta">{metaBits.join(' · ')}</div>}
-                <div class="v-files">
-                    {visibleGroups.map(({ file: f }) => {
-                      const bin = binaryOf(f);
-                      const size = formatFileSize(f.file_size);
-                      const arch = (bin?.architectures || []).join('/');
-                      const detailBits = showAllCopies && groups.length > 1 ? [fileLabel(f.filename), size] : [size];
-                      if (arch) detailBits.push(arch);
-                      if (bin?.has_watch_app) detailBits.push('Watch app');
-                      if (bin?.install_status === 'encrypted') detailBits.push('installs but won’t launch (FairPlay DRM)');
-                      const detail = detailBits.filter(Boolean).join(' · ');
-                      // Installable is the norm — only the exception gets a badge.
-                      const chip = bin?.install_status === 'encrypted'
-                        ? <span class="chip chip-warn">Encrypted</span>
-                        : null;
-                      // Both affordances render for everyone (no UA branch, so the
-                      // page caches): "Install" is the over-the-air itms-services
-                      // link that works on an iOS device; "Download" is the raw
-                      // .ipa for desktop. A row with no known source shows neither.
-                      let ipaUrl: string | null = null;
-                      try {
-                        ipaUrl = generateIpaDownloadUrl({
-                          id: f.id,
-                          filename: f.filename,
-                          info_plist_path: f.info_plist_path,
-                          archive_item: { ia_item_id: f.archive_items?.ia_item_id || '' }
-                        });
-                      } catch {
-                        ipaUrl = null;
-                      }
-                      const manifestUrl = `${origin}/manifest/${f.id}.plist`;
-                      return (
-                        <div class="file-row">
-                          {ipaUrl ? (
-                            <span class="file-actions">
-                              <a class="navbtn" href={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`}><span class="navbtn-label">Install</span></a>
-                              <a class="navbtn navbtn-alt" href={ipaUrl} download><span class="navbtn-label">Download</span></a>
-                            </span>
-                          ) : (
-                            <span class="meta">File source unavailable</span>
-                          )}
-                          <span class="file-detail">
-                            {chip}
-                            {detail && <span class="file-name">{detail}</span>}
-                          </span>
-                        </div>
-                      );
-                    })}
-                    {hiddenCopies > 0 && (
-                      <div class="more-copies">
-                        <a href={`${copiesToggleHref(true)}#v${v.id}`}>{hiddenCopies} more {hiddenCopies === 1 ? 'copy' : 'copies'} of this version &#8250;</a>
-                      </div>
-                    )}
-                    {groups.length === 0 && (
-                      <div class="meta v-nofile">
-                        {unavailableCountByVersion.get(v.id)
-                          ? 'The copies of this version are no longer available on archive.org.'
-                          : 'No file in the archive for this version.'}
-                      </div>
-                    )}
-                  </div>
-                </div>
+            {genreName && appData.genre_id && (
+              <div class="app-facts">
+                <a class="app-genre" href={`/categories/${appData.genre_id}`}>{genreName}</a>
+                {subgenre && <span> · {subgenre}</span>}
               </div>
-            );
-          })}
-          {sortedVersions.length === 0 && (
+            )}
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <a class="filter-chip" href={sortToggleHref()}>Date {currentDir === 'asc' ? '↑ Ascending' : '↓ Descending'}</a>
+          {iosMajors.length > 1 && (
+            <form class="filter-runs" method="get" action={pathname}>
+              {currentDir === 'asc' && <input type="hidden" name="dir" value="asc" />}
+              {showAllCopies && <input type="hidden" name="copies" value="all" />}
+              <label class="filter-label">Runs on
+                <select name="ios" class="js-ios-select">
+                  <option value="" selected={iosFilter == null}>Any</option>
+                  {iosMajors.map((m) => (
+                    <option value={String(m)} selected={iosFilter === m}>{osShortLabel(m)}</option>
+                  ))}
+                </select>
+              </label>
+              <noscript><button type="submit" class="filter-go">Go</button></noscript>
+            </form>
+          )}
+          {anyMultiCopy && (
+            <a
+              class="filter-chip js-copies-toggle"
+              href={copiesToggleHref(!showAllCopies)}
+              data-expand="Show all copies"
+              data-collapse="Show best copy only"
+            >{showAllCopies ? 'Show best copy only' : 'Show all copies'}</a>
+          )}
+        </div>
+
+        <div class={showAllCopies ? 'versions copies-all' : 'versions'}>
+          {versionRows.map((row: any) => (
+            <div class="version" id={`v${row.v.id}`} data-minos={row.minosMajor != null && row.minosMajor > 0 ? String(row.minosMajor) : undefined}>
+              {/* Lockup: masked icon + stacked title/meta on the left; the best
+                  copy's action button opposite, with size + badge stacked under
+                  it. Universal apps get the fat-binary "+" on the button. */}
+              <div class="v-lockup">
+                <span class="v-icon">{row.vIconSha && <img src={`/icon/${row.vIconSha}`} alt="" loading="lazy" />}<span class="icon-mask"></span></span>
+                <div class="v-body">
+                  <div class="v-title">
+                    <strong>{row.versionLabel}</strong>
+                    {row.showBuild && <span class="v-build"> ({row.v.build_number})</span>}
+                  </div>
+                  {row.metaLines.map((l: any) => (
+                    <div class="v-fact" title={l.title}>{l.text}</div>
+                  ))}
+                  {row.nofileText && <div class="v-fact v-nofile">{row.nofileText}</div>}
+                </div>
+                {row.primary && (
+                  <span class="file-actions">
+                    {row.primary.ipaUrl && (
+                      <span class="file-buttons">
+                        <a class={`navbtn navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(row.primary.manifestUrl)}`}><span class="navbtn-label">Install</span></a>
+                        <a class={`navbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={row.primary.ipaUrl} download><span class="navbtn-label">Download</span></a>
+                      </span>
+                    )}
+                    <span class="file-stat">
+                      {row.primary.encrypted && <span class="chip chip-warn">Encrypted</span>}
+                      {row.primary.detail && <span>{row.primary.detail}</span>}
+                      {!row.primary.ipaUrl && <span>File source unavailable</span>}
+                    </span>
+                  </span>
+                )}
+              </div>
+              {row.extras.length > 0 && (
+                <div class="v-copies">
+                  {row.extras.map((c: any) => (
+                    <div class="file-row v-extra">
+                      <span class="file-detail">
+                        {c.encrypted && <span class="chip chip-warn">Encrypted</span>}
+                        {c.detail && <span class="file-name">{c.detail}</span>}
+                        {!c.ipaUrl && <span class="file-name">File source unavailable</span>}
+                      </span>
+                      {c.ipaUrl && (
+                        <span class="file-actions">
+                          <span class="file-buttons">
+                            <a class={`navbtn navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(c.manifestUrl)}`}><span class="navbtn-label">Install</span></a>
+                            <a class={`navbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={c.ipaUrl} download><span class="navbtn-label">Download</span></a>
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          {versionRows.length === 0 && (
             iosFilter != null && (versions || []).length > 0 ? (
               <p class="applist-empty">None of the {versions.length} {versionNoun} run on iOS {iosFilter} — <a class="copies-link" href={iosFilterHref(null)}>show all</a>.</p>
             ) : (
@@ -617,6 +687,17 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
             )
           )}
         </div>
+
+        {sizeChart && (
+          <>
+            <div class="section-header size-header">
+              <h2 class="section-title">Bundle Size Over Time</h2>
+            </div>
+            <div class="history-card size-chart">
+              <Fragment set:html={sizeChart} />
+            </div>
+          </>
+        )}
 
         {chartGroups.length > 0 && (
           <>
@@ -737,19 +818,33 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
     }
 
     .app-icon {
+      position: relative;
       float: left;
-      width: 57px;
-      height: 57px;
+      width: 72px;
+      height: 72px;
       margin-right: 12px;
       background: #f3f3f3;
-      border-radius: 11px;
-      overflow: hidden;
+      border-radius: 13px;
     }
 
     .app-icon img {
       display: block;
-      width: 57px;
-      height: 57px;
+      width: 72px;
+      height: 72px;
+      border-radius: 13px;
+    }
+
+    /* Apple's App Store icon treatment: an overlay that rounds the corners and
+       adds the thin border + drop shadow. Its surround is white, so it blends
+       into the white card. background-size lets the one raster serve any size. */
+    .icon-mask {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: url('/icon-mask.png') no-repeat;
+      background-size: 100% 100%;
     }
 
     .app-titles {
@@ -760,6 +855,15 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       margin: 0;
       font-size: 21px;
       line-height: 24px;
+    }
+
+    /* Bundle id sits inline after the title, small and baseline-aligned. */
+    .app-bundle {
+      margin-left: 8px;
+      font-size: 12px;
+      font-weight: normal;
+      color: #8e8e93;
+      word-break: break-all;
     }
 
     .app-byline {
@@ -779,52 +883,37 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       font-weight: bold;
     }
 
-    .app-sub {
-      margin: 6px 0 0 0;
-    }
-
-    .sort-bar {
-      margin: 2px 4px 10px 4px;
+    /* One-row filter/sort bar: a direction chip, the Runs-on select, and the
+       copies toggle, all inline. */
+    .filter-bar {
+      margin: 10px 4px;
       font-size: 13px;
     }
 
-    .sort-links {
-      margin-bottom: 4px;
+    .filter-bar > * {
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 14px;
     }
 
-    .sort-label {
+    .filter-chip {
+      color: #385487;
+      font-weight: bold;
+    }
+
+    .filter-label {
       color: #666;
-      margin-right: 4px;
     }
 
-    .sort-link {
-      display: inline-block;
-      padding: 4px 6px;
-      color: #385487;
+    .filter-runs select {
+      font: inherit;
+      margin-left: 4px;
+      padding: 2px;
     }
 
-    .sort-link.active {
-      font-weight: bold;
-    }
-
-    .sort-dir {
-      font-size: 9px;
-    }
-
-    /* Compatibility filter (?ios=N) — links, so it caches with no JS */
-    .ios-filter {
-      margin: 4px 0 0 0;
-      font-size: 13px;
-    }
-
-    .ios-link {
-      display: inline-block;
-      padding: 4px 6px;
-      color: #385487;
-    }
-
-    .ios-link.active {
-      font-weight: bold;
+    .filter-go {
+      font: inherit;
+      margin-left: 4px;
     }
 
     .versions {
@@ -844,29 +933,41 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       border-bottom: none;
     }
 
-    /* Period-accurate icon for this version, from its build-time bundle icon */
+    /* Lockup: icon + stacked facts on the left, action button centered opposite.
+       Flexbox (autoprefixed to the 2009 -webkit-box for iOS 4-6) centers the
+       button against the whole stack. */
+    .v-lockup {
+      display: flex;
+      align-items: center;
+    }
+
+    /* Period-accurate icon for this version, from its build-time bundle icon.
+       Masked (rounded + border + shadow) via the App Store overlay. */
     .v-icon {
-      float: left;
-      width: 29px;
-      height: 29px;
-      margin-right: 8px;
+      position: relative;
+      flex-shrink: 0;
+      width: 44px;
+      height: 44px;
+      margin-right: 10px;
       background: #f3f3f3;
-      border-radius: 6px;
-      overflow: hidden;
+      border-radius: 9px;
     }
 
     .v-icon img {
       display: block;
-      width: 29px;
-      height: 29px;
+      width: 44px;
+      height: 44px;
+      border-radius: 9px;
     }
 
     .v-body {
-      overflow: hidden;
+      flex: 1;
+      min-width: 0;
     }
 
     .v-title {
       font-size: 16px;
+      line-height: 20px;
     }
 
     .v-build {
@@ -875,33 +976,70 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       font-size: 13px;
     }
 
-    .v-files {
-      margin-top: 6px;
+    /* One stacked compatibility fact per line, tight. */
+    .v-fact {
+      color: #8e8e93;
+      font-size: 13px;
+      line-height: 16px;
+    }
+
+    /* Extra copies, listed under the lockup when "Show all copies" is on;
+       indented past the icon so they align with the body above. */
+    .v-copies {
+      margin: 4px 0 0 54px;
     }
 
     .file-row {
-      margin: 6px 0 0 0;
-      overflow: hidden;
-    }
-
-    .file-actions {
-      float: left;
-      margin-right: 10px;
-    }
-
-    .file-actions .navbtn {
-      margin-right: 6px;
-    }
-
-    /* Download is the secondary action next to Install; dim it slightly */
-    .navbtn-alt .navbtn-label {
-      font-weight: normal;
+      display: flex;
+      align-items: center;
+      margin-top: 6px;
     }
 
     .file-detail {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Right column of the lockup: buttons on top, size + Encrypted badge under. */
+    .file-actions {
+      margin-left: 10px;
+      flex-shrink: 0;
+      text-align: right;
+    }
+
+    .file-buttons {
+      white-space: nowrap;
+    }
+
+    .file-actions .navbtn {
+      margin-left: 6px;
+    }
+
+    .file-stat {
       display: block;
-      overflow: hidden;
-      padding-top: 3px;
+      margin-top: 5px;
+      color: #666;
+      font-size: 12px;
+      line-height: 15px;
+    }
+
+    .file-stat .chip {
+      margin-right: 3px;
+    }
+
+    /* Universal ("fat binary") apps: Apple's + badge, rendered as a pseudo-
+       element (no markup) pinned to the button's top-left corner. Nudged -1px
+       over the border; the button's overflow:hidden clips it to the corner
+       radius. Retina 28px source shown at 14px. */
+    .nav-universal::before {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: -1px;
+      width: 14px;
+      height: 14px;
+      background: url('/fat-binary-badge.png') 0 0 no-repeat;
+      background-size: 14px 14px;
     }
 
     .file-name {
@@ -923,19 +1061,39 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       font-weight: bold;
     }
 
-    .more-copies {
-      margin-top: 6px;
-      font-size: 12px;
-    }
-
-    .more-copies a {
-      color: #385487;
-      font-weight: bold;
-    }
-
     .v-nofile {
-      margin-top: 4px;
+      color: #8e8e93;
     }
+
+    /* Extra breathing room between the versions list and the chart. */
+    .size-header {
+      margin-top: 24px;
+    }
+
+    .size-chart {
+      padding: 10px;
+    }
+
+    /* --- Progressive-enhancement hooks (each defaults to the no-JS state) --- */
+
+    /* Extra copies of a version stay hidden until revealed — by the JS toggle,
+       or by the ?copies=all server class on the no-JS path. */
+    .v-extra {
+      display: none;
+    }
+
+    .copies-all .v-extra {
+      display: flex;
+    }
+
+    /* Versions too new for the visitor's device, hidden by the client-side
+       "Runs on" filter. */
+    .v-hidden-os {
+      display: none;
+    }
+
+    /* Install vs Download visibility lives in the is:global block below —
+       the .is-ios/.is-desktop class is on <html>, outside these scoped styles. */
 
     /* Wayback history sections (iOS grouped-table style, same as .versions) */
     .history-card {
@@ -1056,91 +1214,143 @@ const versionNoun = versions.length === 1 ? 'archived version' : 'archived versi
       line-height: 15px;
     }
 
-    /* iOS nav-bar style button (3-slice) */
+    /* iOS-style glossy button, drawn with a CSS gradient rather than image
+       slices — no seams, and autoprefixer emits the old -webkit-gradient so it
+       renders on iOS 4-6. Steel-blue like the nav-bar button it replaces. */
     .navbtn {
       display: inline-block;
       position: relative;
-      height: 30pt;
-      line-height: 30pt;
-      padding: 0 14pt;
+      overflow: hidden;
+      height: 29px;
+      line-height: 29px;
+      padding: 0 15px;
       vertical-align: middle;
-      background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Left.png');
-      background-repeat: no-repeat;
-      background-size: 5pt 30pt;
-      background-position: left center;
-    }
-
-    .navbtn::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 5pt;
-      right: 5pt;
-      height: 30pt;
-      background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Middle.png');
-      background-repeat: repeat-x;
-      background-size: 1pt 30pt;
-    }
-
-    .navbtn::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 5pt;
-      height: 30pt;
-      background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Right.png');
-      background-repeat: no-repeat;
-      background-size: 5pt 30pt;
-      background-position: right center;
-    }
-
-    .navbtn-label {
-      position: relative;
-      z-index: 1;
-      color: #fff;
-      font-weight: bold;
-      font-size: 12pt;
-      font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif;
-      text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.5);
+      border: 1px solid #2f4c80;
+      border-radius: 5px;
+      background: linear-gradient(#7d97c4, #3f5f96);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
     }
 
     .navbtn:active {
-      background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Left.png');
+      background: linear-gradient(#3f5f96, #7d97c4);
     }
 
-    .navbtn:active::before {
-      background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Middle.png');
-    }
-
-    .navbtn:active::after {
-      background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Right.png');
-    }
-
-    @media only screen and (-webkit-min-device-pixel-ratio: 2) {
-      .navbtn {
-        background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Left@2x.png');
-      }
-
-      .navbtn::before {
-        background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Middle@2x.png');
-      }
-
-      .navbtn::after {
-        background-image: url('/UINavigationBar/UINavigationBarDefaultButton/Right@2x.png');
-      }
-
-      .navbtn:active {
-        background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Left@2x.png');
-      }
-
-      .navbtn:active::before {
-        background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Middle@2x.png');
-      }
-
-      .navbtn:active::after {
-        background-image: url('/UINavigationBar/UINavigationBarDefaultButtonPressed/Right@2x.png');
-      }
+    .navbtn-label {
+      color: #fff;
+      font-weight: bold;
+      font-size: 14px;
+      font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif;
+      text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.45);
     }
   </style>
+
+  <!-- Install (over-the-air) vs Download (raw .ipa): both render by default so a
+       no-JS visitor gets both; the early head script tags <html> with the device
+       type and these rules show only the one that works. Global because the
+       .is-ios/.is-desktop class is on <html>, outside the scoped styles above. -->
+  <style is:global>
+    html.is-ios .navbtn-alt {
+      display: none;
+    }
+
+    html.is-desktop .navbtn-install {
+      display: none;
+    }
+  </style>
+
+  <!-- Progressive enhancement. Deliberately old-WebKit-safe (iOS 4/5/6): no
+       const/let, no arrow functions, no template strings, no classList, no
+       forEach. If any of this is unsupported the script no-ops and the
+       server-rendered links keep working. -->
+  <script is:inline>
+    (function () {
+      if (!document.querySelectorAll || !document.getElementsByTagName) return;
+
+      function hasClass(el, c) {
+        return (' ' + el.className + ' ').indexOf(' ' + c + ' ') > -1;
+      }
+      function addClass(el, c) {
+        if (!hasClass(el, c)) el.className += (el.className ? ' ' : '') + c;
+      }
+      function removeClass(el, c) {
+        el.className = (' ' + el.className + ' ')
+          .replace(' ' + c + ' ', ' ')
+          .replace(/^\s+|\s+$/g, '');
+      }
+      function ready(fn) {
+        if (document.readyState === 'complete' || document.readyState === 'interactive') fn();
+        else if (document.addEventListener) document.addEventListener('DOMContentLoaded', fn, false);
+        else fn();
+      }
+
+      ready(function () {
+        var i;
+
+        // 1) Global "Show all copies" toggle.
+        var versionsRoot = document.querySelector('.versions');
+        var copyToggles = document.querySelectorAll('a.js-copies-toggle');
+        for (i = 0; i < copyToggles.length; i++) {
+          (function (link) {
+            link.onclick = function (e) {
+              if (!versionsRoot) return true;
+              if (hasClass(versionsRoot, 'copies-all')) {
+                removeClass(versionsRoot, 'copies-all');
+                link.innerHTML = link.getAttribute('data-expand');
+              } else {
+                addClass(versionsRoot, 'copies-all');
+                link.innerHTML = link.getAttribute('data-collapse');
+              }
+              if (e && e.preventDefault) e.preventDefault();
+              return false;
+            };
+          })(copyToggles[i]);
+        }
+
+        // 2) "Runs on" filter: hide versions whose minimum OS is newer than the
+        //    chosen (or auto-detected) major. The <select> filters in place.
+        var iosSelect = document.querySelector('select.js-ios-select');
+        var versionEls = document.querySelectorAll('.version');
+
+        function applyIos(major) {
+          var j, el, mm, toHide = [], shown = 0;
+          for (j = 0; j < versionEls.length; j++) {
+            el = versionEls[j];
+            mm = parseInt(el.getAttribute('data-minos'), 10);
+            if (major != null && mm > 0 && mm > major) toHide.push(el);
+            else { removeClass(el, 'v-hidden-os'); shown++; }
+          }
+          // Never hide everything — a very old device still sees the full list.
+          for (j = 0; j < toHide.length; j++) {
+            if (shown === 0) removeClass(toHide[j], 'v-hidden-os');
+            else addClass(toHide[j], 'v-hidden-os');
+          }
+        }
+
+        var serverPicked = false;
+        if (iosSelect) {
+          if (iosSelect.value) serverPicked = true; // URL already chose an iOS
+          iosSelect.onchange = function () {
+            applyIos(iosSelect.value ? parseInt(iosSelect.value, 10) : null);
+          };
+        }
+
+        // Auto-apply the device's own iOS version (set on <html> by the head
+        // script), unless the URL already chose a specific one.
+        var iosAttr = document.documentElement.getAttribute('data-ios');
+        if (iosSelect && iosAttr && !serverPicked) {
+          var maj = parseInt(iosAttr, 10);
+          // Only select an option we actually offer.
+          var opts = iosSelect.options, matched = null;
+          for (i = 0; i < opts.length; i++) {
+            var ov = parseInt(opts[i].value, 10);
+            if (ov > 0 && ov >= maj && (matched === null || ov < matched)) matched = ov;
+          }
+          if (matched !== null) {
+            iosSelect.value = String(matched);
+            applyIos(matched);
+          }
+        }
+      });
+    })();
+  </script>
 </Layout>
