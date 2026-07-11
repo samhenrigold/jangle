@@ -514,3 +514,21 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_apps_first_version_date
   ON public.apps (first_version_date DESC, display_name ASC);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_apps_genre_version_count
   ON public.apps (genre_id, version_count DESC, display_name ASC);
+
+-- lib-F4: best all-genre chart placement per app in one indexed query. Replaces a
+-- getPeaks() query that used a blanket .limit(1000) across all ids (could truncate
+-- an app's true peak as the corpus grows). Uses idx_chart_pos_appstore.
+CREATE OR REPLACE FUNCTION public.get_app_peaks(p_app_store_ids bigint[])
+RETURNS TABLE (app_store_id bigint, peak_position int, chart_type_id int, snapshot_date text, source_url text)
+LANGUAGE sql STABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT DISTINCT ON (cp.app_store_id)
+         cp.app_store_id, cp.position, cs.chart_type_id, cs.snapshot_date::text, cs.source_url
+  FROM chart_positions cp
+  JOIN chart_snapshots cs ON cs.id = cp.chart_snapshot_id
+  WHERE cp.app_store_id = ANY(p_app_store_ids)
+    AND cs.genre_id IS NULL
+  ORDER BY cp.app_store_id, cp.position ASC, cs.snapshot_date ASC;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_app_peaks(bigint[]) TO anon, authenticated;

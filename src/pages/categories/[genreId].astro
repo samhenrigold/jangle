@@ -25,7 +25,7 @@ let genre = cacheGet<any>(genreCacheKey);
 if (!genre) {
   const { data, error } = await supabase
     .from('genres')
-    .select('*')
+    .select('id, genre_id, genre_name')
     .eq('id', genreId)
     .maybeSingle();
   if (error) {

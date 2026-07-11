@@ -144,35 +144,21 @@ export async function getPeaks(
   const key = `tm:peaks:${cacheKey}`;
   const cached = cacheGet<Map<number, Peak>>(key);
   if (cached) return cached;
-  const { data, error } = await supabase
-    .from('chart_positions')
-    .select('app_store_id, position, chart_snapshots!inner(chart_type_id, genre_id, snapshot_date, source_url)')
-    .in('app_store_id', ids)
-    .is('chart_snapshots.genre_id', null)
-    .limit(1000);
+  // get_app_peaks returns the single best all-genre placement per app (DISTINCT
+  // ON, index-backed) — no blanket row cap that could truncate an app's true peak.
+  const { data, error } = await supabase.rpc('get_app_peaks', { p_app_store_ids: ids });
   if (error) {
     console.error('chart peaks query failed:', error.message);
     return null;
   }
   const peaks = new Map<number, Peak>();
   for (const row of data || []) {
-    const snap = row.chart_snapshots;
-    if (!snap) continue;
-    const id = Number(row.app_store_id);
-    const cand: Peak = {
-      position: Number(row.position),
-      typeId: Number(snap.chart_type_id),
-      date: snap.snapshot_date,
-      device: deviceOf(snap.source_url || ''),
-    };
-    const cur = peaks.get(id);
-    if (
-      !cur ||
-      cand.position < cur.position ||
-      (cand.position === cur.position && cand.date < cur.date)
-    ) {
-      peaks.set(id, cand);
-    }
+    peaks.set(Number(row.app_store_id), {
+      position: Number(row.peak_position),
+      typeId: Number(row.chart_type_id),
+      date: row.snapshot_date,
+      device: deviceOf(row.source_url || ''),
+    });
   }
   cacheSet(key, peaks, 10 * 60 * 1000);
   return peaks;

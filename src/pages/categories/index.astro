@@ -1,8 +1,7 @@
 ---
 import { getSupabaseClient } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
-import { cacheGet, cacheSet } from '../../lib/cache';
-import { sortGenres } from '../../lib/genres';
+import { sortGenres, fetchGenresWithCounts } from '../../lib/genres';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { iconSrc } from '../../lib/icons';
@@ -14,18 +13,8 @@ const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
 let dbError = false;
 
 // Fetch genres for categories
-const genresCacheKey = 'genres_with_counts';
-let genres = cacheGet<any[]>(genresCacheKey);
-if (!genres) {
-  const { data, error } = await supabase.rpc('get_genres_with_counts');
-  genres = data || [];
-  if (error) {
-    console.error('genres query failed:', error.message);
-    dbError = true;
-  } else {
-    cacheSet(genresCacheKey, genres, 10 * 60 * 1000);
-  }
-}
+const { genres, error: genresError } = await fetchGenresWithCounts(supabase);
+if (genresError) dbError = true;
 
 // The App Store game subgenres (genre_id 70xx) are populated only where an app's
 // PRIMARY genre happens to be the subgenre — a tiny, misleading fraction of the

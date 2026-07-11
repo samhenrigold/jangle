@@ -152,7 +152,7 @@ if (!dbError && versionIds.length) {
   } else {
     const { data, error } = await supabase
       .from('ipa_files')
-      .select('id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, has_itunes_artwork, info_plist_path, binary_sha1, available, unavailable_reason, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id)')
+      .select('id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, info_plist_path, binary_sha1, available, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id)')
       .in('app_version_id', versionIds);
     ipaFiles = data || [];
     if (error) {
@@ -181,7 +181,7 @@ if (!dbError && ipaFiles.length) {
     for (let i = 0; i < shas.length; i += CHUNK) {
       const { data, error } = await supabase
         .from('binaries')
-        .select('sha1, install_status, architectures, macho_min_os, sdk_version, icon_sha256, bundle_icon_sha256, has_watch_app')
+        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app')
         .in('sha1', shas.slice(i, i + CHUNK));
       if (error) {
         // Binary enrichment is decorative (install badges, era icons). If it

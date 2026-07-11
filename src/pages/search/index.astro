@@ -5,7 +5,7 @@ import SearchForm from '../../components/SearchForm.astro';
 import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { buildPrefixTsquery, clampPage, clampPageSize } from '../../lib/search';
-import { sortGenres } from '../../lib/genres';
+import { sortGenres, fetchGenresWithCounts } from '../../lib/genres';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 
@@ -15,7 +15,11 @@ setCacheHeaders(Astro.response, 600);
 const url = new URL(Astro.request.url);
 const q = url.searchParams.get('q')?.trim() || '';
 const genreId = url.searchParams.get('genre');
-const sort = url.searchParams.get('sort') || 'versions';
+// Coerce to a known sort so a junk ?sort= value can't mint a distinct cache key
+// (all falling through to the same list) or silently pick the wrong branch.
+const SORTS = ['versions', 'first_date', 'name'];
+const sortParam = url.searchParams.get('sort') || 'versions';
+const sort = SORTS.indexOf(sortParam) >= 0 ? sortParam : 'versions';
 const page = clampPage(url.searchParams.get('page'));
 const pageSize = clampPageSize(url.searchParams.get('per_page'));
 const offset = (page - 1) * pageSize;
@@ -24,18 +28,8 @@ const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
 let dbError = false;
 
 // Fetch genres for the filter bar
-const genresCacheKey = 'genres_with_counts';
-let genres = cacheGet<any[]>(genresCacheKey);
-if (!genres) {
-  const { data, error } = await supabase.rpc('get_genres_with_counts');
-  genres = data || [];
-  if (error) {
-    console.error('genres query failed:', error.message);
-    dbError = true;
-  } else {
-    cacheSet(genresCacheKey, genres, 10 * 60 * 1000);
-  }
-}
+const { genres, error: genresError } = await fetchGenresWithCounts(supabase);
+if (genresError) dbError = true;
 
 // Group Game subgenres after the parent Games genre (returns a copy)
 const sortedGenres = sortGenres(genres);
@@ -92,7 +86,7 @@ if (q || genreId) {
       } else if (sort === 'name') {
         let query = supabase
           .from('apps')
-          .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, executable_name, developers!apps_developer_id_fkey(artist_name)')
+          .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, developers!apps_developer_id_fkey(artist_name)')
           .order('display_name', { ascending: true })
           .range(offset, offset + pageSize - 1);
         if (tsquery) query = query.textSearch('search_vector', tsquery);

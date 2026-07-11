@@ -9,6 +9,7 @@ import {
   getChartTypes,
   getGenreNames,
   getSnapshotIndex,
+  getSnapshotPositions,
   dedupeByDate,
   nearestSnapshot,
   deviceOf,
@@ -102,27 +103,13 @@ function qs(over: Record<string, string | null | undefined>): string {
 }
 
 // --- Chart entries for the chosen capture -----------------------------------
+// getSnapshotPositions owns this exact query + the tm:positions:<id> cache entry;
+// don't inline a second copy that can drift from it.
 let positions: any[] = [];
 if (!dbError && snapshot) {
-  const posCacheKey = `tm:positions:${snapshot.id}`;
-  const cached = cacheGet<any[]>(posCacheKey);
-  if (cached) {
-    positions = cached;
-  } else {
-    const { data, error } = await supabase
-      .from('chart_positions')
-      .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, icon_url)')
-      .eq('chart_snapshot_id', snapshot.id)
-      .order('position', { ascending: true })
-      .limit(300);
-    if (error) {
-      console.error('chart_positions query failed:', error.message);
-      dbError = true;
-    } else {
-      positions = data || [];
-      cacheSet(posCacheKey, positions, 10 * 60 * 1000);
-    }
-  }
+  const p = await getSnapshotPositions(supabase, snapshot.id);
+  if (p === null) dbError = true;
+  else positions = p;
 }
 
 // Prev/next skip over adjacent days whose chart is identical to this one (same
@@ -151,8 +138,8 @@ async function nextDifferentSnap(step: number): Promise<any> {
   }
   return null;
 }
-const prevSnap = await nextDifferentSnap(-1);
-const nextSnap = await nextDifferentSnap(1);
+// Independent walks in each direction — run them together.
+const [prevSnap, nextSnap] = await Promise.all([nextDifferentSnap(-1), nextDifferentSnap(1)]);
 
 // Period-authentic (oldest extracted) icons, used as a fallback when the
 // archived chart artwork and the iTunes CDN icon are both missing — that's why

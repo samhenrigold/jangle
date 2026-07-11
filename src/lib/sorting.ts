@@ -1,22 +1,9 @@
 export type SortKey = 'date' | 'version' | 'build' | 'ios' | 'id';
 export type SortDir = 'asc' | 'desc';
 
-export function coerceSortKey(input: any): SortKey {
-  const s = String(input || '').toLowerCase();
-  // Default to semantic version, NOT build: build numbers are non-monotonic
-  // across an app's history (e.g. Netflix v9.55.0=build 1812 but v7.2.5=build
-  // 3005564), so a build-desc default sinks the newest versions to the bottom.
-  return (s === 'date' || s === 'version' || s === 'build' || s === 'ios' || s === 'id') ? s : 'version';
-}
-
 export function coerceDir(input: any): SortDir {
   const d = String(input || '').toLowerCase();
   return d === 'asc' ? 'asc' : 'desc';
-}
-
-export function defaultDirForSort(sortKey: SortKey): SortDir {
-  // Reasonable defaults. Most lists show newest/highest first.
-  return 'desc';
 }
 
 export function extractNumbers(input: any): number[] {
@@ -48,12 +35,6 @@ export function compareVersionLike(a: any, b: any): number {
   if (an.length === 0) return 1; // empty/null last
   if (bn.length === 0) return -1;
   return compareNumArrays(an, bn);
-}
-
-export function timeOf(d: any): number | undefined {
-  if (!d || typeof d !== 'string') return undefined;
-  const t = Date.parse(d);
-  return Number.isFinite(t) ? t : undefined;
 }
 
 function tieBreakByIdDesc(a: any, b: any): number {
