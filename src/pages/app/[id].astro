@@ -339,7 +339,6 @@ for (const v of versions || []) {
 }
 const isTrustworthyDate = (d: any) => !!d && (dateCounts.get(d) || 0) < 3;
 
-// Sorting + filters
 const requestUrl = new URL(Astro.request.url);
 const pathname = requestUrl.pathname;
 const searchParams = requestUrl.searchParams;
@@ -768,7 +767,8 @@ if (sizePoints.length >= 3) {
       width: 72px;
       height: 72px;
       margin-right: 12px;
-      background: #f3f3f3;
+      background: #f3f3f3 url('/icon-placeholder.png') no-repeat;
+      background-size: 100% 100%;
       border-radius: 13px;
     }
 
@@ -888,7 +888,8 @@ if (sizePoints.length >= 3) {
       width: 44px;
       height: 44px;
       margin-right: 10px;
-      background: #f3f3f3;
+      background: #f3f3f3 url('/icon-placeholder.png') no-repeat;
+      background-size: 100% 100%;
       border-radius: 9px;
     }
 

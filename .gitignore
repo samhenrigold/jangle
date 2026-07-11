@@ -26,3 +26,6 @@ pnpm-debug.log*
 /.wrangler
 /plans
 /docs
+
+# local design-reference assets (extracted iOS 6 artwork)
+/ios6-icon-assets

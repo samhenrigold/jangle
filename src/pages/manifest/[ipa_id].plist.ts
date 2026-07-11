@@ -17,7 +17,7 @@ export const GET: APIRoute = async (ctx) => {
     const { data: ipa, error } = await supabase
       .from('ipa_files')
       .select(`
-        id, filename, info_plist_path, file_size, binary_sha1,
+        id, filename, info_plist_path, file_size, md5_hash, binary_sha1,
         app_version:app_versions!ipa_files_app_version_id_fkey(
           version_string,
           app:apps!app_versions_app_id_fkey(bundle_id, app_store_name, display_name, icon_url)
@@ -67,6 +67,11 @@ export const GET: APIRoute = async (ctx) => {
     const origin = new URL(ctx.request.url).origin;
     const versionString = (version as any).version_string || '';
     const fileSize = Number((ipa as any).file_size);
+    // Integrity check with data we already have: with the chunk size set to
+    // the whole file, md5s is just [md5_hash] — itunesstored then rejects
+    // truncated/corrupt archive.org downloads instead of installing them.
+    const md5 = String((ipa as any).md5_hash || '');
+    const hasMd5 = /^[0-9a-f]{32}$/i.test(md5) && Number.isFinite(fileSize) && fileSize > 0;
 
     const xml = buildItmsManifestPlist({
       bundleId: app.bundle_id,
@@ -78,7 +83,8 @@ export const GET: APIRoute = async (ctx) => {
         : absoluteIconSrc(app.icon_url, origin),
       largeIconUrl: largeIconSha ? `${origin}/icon/${largeIconSha}` : null,
       subtitle: versionString ? `Version ${versionString} · Internet Archive` : 'Internet Archive',
-      sizeInBytes: Number.isFinite(fileSize) && fileSize > 0 ? fileSize : null,
+      ipaMd5s: hasMd5 ? [md5.toLowerCase()] : null,
+      md5ChunkSize: hasMd5 ? fileSize : null,
       // needsShine stays at its default (false): whether the placeholder
       // should get the gloss depends on the app's UIPrerenderedIcon flag,
       // which the pipeline doesn't extract yet. The raw Info.plists are in

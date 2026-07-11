@@ -15,7 +15,6 @@ import { setCacheHeaders, setDegraded } from '../../lib/http';
 
 setCacheHeaders(Astro.response, 600);
 
-// Search parameters
 const url = new URL(Astro.request.url);
 const q = url.searchParams.get('q')?.trim() || '';
 const genreId = url.searchParams.get('genre');

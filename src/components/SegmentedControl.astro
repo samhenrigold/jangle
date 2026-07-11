@@ -101,7 +101,6 @@ const { activeTab = 'featured', variant = 'nav' } = Astro.props;
     background-size: 2pt 30pt;
   }
   
-  /* Active states */
   .segment-button:first-child.active {
     background-image: url('/UISegmentBar/UISegmentBarButtonHighlighted/Left.png');
   }
@@ -156,7 +155,6 @@ const { activeTab = 'featured', variant = 'nav' } = Astro.props;
     max-width: 280pt;
   }
 
-  /* iPad and larger screens */
   @media screen and (min-width: 768px) {
     .segment-bar {
       position: static;
@@ -173,7 +171,6 @@ const { activeTab = 'featured', variant = 'nav' } = Astro.props;
   }
 
   @media only screen and (-webkit-min-device-pixel-ratio: 2) {
-    /* High DPI segmented button images */
     .segment-button:first-child {
       background-image: url('/UISegmentBar/UISegmentBarButton/Left@2x.png');
     }

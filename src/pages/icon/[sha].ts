@@ -29,7 +29,6 @@ export const GET: APIRoute = async (ctx) => {
         },
       });
     } catch {
-      // try the next extension
     }
   }
   return blank(404);

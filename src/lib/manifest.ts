@@ -106,7 +106,6 @@ export function buildItmsManifestPlist(params: {
     parts.push(imageAsset('full-size-image', bigIcon));
   }
   parts.push('</array>');
-  // metadata
   parts.push('<key>metadata</key>');
   parts.push('<dict>');
   parts.push('<key>bundle-identifier</key><string>' + escapeXml(bundleId) + '</string>');

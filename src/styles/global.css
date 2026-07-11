@@ -1,8 +1,6 @@
-/* Global base */
 body { font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif; margin: 0; background: #fff; color: #000; -webkit-text-size-adjust: 100%; }
 a { color: inherit; text-decoration: none; }
 
-/* Layout */
 .site-main { padding: 12px 8px 24px 8px; }
 .content { max-width: 900px; margin: 0 auto; padding: 0 8px; }
 
@@ -23,7 +21,10 @@ a { color: inherit; text-decoration: none; }
 .app-link { display: block; padding: 8px 10px; overflow: hidden; }
 .app-link:active { background-color: #e8ebef; }
 .rank { float: left; width: 30px; margin: 0 6px 0 -4px; line-height: 57px; text-align: center; font-size: 19px; font-weight: bold; color: #8e8e93; }
-.icon { position: relative; float: left; width: 57px; height: 57px; margin-right: 10px; background: #f3f3f3; border-radius: 11px; overflow: hidden; }
+/* Icon slots show the App Store's own grey placeholder artwork (iOS 6
+   AppStore_PlaceholderApp) while an icon loads — and, because the /icon and
+   /img miss responses are transparent GIFs, whenever artwork is missing. */
+.icon { position: relative; float: left; width: 57px; height: 57px; margin-right: 10px; background: #f3f3f3 url('/icon-placeholder.png') no-repeat; background-size: 100% 100%; border-radius: 11px; overflow: hidden; }
 .icon img { display: block; width: 57px; height: 57px; }
 /* App Store icon mask overlay — the period-authentic rounded-rect frame, shared by
    every icon surface. Parent must be position:relative; the mask sits over the img. */
@@ -44,7 +45,6 @@ a { color: inherit; text-decoration: none; }
 .chip { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 11px; line-height: 15px; font-weight: bold; vertical-align: 1px; }
 .chip-warn { background: #fdf0d5; color: #91600e; border: 1px solid #ecd39c; }
 
-/* Form controls */
 input, select, button { font: inherit; padding: 6px; }
 
 /* Filter bar (search page) */
@@ -54,11 +54,9 @@ input, select, button { font: inherit; padding: 6px; }
   .filters > * { display: block; margin: 6px 0; width: 100%; -webkit-box-sizing: border-box; box-sizing: border-box; }
 }
 
-/* Pagination */
 .pagination { margin: 16px 0; text-align: center; color: #666; font-size: 14px; }
 .pagination a { display: inline-block; margin: 0 6px; padding: 10px 14px; color: #385487; font-weight: bold; border: 1px solid #b5b5b5; border-radius: 8px; background-color: #f7f7f8; }
 .pagination a:active { background-color: #e8ebef; }
 .pagination span { margin: 0 6px; }
 
-/* Misc */
 .total { margin-top: 10px; color: #666; font-size: 13px; }
