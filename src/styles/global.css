@@ -23,8 +23,11 @@ a { color: inherit; text-decoration: none; }
 .app-link { display: block; padding: 8px 10px; overflow: hidden; }
 .app-link:active { background-color: #e8ebef; }
 .rank { float: left; width: 30px; margin: 0 6px 0 -4px; line-height: 57px; text-align: center; font-size: 19px; font-weight: bold; color: #8e8e93; }
-.icon { float: left; width: 57px; height: 57px; margin-right: 10px; background: #f3f3f3; border-radius: 11px; overflow: hidden; }
+.icon { position: relative; float: left; width: 57px; height: 57px; margin-right: 10px; background: #f3f3f3; border-radius: 11px; overflow: hidden; }
 .icon img { display: block; width: 57px; height: 57px; }
+/* App Store icon mask overlay — the period-authentic rounded-rect frame, shared by
+   every icon surface. Parent must be position:relative; the mask sits over the img. */
+.icon-mask { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: url('/icon-mask.png') no-repeat; background-size: 100% 100%; }
 .chevron { float: right; margin: 15px 0 0 2px; color: #c7c7cc; font-size: 24px; line-height: 26px; font-weight: bold; font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif; }
 .count { float: right; margin: 11px 6px 0 10px; text-align: right; color: #385487; font-size: 16px; font-weight: bold; line-height: 18px; }
 .count-label { display: block; color: #8e8e93; font-size: 11px; font-weight: normal; }

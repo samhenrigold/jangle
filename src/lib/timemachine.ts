@@ -79,7 +79,12 @@ export async function getSnapshotIndex(supabase: any): Promise<SnapshotMeta[] | 
   for (let i = 0; i < MAX_CHUNKS; i++) {
     const { data, error } = await supabase
       .from('chart_snapshots')
-      .select('id, snapshot_date, chart_type_id, genre_id, source_url, captured_ts')
+      .select('id, snapshot_date, chart_type_id, genre_id, source_url, captured_ts, position_count')
+      // Hide sparse captures (<=3 apps): those are noise to page through, and a
+      // chart_type/device/genre combo whose captures are all sparse drops out of
+      // the filter options entirely. position_count is a maintained column, so
+      // this is an indexed filter, not a per-request aggregate over chart_positions.
+      .gt('position_count', 3)
       .order('snapshot_date', { ascending: true })
       .order('id', { ascending: true })
       .range(i * CHUNK, i * CHUNK + CHUNK - 1);
@@ -97,7 +102,9 @@ export async function getSnapshotIndex(supabase: any): Promise<SnapshotMeta[] | 
     genre_id: s.genre_id == null ? null : Number(s.genre_id),
     source_url: s.source_url || '',
     captured_ts: s.captured_ts || null,
-    positions: limitOf(s.source_url),
+    // Actual archived depth (maintained count), falling back to the URL's declared
+    // limit; used for "densest capture wins" dedupe and the sparse-capture filter.
+    positions: s.position_count != null ? Number(s.position_count) : limitOf(s.source_url),
   }));
   cacheSet('tm:snapshot_index', index, 10 * 60 * 1000);
   return index;

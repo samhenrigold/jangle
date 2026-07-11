@@ -87,7 +87,12 @@ export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise
         .from('binaries')
         .select('sha1, icon_sha256, bundle_icon_sha256, install_status, architectures, has_extensions')
         .in('sha1', shas.slice(i, i + CHUNK))
-        .not('icon_sha256', 'is', null);
+        // Candidacy is "has ANY extracted icon". The old filter gated on
+        // icon_sha256 only, but the candidate below prefers bundle_icon_sha256 —
+        // so a binary carrying only the newer bundle icon (icon_sha256 NULL) was
+        // silently dropped, leaving apps like Snapchat iconless in every list even
+        // though their own page (which doesn't filter) showed the icon fine.
+        .or('icon_sha256.not.is.null,bundle_icon_sha256.not.is.null');
       if (bErr) return empty;
       for (const b of bins || []) binBySha.set(b.sha1, b);
     }

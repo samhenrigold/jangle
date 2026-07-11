@@ -132,7 +132,7 @@ if (dbError) setDegraded(Astro.response);
                   const inner = (
                     <>
                       <span class="hero-rank">{p.position}</span>
-                      <span class="hero-icon">{icon && <img src={icon} alt="" width="29" height="29" loading="lazy" />}</span>
+                      <span class="hero-icon">{icon && <img src={icon} alt="" width="29" height="29" loading="lazy" />}<span class="icon-mask"></span></span>
                       <span class="hero-price">{price}</span>
                       <span class="hero-name">{p.display_name}</span>
                     </>
@@ -217,6 +217,7 @@ if (dbError) setDegraded(Astro.response);
     }
 
     .hero-icon {
+      position: relative;
       float: left;
       width: 29px;
       height: 29px;

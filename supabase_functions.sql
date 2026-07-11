@@ -311,16 +311,22 @@ SELECT jsonb_build_object(
   'prices',            jsonb_build_object('known', av.p_known, 'free', av.p_free, 'paid', av.p_paid),
   -- price integers mix currencies; ranking only makes sense within one, so USD
   'priciest',          (SELECT jsonb_agg(x) FROM (
-                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url, 'price', v.price_display) x
+                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url,
+                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN binaries b ON b.sha1=f.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
+                            'price', v.price_display) x
                           FROM app_versions v JOIN apps a ON a.id = v.app_id
                           WHERE v.price > 0 AND v.price_display LIKE '$%'
                           ORDER BY v.price DESC LIMIT 3) s),
   'most_versions',     (SELECT jsonb_agg(x) FROM (
-                          SELECT jsonb_build_object('name', coalesce(display_name, app_store_name), 'id', app_store_id, 'icon', icon_url, 'n', version_count) x
+                          SELECT jsonb_build_object('name', coalesce(display_name, app_store_name), 'id', app_store_id, 'icon', icon_url,
+                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN binaries b ON b.sha1=f.binary_sha1 WHERE v2.app_id=apps.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
+                            'n', version_count) x
                           FROM apps WHERE app_store_name IS NOT NULL AND app_store_id IS NOT NULL
                           ORDER BY version_count DESC LIMIT 5) s),
   'biggest',           (SELECT jsonb_agg(x) FROM (
-                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url, 'bytes', f.file_size) x
+                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url,
+                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f2 ON f2.app_version_id=v2.id JOIN binaries b ON b.sha1=f2.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
+                            'bytes', f.file_size) x
                           FROM ipa_files f
                           JOIN app_versions v ON v.id = f.app_version_id
                           JOIN apps a ON a.id = v.app_id
@@ -575,3 +581,36 @@ AS $$
   ORDER BY cp.app_store_id, cp.position ASC, cs.snapshot_date ASC;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_app_peaks(bigint[]) TO anon, authenticated;
+
+-- Maintained actual-position count per snapshot (2026-07-11). Lets the frontend
+-- hide sparse captures (<=3 apps) and empty chart_type/device/genre combos via an
+-- indexed column instead of aggregating chart_positions (1.1M rows) per request.
+-- Backfilled + kept live by a statement-level trigger (chart data is archival).
+ALTER TABLE public.chart_snapshots
+  ADD COLUMN IF NOT EXISTS position_count integer NOT NULL DEFAULT 0;
+
+-- One-time backfill (safe to re-run):
+-- UPDATE public.chart_snapshots cs SET position_count = COALESCE(c.n, 0)
+-- FROM (SELECT chart_snapshot_id, count(*) n FROM public.chart_positions GROUP BY 1) c
+-- WHERE c.chart_snapshot_id = cs.id;
+
+CREATE OR REPLACE FUNCTION public.refresh_chart_snapshot_count()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+BEGIN
+  UPDATE public.chart_snapshots cs
+  SET position_count = sub.n
+  FROM (
+    SELECT ids.sid,
+           (SELECT count(*) FROM public.chart_positions cp WHERE cp.chart_snapshot_id = ids.sid) AS n
+    FROM (SELECT DISTINCT chart_snapshot_id AS sid FROM chg WHERE chart_snapshot_id IS NOT NULL) ids
+  ) sub
+  WHERE cs.id = sub.sid;
+  RETURN NULL;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_chart_snapshot_count_ins ON public.chart_positions;
+DROP TRIGGER IF EXISTS trg_chart_snapshot_count_del ON public.chart_positions;
+CREATE TRIGGER trg_chart_snapshot_count_ins AFTER INSERT ON public.chart_positions
+  REFERENCING NEW TABLE AS chg FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_chart_snapshot_count();
+CREATE TRIGGER trg_chart_snapshot_count_del AFTER DELETE ON public.chart_positions
+  REFERENCING OLD TABLE AS chg FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_chart_snapshot_count();

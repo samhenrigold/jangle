@@ -253,7 +253,7 @@ const pageTitle = snapshot
                 const inner = (
                   <>
                     <span class="rank">{p.position}</span>
-                    <span class="icon">{icon && <img src={icon} alt="" width="57" height="57" loading="lazy" />}</span>
+                    <span class="icon">{icon && <img src={icon} alt="" width="57" height="57" loading="lazy" />}<span class="icon-mask"></span></span>
                     {inLibrary && <span class="chevron">&#8250;</span>}
                     {price && <span class="count">{price}{inLibrary && <span class="count-label">in the archive</span>}</span>}
                     <span class="info">

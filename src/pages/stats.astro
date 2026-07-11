@@ -97,7 +97,7 @@ if (stats) {
     [
       bar('Installable', install.installable),
       bar('FairPlay-encrypted', install.encrypted, { warn: true }),
-      bar('Not yet analyzed', install.unknown),
+      bar('Encryption undetermined', install.unknown),
     ],
     { title: 'Binaries by install status', labelWidth: 142 }
   );
@@ -166,7 +166,7 @@ if (stats) {
         text: String(a.name),
         detail: `${formatNumber(a.n)} versions`,
         href: a.id ? `/app/${a.id}` : undefined,
-        icon: iconSrc(a.icon),
+        icon: a.icon_sha ? `/icon/${a.icon_sha}` : iconSrc(a.icon),
       })),
     },
     {
@@ -175,7 +175,7 @@ if (stats) {
         text: String(a.name),
         detail: formatFileSize(a.bytes),
         href: a.id ? `/app/${a.id}` : undefined,
-        icon: iconSrc(a.icon),
+        icon: a.icon_sha ? `/icon/${a.icon_sha}` : iconSrc(a.icon),
       })),
     },
     {
@@ -184,7 +184,7 @@ if (stats) {
         text: String(a.name),
         detail: String(a.price),
         href: a.id ? `/app/${a.id}` : undefined,
-        icon: iconSrc(a.icon),
+        icon: a.icon_sha ? `/icon/${a.icon_sha}` : iconSrc(a.icon),
       })),
     },
   ];
@@ -259,9 +259,10 @@ if (stats) {
             <ul class="record-list">
               {group.entries.map((e) => (
                 <li>
-                  {e.icon
-                    ? <img class="record-icon" src={e.icon} alt="" width="29" height="29" loading="lazy" decoding="async" />
-                    : <span class="record-icon record-icon-blank"></span>}
+                  <span class="record-icon">
+                    {e.icon && <img src={e.icon} alt="" width="29" height="29" loading="lazy" decoding="async" />}
+                    <span class="icon-mask"></span>
+                  </span>
                   {e.href ? <a class="record-link" href={e.href}>{e.text}</a> : <span class="record-link">{e.text}</span>}
                   <span class="record-detail">{e.detail}</span>
                 </li>
@@ -401,19 +402,20 @@ if (stats) {
     .record-list li:last-child { border-bottom: none; }
 
     .record-icon {
+      position: relative;
       float: left;
       width: 29px;
       height: 29px;
       margin: 0 9px 0 0;
       border-radius: 6px;
-      border: 1px solid rgba(0, 0, 0, 0.1);
       background: #f2f2f4;
-      -webkit-box-sizing: border-box;
-      box-sizing: border-box;
+      overflow: hidden;
     }
 
-    .record-icon-blank {
+    .record-icon img {
       display: block;
+      width: 29px;
+      height: 29px;
     }
 
     .record-link {

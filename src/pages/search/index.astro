@@ -8,6 +8,7 @@ import AppList from '../../components/AppList.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { buildPrefixTsquery, clampPage, clampPageSize } from '../../lib/search';
 import { sortGenres, fetchGenresWithCounts } from '../../lib/genres';
+import { getOldestIcons } from '../../lib/appicons';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 
@@ -117,6 +118,13 @@ if (q || genreId) {
   }
 }
 
+// Period-authentic (oldest extracted) icons for the results — same source the
+// rest of the site uses, so search rows aren't stuck on the (often-dead) CDN url.
+let iconShas: Map<number, string> | undefined;
+if (!dbError && searchResults.length) {
+  iconShas = await getOldestIcons(supabase, searchResults.map((a: any) => Number(a.id)).filter(Boolean));
+}
+
 // A transient DB failure must not render as a cacheable "no results" page.
 if (dbError) setDegraded(Astro.response);
 
@@ -163,7 +171,7 @@ function pageHref(p: number) {
               </h1>
               {Number(total) > 0 && <span class="section-detail">{formatNumber(total)} found</span>}
             </div>
-            <AppList list={searchResults} />
+            <AppList list={searchResults} iconShas={iconShas} />
             {totalPages > 1 && <Pagination page={page} totalPages={totalPages} hrefFor={pageHref} />}
           </>
         ) : (
