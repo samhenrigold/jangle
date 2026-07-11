@@ -29,7 +29,14 @@ const SUPABASE_ANON_KEYS = [
   'SUPABASE_KEY',
 ];
 
-export function getSupabaseClient(runtimeEnv?: RuntimeEnv) {
+interface SupabaseClientOptions {
+  // Per-request abort deadline (ms). Defaults to 8s; raise it only for the rare
+  // endpoint that legitimately runs long (e.g. the localhost live-stats
+  // recompute, which takes ~8s server-side).
+  timeoutMs?: number;
+}
+
+export function getSupabaseClient(runtimeEnv?: RuntimeEnv, options?: SupabaseClientOptions) {
   const supabaseUrl = readEnv(SUPABASE_URL_KEYS, runtimeEnv);
   const supabaseAnonKey = readEnv(SUPABASE_ANON_KEYS, runtimeEnv);
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -38,14 +45,15 @@ export function getSupabaseClient(runtimeEnv?: RuntimeEnv) {
       .join(', ');
     throw new Error(`Missing ${missing} environment variables.`);
   }
+  const timeoutMs = options?.timeoutMs ?? 8000;
   return createClient(supabaseUrl, supabaseAnonKey, {
     auth: { persistSession: false },
     global: {
       // The degraded convention catches errors but not hangs: without a
       // client-side deadline a slow/stuck PostgREST request rides the platform
-      // limit and holds the isolate. An 8s abort turns a hang into a normal
+      // limit and holds the isolate. An abort turns a hang into a normal
       // error, so callers fall through to setDegraded() (503, no-store) instead.
-      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(8000) }),
+      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) }),
     },
   });
 }

@@ -292,16 +292,16 @@ SELECT jsonb_build_object(
                          'paid',  (SELECT count(*) FROM app_versions WHERE price > 0)),
   -- price integers mix currencies; ranking only makes sense within one, so USD
   'priciest',          (SELECT jsonb_agg(x) FROM (
-                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'price', v.price_display) x
+                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url, 'price', v.price_display) x
                           FROM app_versions v JOIN apps a ON a.id = v.app_id
                           WHERE v.price > 0 AND v.price_display LIKE '$%'
                           ORDER BY v.price DESC LIMIT 3) s),
   'most_versions',     (SELECT jsonb_agg(x) FROM (
-                          SELECT jsonb_build_object('name', coalesce(display_name, app_store_name), 'id', app_store_id, 'n', version_count) x
+                          SELECT jsonb_build_object('name', coalesce(display_name, app_store_name), 'id', app_store_id, 'icon', icon_url, 'n', version_count) x
                           FROM apps WHERE app_store_name IS NOT NULL AND app_store_id IS NOT NULL
                           ORDER BY version_count DESC LIMIT 5) s),
   'biggest',           (SELECT jsonb_agg(x) FROM (
-                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'bytes', f.file_size) x
+                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url, 'bytes', f.file_size) x
                           FROM ipa_files f
                           JOIN app_versions v ON v.id = f.app_version_id
                           JOIN apps a ON a.id = v.app_id
@@ -338,25 +338,48 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.refresh_archive_stats() FROM PUBLIC, anon, authenticated;
 
 -- Public accessor: cached read; synchronous recompute only if cron has been
--- dead for 2+ days (rare, and still within the anon statement timeout).
-CREATE OR REPLACE FUNCTION public.get_archive_stats()
+-- dead for 2+ days (rare).
+--
+-- p_fresh forces a live recompute so localhost dev sees uncached numbers. The
+-- recompute (compute_archive_stats) takes ~8s, so:
+--   * SET statement_timeout gives the recompute branches room (over the anon
+--     default), while normal cached reads still return in milliseconds;
+--   * a 10s throttle bounds how often p_fresh can recompute;
+--   * a single-holder advisory lock means concurrent p_fresh callers serve the
+--     cache instead of piling on parallel 8s scans.
+-- Together these keep p_fresh from being a DoS lever if anon ever calls it in
+-- prod — production code always uses the default (cached) path.
+DROP FUNCTION IF EXISTS public.get_archive_stats();
+DROP FUNCTION IF EXISTS public.get_archive_stats(boolean);
+CREATE OR REPLACE FUNCTION public.get_archive_stats(p_fresh boolean DEFAULT false)
 RETURNS jsonb
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = public, pg_temp
+SET statement_timeout = '30s'
 AS $$
 DECLARE
   row_stats jsonb;
   row_at timestamptz;
 BEGIN
   SELECT stats, computed_at INTO row_stats, row_at FROM public.archive_stats_cache WHERE id = 1;
-  IF row_stats IS NULL OR row_at < now() - interval '48 hours' THEN
-    PERFORM public.refresh_archive_stats();
-    SELECT stats, computed_at INTO row_stats, row_at FROM public.archive_stats_cache WHERE id = 1;
+  IF row_stats IS NULL
+     OR row_at < now() - interval '48 hours'
+     OR (p_fresh AND row_at < now() - interval '10 seconds') THEN
+    IF pg_try_advisory_xact_lock(hashtext('refresh_archive_stats')) THEN
+      -- Re-check under the lock; another session may have just refreshed.
+      SELECT stats, computed_at INTO row_stats, row_at FROM public.archive_stats_cache WHERE id = 1;
+      IF row_stats IS NULL
+         OR row_at < now() - interval '48 hours'
+         OR (p_fresh AND row_at < now() - interval '10 seconds') THEN
+        PERFORM public.refresh_archive_stats();
+        SELECT stats, computed_at INTO row_stats, row_at FROM public.archive_stats_cache WHERE id = 1;
+      END IF;
+    END IF;
   END IF;
   RETURN jsonb_set(row_stats, '{computed_at}', to_jsonb(row_at));
 END;
 $$;
-GRANT EXECUTE ON FUNCTION public.get_archive_stats() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_archive_stats(boolean) TO anon, authenticated;
 
 -- Nightly refresh at 09:17 UTC.
 CREATE EXTENSION IF NOT EXISTS pg_cron;

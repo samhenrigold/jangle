@@ -3,19 +3,33 @@ import Layout from '../components/Layout.astro';
 import { getSupabaseClient } from '../lib/supabase';
 import { setCacheHeaders, setDegraded } from '../lib/http';
 import { formatNumber, formatDate, formatFileSize } from '../lib/format';
+import { iconSrc } from '../lib/icons';
 import { barChartSVG, type BarDatum } from '../lib/charts';
 
-// The numbers regenerate daily: a pg_cron job refreshes the cache the RPC reads,
-// and this short edge TTL picks that up. So a visitor sees at-most-a-day-old data.
-setCacheHeaders(Astro.response, 86400, 3600);
+// On localhost (astro dev) we want live, uncached numbers so changes to the DB
+// show up immediately; in production the numbers regenerate daily (a pg_cron job
+// refreshes the cache the RPC reads, and the edge TTL picks that up), so a
+// visitor sees at-most-a-day-old data.
+const isDev = import.meta.env.DEV;
+if (isDev) {
+  Astro.response.headers.set('Cache-Control', 'no-store');
+} else {
+  setCacheHeaders(Astro.response, 86400, 3600);
+}
 
-const supabase = getSupabaseClient((Astro.locals as any)?.runtime?.env);
+// The live recompute (localhost only) runs ~8s server-side, so the dev client
+// needs a deadline beyond the usual 8s abort; prod keeps the tight default.
+const supabase = getSupabaseClient(
+  (Astro.locals as any)?.runtime?.env,
+  isDev ? { timeoutMs: 25000 } : undefined
+);
 
 let stats: any = null;
 {
   // Server-side the numbers come precomputed: the RPC reads a one-row cache that
-  // pg_cron refreshes nightly, so this is a single fast round trip.
-  const { data, error } = await supabase.rpc('get_archive_stats');
+  // pg_cron refreshes nightly, so this is a single fast round trip. On localhost
+  // p_fresh forces a live recompute instead (throttled server-side to 10s).
+  const { data, error } = await supabase.rpc('get_archive_stats', isDev ? { p_fresh: true } : {});
   if (error) {
     console.error('archive stats failed:', error.message);
     setDegraded(Astro.response);
@@ -46,14 +60,22 @@ function osLabel(major: number): string {
   return major <= 3 ? `iPhone OS ${major}` : `iOS ${major}`;
 }
 
+// The "as of" line shows the exact timestamp the numbers were computed — down to
+// the minute (UTC), so on localhost a live recompute is visibly fresh.
+const asOfFmt = new Intl.DateTimeFormat('en-US', {
+  month: 'short', day: 'numeric', year: 'numeric',
+  hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short',
+});
+
 let asOf = '';
 let tiles: { n: string; label: string }[] = [];
 let charts: Record<string, string> = {};
-let records: { title: string; entries: { text: string; detail: string; href?: string }[] }[] = [];
+let records: { title: string; entries: { text: string; detail: string; href?: string; icon?: string }[] }[] = [];
 let notes: string[] = [];
 
 if (stats) {
-  asOf = formatDate(stats.computed_at);
+  const computedAt = stats.computed_at ? new Date(stats.computed_at) : null;
+  asOf = computedAt && !isNaN(computedAt.getTime()) ? asOfFmt.format(computedAt) : formatDate(stats.computed_at);
 
   tiles = [
     { n: formatNumber(stats.apps), label: 'apps' },
@@ -120,11 +142,15 @@ if (stats) {
     { title: 'Versions by device family', labelWidth: 152 }
   );
 
-  charts.genre = barChartSVG(
-    (stats.top_genres || []).map((g: any) =>
-      bar(String(g.g), g.n, { href: g.gid ? `/categories/${g.gid}` : undefined })
-    ),
-    { title: 'Apps by category', labelWidth: 134 }
+  const genreRows = (stats.top_genres || []).map((g: any) =>
+    bar(String(g.g), g.n, { href: g.gid ? `/categories/${g.gid}` : undefined })
+  );
+  charts.genre = barChartSVG(genreRows, { title: 'Apps by category', labelWidth: 134 });
+  // Games dwarfs every other category, so a Games-free view re-balances the bars
+  // (barChartSVG rescales to its own rows' max). Toggled client-side.
+  charts.genreNoGames = barChartSVG(
+    genreRows.filter((r) => r.label !== 'Games'),
+    { title: 'Apps by category (excluding Games)', labelWidth: 134 }
   );
 
   const revStars = stats.review_stars || {};
@@ -140,6 +166,7 @@ if (stats) {
         text: String(a.name),
         detail: `${formatNumber(a.n)} versions`,
         href: a.id ? `/app/${a.id}` : undefined,
+        icon: iconSrc(a.icon),
       })),
     },
     {
@@ -148,6 +175,7 @@ if (stats) {
         text: String(a.name),
         detail: formatFileSize(a.bytes),
         href: a.id ? `/app/${a.id}` : undefined,
+        icon: iconSrc(a.icon),
       })),
     },
     {
@@ -156,6 +184,7 @@ if (stats) {
         text: String(a.name),
         detail: String(a.price),
         href: a.id ? `/app/${a.id}` : undefined,
+        icon: iconSrc(a.icon),
       })),
     },
   ];
@@ -215,8 +244,12 @@ if (stats) {
       <Fragment set:html={charts.device} />
 
       <h2 class="stats-h2">Categories</h2>
-      <p class="stats-sub">The ten biggest, of the apps whose category is known. Games was never a fair fight.</p>
-      <Fragment set:html={charts.genre} />
+      <div class="cat-head">
+        <p class="stats-sub cat-sub">The ten biggest, of the apps whose category is known.</p>
+        <button type="button" class="cat-toggle" id="cat-toggle" hidden>Hide Games</button>
+      </div>
+      <div class="cat-chart" data-cat="all"><Fragment set:html={charts.genre} /></div>
+      <div class="cat-chart" data-cat="nogames" hidden><Fragment set:html={charts.genreNoGames} /></div>
 
       <h2 class="stats-h2">Record holders</h2>
       <div class="records">
@@ -226,6 +259,9 @@ if (stats) {
             <ul class="record-list">
               {group.entries.map((e) => (
                 <li>
+                  {e.icon
+                    ? <img class="record-icon" src={e.icon} alt="" width="29" height="29" loading="lazy" decoding="async" />
+                    : <span class="record-icon record-icon-blank"></span>}
                   {e.href ? <a class="record-link" href={e.href}>{e.text}</a> : <span class="record-link">{e.text}</span>}
                   <span class="record-detail">{e.detail}</span>
                 </li>
@@ -358,11 +394,27 @@ if (stats) {
       padding: 7px 10px;
       border-bottom: 1px solid #e1e1e1;
       font-size: 14px;
-      line-height: 18px;
+      line-height: 29px;
       overflow: hidden;
     }
 
     .record-list li:last-child { border-bottom: none; }
+
+    .record-icon {
+      float: left;
+      width: 29px;
+      height: 29px;
+      margin: 0 9px 0 0;
+      border-radius: 6px;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      background: #f2f2f4;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
+    }
+
+    .record-icon-blank {
+      display: block;
+    }
 
     .record-link {
       color: #385487;
@@ -373,6 +425,38 @@ if (stats) {
       float: right;
       color: #8e8e93;
     }
+
+    /* Categories: "Hide Games" toggle, revealed only when JS runs. */
+    .cat-head {
+      position: relative;
+    }
+
+    .cat-sub {
+      margin-right: 92px;
+    }
+
+    .cat-toggle {
+      position: absolute;
+      top: -2px;
+      right: 0;
+      -webkit-appearance: none;
+      appearance: none;
+      font-size: 12px;
+      line-height: 1;
+      color: #385487;
+      font-weight: bold;
+      background: #f7f7f8;
+      border: 1px solid #c8c8cc;
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+
+    .cat-toggle:active { background: #e8e8ea; }
+
+    /* Explicit so old WebKit (no native [hidden] UA rule) still hides these. */
+    .cat-chart[hidden],
+    .cat-toggle[hidden] { display: none; }
 
     .notes {
       margin: 0;
@@ -386,4 +470,33 @@ if (stats) {
       color: #666;
     }
   </style>
+
+  <!-- "Hide Games" toggle. Deliberately old-WebKit-safe (iOS 4/5/6): no
+       const/let, no arrow functions, no template strings, no classList. If
+       unsupported the script no-ops, the button stays hidden, and the
+       server-rendered (games-included) chart keeps showing. -->
+  <script is:inline>
+    (function () {
+      if (!document.getElementById || !document.querySelector) return;
+      var toggle = document.getElementById('cat-toggle');
+      var all = document.querySelector('.cat-chart[data-cat="all"]');
+      var nogames = document.querySelector('.cat-chart[data-cat="nogames"]');
+      if (!toggle || !all || !nogames) return;
+
+      function setHidden(el, h) {
+        if (h) el.setAttribute('hidden', 'hidden');
+        else el.removeAttribute('hidden');
+      }
+
+      setHidden(toggle, false);
+      var gamesHidden = false;
+      toggle.onclick = function () {
+        gamesHidden = !gamesHidden;
+        setHidden(all, gamesHidden);
+        setHidden(nogames, !gamesHidden);
+        toggle.innerHTML = gamesHidden ? 'Show Games' : 'Hide Games';
+        return false;
+      };
+    })();
+  </script>
 </Layout>
