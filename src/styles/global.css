@@ -244,30 +244,58 @@ em { font-style: italic; }
    say Install / Download). Autoprefixer emits old-gradient syntax for
    iOS 4-6. */
 
+/* The real iOS-6 App Store button, drawn from its nine-slice PNGs (retina @2x,
+   sliced 6px caps rendered at 3 CSS px). PurchaseButton normally, its pressed
+   (blue) state on :active; universal apps overlay the "+" corner badge;
+   disabled uses PurchasedAlready. */
 .wsfbtn {
   display: inline-block;
   position: relative;
-  overflow: hidden;
-  height: 22px;
-  line-height: 22px;
+  height: 25px;
+  line-height: 19px;
   padding: 0 14px;
+  min-width: 58px;
+  text-align: center;
   vertical-align: middle;
-  border: 0;
-  border-radius: 12px;
-  background: #298cda;
-  background: linear-gradient(#acdcf7, #57b8ee 8%, #339be2 55%, #298cda 88%, #2681c8);
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  border: 3px solid transparent;
+  border-image: url(/wsf/buttons/purchase@2x.png) 6 fill / 3px stretch;
+  /* Fallback for browsers without border-image fill (very old WebKit): a plain
+     grey rounded button. Covered by the nine-slice everywhere it's supported. */
+  background-color: #8590a4;
+  border-radius: 4px;
   color: #fff !important;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: bold;
-  text-shadow: 0 -1px 1px rgba(0, 30, 60, 0.3);
-  -webkit-box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 -1px 1px rgba(0, 20, 45, 0.4);
   cursor: pointer;
 }
 .wsfbtn:hover { text-decoration: none; }
-.wsfbtn:active { background: linear-gradient(#2681c8, #298cda 12%, #57b8ee 92%, #acdcf7); }
-.wsfbtn-primary { } /* alias kept for markup symmetry; one capsule style fits all */
-.wsfbtn-disabled { opacity: 0.45; pointer-events: none; }
+.wsfbtn:active {
+  border-image-source: url(/wsf/buttons/purchase-pressed@2x.png);
+}
+.wsfbtn-primary { } /* alias kept for markup symmetry; one button style fits all */
+
+/* Universal ("fat binary") apps — the PurchasePlusButton nine-slice with the
+   "+" baked into its top-left corner. The corner slice is kept large (18px)
+   to hold the whole "+"; the layout border stays a symmetric 3px so the label
+   is still centred, while the image widths let the top-left extend to hold the
+   badge. */
+.wsfbtn.nav-universal {
+  border-image: url(/wsf/buttons/purchase-plus@2x.png) 18 6 6 18 fill / 12px 3px 3px 12px stretch;
+}
+.wsfbtn.nav-universal:active {
+  border-image-source: url(/wsf/buttons/purchase-plus-pressed@2x.png);
+}
+
+.wsfbtn-disabled {
+  pointer-events: none;
+  border-image: url(/wsf/buttons/purchased@2x.png) 6 fill / 3px stretch;
+  background-color: #dcdcdc;
+  color: #9a9a9a !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
 
 /* ------------------------------------------------------- #globalfooter --- */
 
