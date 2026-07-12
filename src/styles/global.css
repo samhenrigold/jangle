@@ -341,8 +341,10 @@ a.app-link:hover { text-decoration: none; background-color: #eaf3f8; }
 .applist-empty { padding: 24px 10px; text-align: center; color: #898989; }
 
 /* Install-status chip */
-.chip { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; line-height: 15px; font-weight: bold; vertical-align: 1px; }
-.chip-warn { background: #fbf3dc; color: #977c28; border: 1px solid #e6d5a5; }
+/* Install-status label — flat coloured text, not a pill (rounded pills weren't
+   an iTunes-2010 idiom). */
+.chip { display: inline-block; font-size: 10px; line-height: 15px; font-weight: bold; vertical-align: 1px; }
+.chip-warn { color: #b0741f; }
 
 input, select, button { font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial, Verdana, sans-serif; padding: 3px; }
 

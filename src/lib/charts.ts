@@ -37,7 +37,7 @@ const FONT = 14;
 // so relative lengths stay honest.
 const END_GAP = 14;
 
-const SANS = 'Helvetica, Arial, sans-serif';
+const SANS = '&quot;Lucida Grande&quot;, &quot;Lucida Sans Unicode&quot;, Arial, Verdana, sans-serif';
 const MONO = 'Menlo, Monaco, "Courier New", monospace';
 
 function esc(s: string): string {

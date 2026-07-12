@@ -733,31 +733,35 @@ if (sizePoints.length >= 3) {
                   {row.nofileText && <div class="v-fact v-nofile">{row.nofileText}</div>}
                 </div>
                 {row.primary ? (
+                  // Size sits to the LEFT of the button so the button stays
+                  // right-aligned across every row; the "N more copies" affordance
+                  // lives in the freed space under the button.
                   <span class="file-actions">
-                    {row.primary.ipaUrl ? (
-                      <span class="file-buttons">
-                        <a class={`wsfbtn wsfbtn-primary navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(row.primary.manifestUrl)}`}>Install</a>
-                        <a class={`wsfbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={row.primary.ipaUrl} download>Download</a>
+                    <span class="fa-line">
+                      <span class="fa-meta">
+                        {row.primary.detail && <span class="file-stat-size">{row.primary.detail}</span>}
+                        {!row.primary.ipaUrl && <span class="file-stat-size">File source unavailable</span>}
+                        {row.primary.encrypted && <span class="chip chip-warn">Encrypted</span>}
                       </span>
-                    ) : (
-                      <span class="file-buttons"><span class="wsfbtn wsfbtn-disabled" aria-disabled="true">Download</span></span>
-                    )}
-                    <span class="file-stat">
-                      {row.primary.detail && <span class="file-stat-size">{row.primary.detail}</span>}
-                      {!row.primary.ipaUrl && <span class="file-stat-size">File source unavailable</span>}
-                      {row.primary.encrypted && <span class="chip chip-warn">Encrypted</span>}
+                      {row.primary.ipaUrl ? (
+                        <span class="file-buttons">
+                          <a class={`wsfbtn wsfbtn-primary navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(row.primary.manifestUrl)}`}>Install</a>
+                          <a class={`wsfbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={row.primary.ipaUrl} download>Download</a>
+                        </span>
+                      ) : (
+                        <span class="file-buttons"><span class="wsfbtn wsfbtn-disabled" aria-disabled="true">Download</span></span>
+                      )}
                     </span>
+                    {row.extras.length > 0 && (
+                      <span class="more-copies">{row.extras.length} more {row.extras.length === 1 ? 'copy' : 'copies'} <span class="mc-tri">&#8250;</span></span>
+                    )}
                   </span>
                 ) : (
                   // No available copy: still show a (disabled) action so the row reads consistently.
                   <span class="file-actions">
-                    <span class="file-buttons"><span class="wsfbtn wsfbtn-disabled" aria-disabled="true">Download</span></span>
+                    <span class="fa-line"><span class="file-buttons"><span class="wsfbtn wsfbtn-disabled" aria-disabled="true">Download</span></span></span>
                   </span>
                 )}
-                {/* Disclosure triangle for rows with extra copies — a real
-                    flex item at the far right, vertically centered (JS on only;
-                    rotates open on per-row click or global "Show everything"). */}
-                <span class="v-expand" aria-hidden="true"></span>
               </div>
               {row.extras.length > 0 && (
                 <div class="v-copies">
@@ -1087,12 +1091,31 @@ if (sizePoints.length >= 3) {
       min-width: 0;
     }
 
-    /* Right column of the lockup: buttons on top, size + badge under. */
+    /* Right column of the lockup: size (and Encrypted) to the LEFT of the
+       button so the button is right-aligned on every row; the "N more copies"
+       affordance sits underneath. */
     .file-actions {
       margin-left: 10px;
       flex-shrink: 0;
       text-align: right;
     }
+
+    .fa-line {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .fa-meta {
+      margin-right: 12px;
+      text-align: right;
+      color: #898989;
+      font-size: 11px;
+      line-height: 15px;
+    }
+
+    .fa-meta .file-stat-size { display: block; }
+    .fa-meta .chip { display: block; margin-top: 1px; }
 
     .file-buttons {
       white-space: nowrap;
@@ -1102,21 +1125,20 @@ if (sizePoints.length >= 3) {
       margin-left: 6px;
     }
 
-    .file-stat {
+    /* Expand affordance in the space under the button (JS on only — no-JS uses
+       the global "Show everything"). A span, not a link, so the row-click
+       handler toggles it. */
+    .more-copies { display: none; }
+    .js-copies .version[data-copies] .more-copies {
       display: block;
-      margin-top: 4px;
-      color: #898989;
-      font-size: 10px;
-      line-height: 14px;
+      margin-top: 5px;
+      color: #298cda;
+      font-size: 11px;
+      font-weight: bold;
     }
-
-    .file-stat .file-stat-size {
-      display: block;
-    }
-
-    .file-stat .chip {
-      margin-top: 3px;
-    }
+    .more-copies .mc-tri { display: inline-block; transition: transform 0.15s; }
+    .js-copies .version[data-copies].expanded .more-copies .mc-tri,
+    .js-copies.show-everything .version[data-copies] .more-copies .mc-tri { transform: rotate(90deg); }
 
     .file-name {
       display: block;
@@ -1165,28 +1187,11 @@ if (sizePoints.length >= 3) {
       display: flex;
     }
 
-    /* With JS on, a version row that has extra copies is clickable to expand
-       them inline (the row itself is the target). A disclosure triangle sits
-       at the far right of the lockup, vertically centered, and rotates open —
-       on per-row click OR when the global "Show everything" reveals them. */
-    .v-expand { display: none; }
-    .js-copies .version[data-copies] { cursor: pointer; }
-    .js-copies .version[data-copies] .v-expand {
-      display: block;
-      flex-shrink: 0;
-      width: 12px;
-      margin-left: 10px;
-      text-align: center;
-      color: #bcbcc0;
-    }
-    .js-copies .version[data-copies] .v-expand::before {
-      content: '\25b8';
-      font-size: 11px;
-      display: inline-block;
-      transition: transform 0.15s;
-    }
-    .js-copies .version[data-copies].expanded .v-expand::before,
-    .js-copies.show-everything .version[data-copies] .v-expand::before { transform: rotate(90deg); }
+    /* With JS on, the top section of a version row that has extra copies is
+       clickable to expand them inline; the "N more copies" affordance (styled
+       above) hints it. Only the .v-lockup is the target — clicks on the
+       revealed copies don't collapse the row (handled in the script). */
+    .js-copies .version[data-copies] .v-lockup { cursor: pointer; }
 
     .show-everything .v-hidden-default {
       display: block;
@@ -1235,22 +1240,26 @@ if (sizePoints.length >= 3) {
       font-weight: bold;
     }
 
-    /* "Customers Also Bought"-style lockup row (More from developer): small
-       masked icons on the blue swoosh panel, wrapping. */
+    /* "Customers Also Bought"-style lockup row (More from developer): one
+       horizontally-scrolling row of small masked lockups on the blue swoosh
+       panel, left-aligned like the original. */
     .more-grid {
       background: #F3F9FD;
       border-radius: 4px;
-      padding: 14px 16px 8px;
-      font-size: 0;
-      overflow: hidden;
+      padding: 16px 4px 16px 18px;
+      white-space: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
     }
 
     .more-grid .mg-cell {
       display: inline-block;
       vertical-align: top;
-      width: 112px;
-      margin: 0 6px 14px 6px;
-      text-align: center;
+      width: 100px;
+      margin-right: 24px;
+      white-space: normal;
+      text-align: left;
     }
 
     .more-grid .mg-art {
@@ -1258,7 +1267,7 @@ if (sizePoints.length >= 3) {
       display: block;
       width: 100px;
       height: 100px;
-      margin: 0 auto 6px;
+      margin: 0 0 8px 0;
       background: transparent url('/icon-placeholder.png') no-repeat;
       background-size: 100px 100px;
     }
@@ -1267,24 +1276,26 @@ if (sizePoints.length >= 3) {
     /* Blue-cornered mask (the panel is blue). */
     .more-grid .mg-mask { position: absolute; top: 0; left: -1px; width: 102px; height: 103px; background: url('/wsf/images/mask100blue.png') no-repeat; }
 
+    /* Name: blue, up to two lines then clipped. Sub: grey. */
     .more-grid .mg-name {
       display: block;
       font-size: 11px;
       font-weight: bold;
       color: #298cda;
       line-height: 14px;
+      max-height: 28px;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
+    .more-grid .mg-cell:hover { text-decoration: none; }
     .more-grid .mg-cell:hover .mg-name { text-decoration: underline; }
 
     .more-grid .mg-sub {
       display: block;
-      font-size: 10px;
-      color: #898989;
-      line-height: 13px;
+      margin-top: 1px;
+      font-size: 11px;
+      color: #898989 !important;
+      line-height: 14px;
     }
 
     /* Chart-trajectory sparkline: plain divs so it renders on iOS 3+. */
@@ -1441,16 +1452,18 @@ if (sizePoints.length >= 3) {
           })(everythingToggles[i]);
         }
 
-        // 1b) Per-row expand — clicking a version row that has extra copies
-        //     reveals just that row's copies inline (no button; the row is the
-        //     target). Delegated off the container. Clicks on the Install /
-        //     Download links pass through untouched.
+        // 1b) Per-row expand — clicking the TOP section (.v-lockup) of a version
+        //     row that has extra copies reveals that row's copies inline.
+        //     Delegated off the container. Clicks on Install/Download links pass
+        //     through; clicks on the already-revealed copies (.v-copies) do NOT
+        //     collapse the row (walk up hits .v-copies before .version).
         if (versionsRoot) {
           addClass(versionsRoot, 'js-copies');
           versionsRoot.onclick = function (e) {
             var t = e.target || e.srcElement;
             while (t && t !== versionsRoot) {
               if (t.tagName === 'A' || t.tagName === 'BUTTON') return true; // let links/buttons work
+              if (hasClass(t, 'v-copies')) return true;                     // revealed copies aren't a toggle target
               if (t.getAttribute && t.getAttribute('data-copies') && hasClass(t, 'version')) {
                 if (hasClass(t, 'expanded')) removeClass(t, 'expanded'); else addClass(t, 'expanded');
                 if (e && e.preventDefault) e.preventDefault();
