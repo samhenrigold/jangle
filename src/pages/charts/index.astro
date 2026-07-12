@@ -281,8 +281,8 @@ const pageTitle = snapshot
                   <li>
                     <strong>{p.position}</strong>
                     {href
-                      ? <a class="grid-art" href={href}>{icon ? <><img src={icon} alt="" width="100" height="100" loading="lazy" /><span class="grid-mask"></span></> : null}</a>
-                      : <span class="grid-art">{icon ? <><img src={icon} alt="" width="100" height="100" loading="lazy" /><span class="grid-mask"></span></> : null}</span>}
+                      ? <a class="grid-art" href={href}>{icon ? <img src={icon} alt="" width="100" height="100" loading="lazy" /> : null}</a>
+                      : <span class="grid-art">{icon ? <img src={icon} alt="" width="100" height="100" loading="lazy" /> : null}</span>}
                     <h3>{href ? <a href={href}>{p.display_name}</a> : p.display_name}</h3>
                     <h4>{p.developer_name}</h4>
                     {price && <span class="price">{price}</span>}

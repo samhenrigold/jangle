@@ -7,9 +7,6 @@ const {
   activeTab = 'featured',
   description = 'Legacy Store — install archived versions of classic iPhone and iPad apps directly on old iOS devices.',
   searchQuery = '',
-  // Breadcrumb label for the footer trail; defaults to the active nav item,
-  // else the page title's first segment.
-  crumb = '',
   // Set on pages reachable under several URLs (an app has app_store_id,
   // internal-id, and bundle-id aliases plus filter params) so search engines
   // consolidate them. Omit everywhere else.
@@ -24,13 +21,9 @@ const NAV = [
   { key: 'featured', label: 'Featured', href: '/' },
   { key: 'charts', label: 'Charts', href: '/charts' },
   { key: 'categories', label: 'Categories', href: '/categories' },
-  { key: 'most-archived', label: 'Most Archived', href: '/most-archived' },
+  { key: 'colophon', label: 'Colophon', href: '/colophon' },
   { key: 'search', label: 'Search', href: '/search' },
 ];
-const crumbLabel =
-  crumb ||
-  NAV.find((n) => n.key === activeTab)?.label ||
-  (title.split(' — ')[0] || 'Legacy Store');
 ---
 <!DOCTYPE html>
 <html lang="en">
@@ -98,52 +91,12 @@ const crumbLabel =
     </div>
 
     <div id="globalfooter">
-      <div id="breadory">
-        <ol id="breadcrumbs">
-          <li class="home"><a href="/">Home</a></li>
-          <li>{crumbLabel}</li>
-        </ol>
-        <div id="directorynav" class="itunes">
-          <div id="dn-cola" class="column first">
-            <h3>Browse</h3>
-            <ul>
-              <li><a href="/">Featured</a></li>
-              <li><a href="/charts">Charts</a></li>
-              <li><a href="/categories">Categories</a></li>
-              <li><a href="/most-archived">Most Archived</a></li>
-              <li><a href="/search">Search</a></li>
-            </ul>
-          </div>
-          <div id="dn-colb" class="column">
-            <h3>About</h3>
-            <ul>
-              <li><a href="/colophon">Colophon</a></li>
-              <li><a href="/stats">Archive Stats</a></li>
-            </ul>
-          </div>
-          <div id="dn-colc" class="column">
-            <h3>Elsewhere</h3>
-            <ul>
-              <li><a href="https://github.com/samhenrigold/jangle" rel="noopener">Source on GitHub</a></li>
-              <li><a href="https://archive.org/" rel="noopener">Internet Archive</a></li>
-            </ul>
-          </div>
-          <div class="capbottom"></div>
-        </div>
-      </div>
       <p class="gf-buy">A metadata-only preservation archive. App binaries are hosted by the <a href="https://archive.org/" rel="noopener">Internet Archive</a>, not here.</p>
       <ul class="gf-links piped">
         <li><a href="/colophon" class="first">Colophon</a></li>
         <li><a href="/stats">Stats</a></li>
-        <li><a href="https://github.com/samhenrigold/jangle" class="contact_us" rel="noopener">Source</a></li>
-        <li><a href="/" class="choose" title="United States"><img src="/wsf/nav/worldwide_us.png" alt="United States" width="22" height="22" /></a></li>
+        <li><a href="https://github.com/samhenrigold/jangle" rel="noopener">Source</a></li>
       </ul>
-      <div class="gf-sosumi">
-        <p>Not affiliated with Apple Inc. Design recreated from the 2010 iTunes Preview website for preservation.</p>
-        <ul class="piped">
-          <li><a href="/colophon" class="first">About this design</a></li>
-        </ul>
-      </div>
     </div>
   </body>
 </html>

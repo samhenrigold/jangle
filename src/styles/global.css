@@ -300,38 +300,13 @@ em { font-style: italic; }
 
 #globalfooter { width: 980px; color: #888; font-size: 10px; margin: 28px auto 0; padding-bottom: 36px; text-align: left !important; }
 #globalfooter a { color: #08c; }
-#globalfooter p { margin-bottom: 1em; }
+/* One slim row: the preservation note on the left, piped links on the right. */
+#globalfooter:after { content: ""; display: block; clear: both; }
 #globalfooter p.gf-buy { float: left; width: 52%; margin: 18px 0 9px 3px; }
 #globalfooter .gf-links { float: right; margin: 18px 3px 9px 0; }
-#globalfooter .gf-links a { padding: 0 10px; white-space: nowrap; }
+#globalfooter .gf-links a { white-space: nowrap; }
 #globalfooter ul.piped a { padding: 0 0 0 1.5em; margin-left: 1.5em; border-left: 1px solid #d0d0d0; }
 #globalfooter ul.piped a.first { border-left: 0 !important; padding-left: 0; margin-left: 0 !important; }
-#globalfooter ul.piped a.contact_us { padding-right: 1.5em; border-right: 1px solid #d0d0d0; }
-#globalfooter ul.piped a.choose { margin-left: 0; border: 0; }
-#globalfooter ul.piped a.choose img { vertical-align: middle; margin-top: -5px; }
-#globalfooter .gf-sosumi { clear: both; width: 100%; border-top: 1px solid #ddd; padding-top: 9px; }
-#globalfooter .gf-sosumi a { padding: 0 10px; }
-#globalfooter .gf-sosumi p { float: left; margin-left: 3px; margin-right: 1.5em; }
-
-#breadory { border: 1px solid #ddd; width: 978px; margin: 0 auto; border-radius: 4px; -webkit-border-radius: 4px; }
-#globalfooter #breadory ol#breadcrumbs { background: none; clear: both; float: none; height: 3em; line-height: 3em; font-size: 11px; color: #666; margin: 0; list-style: none; font-weight: bold; text-shadow: 0 1px 0 #fff; zoom: 1; }
-#globalfooter #breadory ol#breadcrumbs:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
-#breadory ol#breadcrumbs li { background: none; float: left; margin: 0; padding: 0 0 0 1em; }
-#breadory ol#breadcrumbs li a { float: left; color: #666; text-decoration: none; padding: 0 1.75em 0 0; margin-left: 0; background: url(/wsf/nav/breadcrumb_separator.png) no-repeat 100% 50%; }
-#breadory ol#breadcrumbs li a:hover { color: #333; text-decoration: none; }
-#breadory ol#breadcrumbs li.home { background: none; margin: 0; padding: 0; }
-#breadory ol#breadcrumbs li.home a { background: url(/wsf/nav/breadcrumb_home.png) no-repeat 1.25em 50%; margin: 0; padding: 0 0 0 1.25em; width: 30px; text-indent: -9999px; overflow: hidden; }
-#breadory ol#breadcrumbs li.home a:hover { background-image: url(/wsf/nav/breadcrumb_home_over.png); }
-
-#directorynav { font-size: 11px; line-height: 18px; border-top: 1px solid #e5e5e5; float: left; width: 100%; zoom: 1; }
-#breadory #directorynav { background: none; clear: both; float: none; margin-top: 0; overflow: hidden; }
-#directorynav .column { float: left; }
-#directorynav.itunes .column { width: 190px; padding: 9px 0 0 54px; }
-#directorynav h3 { color: #666; font-weight: bold; margin: 0; font-size: 1em; line-height: 18px; }
-#directorynav a { color: #888; text-decoration: none; display: block; zoom: 1; }
-#directorynav a:hover { color: #333 !important; text-decoration: none !important; }
-#directorynav ul { margin-bottom: 0; padding-bottom: 9px; }
-#breadory #directorynav .capbottom { height: 0; font-size: 1px; }
 
 /* =========================================================================
    Shared site components, reskinned to the era
@@ -405,8 +380,6 @@ input, select, button { font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial
   #main #content .padder { padding: 1.5em 24px 3em; border-radius: 5px; -webkit-border-radius: 5px; background-size: 100% 207px; }
 
   #globalfooter { width: auto; margin: 0 12px; }
-  #breadory { width: auto; }
-  #directorynav.itunes .column { width: 30%; padding: 9px 0 0 3%; }
 }
 
 @media screen and (max-width: 767px) {
@@ -460,9 +433,8 @@ input, select, button { font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial
   #globalfooter { margin: 18px 8px 0; }
   #globalfooter p.gf-buy { float: none; width: auto; margin: 12px 3px 6px; }
   #globalfooter .gf-links { float: none; margin: 0 3px 9px; }
-  #globalfooter .gf-links a { padding-left: 0; padding-right: 10px; margin-left: 0; border-left: 0; }
-  #directorynav.itunes .column { float: none; width: auto; padding: 9px 12px 0; }
-  #breadory ol#breadcrumbs { padding-left: 8px; }
+  #globalfooter ul.piped a { padding-left: 0; margin-left: 0; border-left: 0; }
+  #globalfooter ul.piped a + a { padding-left: 1.5em; margin-left: 1.5em; border-left: 1px solid #d0d0d0; }
 }
 
 /* =========================================================================
@@ -524,12 +496,11 @@ body.charts-landing .chart-grid li strong { position: absolute; top: 4px; left: 
 body.charts-landing .chart-grid h3, body.charts-landing .chart-grid h4, body.charts-landing .chart-grid .price { display: block; width: 100px; margin: 0; font-size: 11px; line-height: 1.35em; font-weight: normal; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #b1b3b6; }
 body.charts-landing .chart-grid h3 a { color: #fff; }
 body.charts-landing .chart-grid a:hover { text-decoration: underline; color: #fff; }
-body.charts-landing .chart-grid a.more, body.charts-landing .chart-grid a.more:hover { display: inline-block; margin-top: 2px; color: #5cc3f6; padding-right: 10px; background: url(/wsf/charts/morearrow20090107.gif) no-repeat 100% 50%; }
-/* Empty tiles (apps not in the archive) are a clean dark rounded well — the
-   border-radius rounds them since there's no icon+mask on top. */
-body.charts-landing .chart-grid .grid-art { display: block; position: relative; width: 100px; height: 100px; margin: 0 0 6px 0; background: #2f2f31; border-radius: 18px; -webkit-border-radius: 18px; }
+body.charts-landing .chart-grid a.more, body.charts-landing .chart-grid a.more:hover { display: inline-block; margin-top: 2px; font-size: 11px; color: #5cc3f6; padding-right: 10px; background: url(/wsf/charts/morearrow20090107.gif) no-repeat 100% 50%; }
+/* Icon tiles: a plain rounded well clipped to a 20px radius. The icon is clipped
+   by overflow; missing-icon tiles fall back to the black-20% placeholder. */
+body.charts-landing .chart-grid .grid-art { display: block; position: relative; width: 100px; height: 100px; margin: 0 0 6px 0; overflow: hidden; background: rgba(0, 0, 0, 0.2); border-radius: 20px; -webkit-border-radius: 20px; }
 body.charts-landing .chart-grid .grid-art img { display: block; width: 100px; height: 100px; }
-body.charts-landing .chart-grid .grid-art .grid-mask { position: absolute; top: 0; left: -1px; width: 102px; height: 103px; background: url(/wsf/images/mask100dark.png) no-repeat; }
 
 body.charts-landing .pagination { color: #808080; }
 body.charts-landing .pagination a { color: #5cc3f6; }
