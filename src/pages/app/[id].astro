@@ -53,6 +53,11 @@ const genreName = appData?.genres?.genre_name;
 let versions: any[] = [];
 let ipaFiles: any[] = [];
 const binariesBySha1 = new Map<string, any>();
+// icon sha → its perceptual-duplicate cluster canonical (icon_aliases). Used to
+// pick each version's CONSENSUS icon: copies agree on the real icon, and a
+// mis-extracted outlier (e.g. YouTube's Google "g" instead of the play button)
+// is a lone different cluster that loses the vote.
+const canonicalBySha = new Map<string, string>();
 
 let chartHistory: any[] = [];
 let ratingHistory: any[] = [];
@@ -143,6 +148,18 @@ const loadCore = async () => {
     if (bins) cacheSet(binCacheKey, bins, 5 * 60 * 1000);
   }
   for (const b of bins || []) binariesBySha1.set(b.sha1, b);
+
+  // Canonical cluster per icon (for per-version consensus). Best-effort: on any
+  // failure, consensus falls back to the plain best-copy pick.
+  const iconShas = Array.from(new Set((bins || [])
+    .flatMap((b: any) => [b.bundle_icon_sha256, b.icon_sha256]).filter(Boolean)));
+  for (let i = 0; i < iconShas.length; i += 150) {
+    const { data: al } = await supabase
+      .from('icon_aliases')
+      .select('sha256, canonical_sha256')
+      .in('sha256', iconShas.slice(i, i + 150));
+    for (const a of al || []) canonicalBySha.set(a.sha256, a.canonical_sha256);
+  }
 };
 
 // B. Wayback time-machine history (plan 010 Phase 5): chart trajectory,
@@ -325,6 +342,30 @@ const binaryOf = (f: any) => (f?.binary_sha1 ? binariesBySha1.get(f.binary_sha1)
 // unreliable per version). Both are content-addressed at /icon/<sha>.
 const iconShaOf = (f: any) => { const b = binaryOf(f); return b?.bundle_icon_sha256 || b?.icon_sha256 || null; };
 
+// The consensus icon for a version: group its copies' icons by perceptual
+// cluster (icon_aliases canonical) and take the cluster the most copies agree
+// on, weighting encrypted copies (untamperable ground truth) double. A lone
+// mis-extraction — YouTube's Google "g", Google+'s play-slash — is its own
+// 1-vote cluster and loses to the real icon. Ties/singletons keep the plain
+// best-copy order. Returns a concrete sha (the best copy's icon in the winning
+// cluster), which /icon then canonicalizes.
+function consensusIconSha(files: any[]): string | null {
+  const byCluster = new Map<string, { weight: number; sha: string }>();
+  for (const f of files) {
+    const bin = binaryOf(f);
+    const sha = bin?.bundle_icon_sha256 || bin?.icon_sha256;
+    if (!sha) continue;
+    const cluster = canonicalBySha.get(sha) || sha;
+    const w = bin?.install_status === 'encrypted' ? 2 : 1;
+    const cur = byCluster.get(cluster);
+    if (!cur) byCluster.set(cluster, { weight: w, sha });
+    else { cur.weight += w; if (bin?.bundle_icon_sha256 && cur.sha !== bin.bundle_icon_sha256) cur.sha = bin.bundle_icon_sha256; }
+  }
+  let best: { weight: number; sha: string } | null = null;
+  for (const c of byCluster.values()) if (!best || c.weight > best.weight) best = c;
+  return best?.sha ?? null;
+}
+
 // The app header shows the OLDEST archived icon (period-authentic) extracted
 // from the app's own binaries, before falling back to the iTunes CDN icon_url.
 // pickOldestIcon takes the earliest version carrying an icon and its least
@@ -472,7 +513,10 @@ const versionRows = (sortedVersions || []).map((v: any) => {
   const hideByDefault = !hasInstallable;
   const versionLabel = v.version_string || v.build_number || 'Unknown version';
   const showBuild = v.build_number && v.build_number !== versionLabel;
-  const vIconSha = groups.map((g: any) => iconShaOf(g.file)).find(Boolean);
+  // Consensus across this version's copies (all of them, not just the deduped
+  // display groups), so a lone mis-extracted icon can't win by sorting first.
+  const vIconSha = consensusIconSha(filesByVersionId.get(v.id) || [])
+    || groups.map((g: any) => iconShaOf(g.file)).find(Boolean);
   const bin0 = groups.map((g: any) => binaryOf(g.file)).find(Boolean);
   const machoMinOs = bin0?.macho_min_os;
   // Each compatibility fact gets its own stacked line (OS requirement + date;
@@ -584,7 +628,7 @@ if (sizePoints.length >= 3) {
 
         <div class={showEverything ? 'versions show-everything' : 'versions'}>
           {versionRows.map((row: any) => (
-            <div class={row.hideByDefault ? 'version v-hidden-default' : 'version'} id={`v${row.v.id}`} data-minos={row.minosMajor != null && row.minosMajor > 0 ? String(row.minosMajor) : undefined}>
+            <div class={row.hideByDefault ? 'version v-hidden-default' : 'version'} id={`v${row.v.id}`} data-minos={row.minosMajor != null && row.minosMajor > 0 ? String(row.minosMajor) : undefined} data-copies={row.extras.length > 0 ? String(row.extras.length + 1) : undefined}>
               {/* Lockup: masked icon + stacked title/meta on the left; the best
                   copy's action button opposite, with size + badge stacked under
                   it. Universal apps get the fat-binary "+" on the button. */}
@@ -599,6 +643,11 @@ if (sizePoints.length >= 3) {
                     <div class="v-fact" title={l.title}>{l.text}</div>
                   ))}
                   {row.nofileText && <div class="v-fact v-nofile">{row.nofileText}</div>}
+                  {row.extras.length > 0 && (
+                    <button type="button" class="v-copies-toggle" aria-expanded="false">
+                      <span class="v-copies-count">{row.extras.length + 1} copies</span>
+                    </button>
+                  )}
                 </div>
                 {row.primary ? (
                   <span class="file-actions">
@@ -1070,9 +1119,27 @@ if (sizePoints.length >= 3) {
       display: none;
     }
 
-    .show-everything .v-extra {
+    .show-everything .v-extra,
+    .version.expanded .v-extra {
       display: flex;
     }
+
+    /* Per-row "N copies" toggle: reveals just this version's extra copies.
+       Hidden entirely when JS is off (the global "Show everything" covers that
+       path); shown as an inline affordance once the enhancer marks the row. */
+    .v-copies-toggle {
+      display: none;
+      margin-top: 3px;
+      padding: 0;
+      border: 0;
+      background: none;
+      font: inherit;
+      color: #397fd6;
+      cursor: pointer;
+    }
+    .js-copies .v-copies-toggle { display: inline-block; }
+    .v-copies-count::before { content: '\25b8 '; font-size: 0.85em; }
+    .version.expanded .v-copies-count::before { content: '\25be '; }
 
     .show-everything .v-hidden-default {
       display: block;
@@ -1296,6 +1363,26 @@ if (sizePoints.length >= 3) {
               return false;
             };
           })(everythingToggles[i]);
+        }
+
+        // 1b) Per-row "N copies" expand — reveal just that version's extra
+        //     copies inline, independent of the global toggle. Enable the
+        //     affordance (CSS shows it only under .js-copies) and wire clicks.
+        if (versionsRoot) addClass(versionsRoot, 'js-copies');
+        var copyToggles = document.querySelectorAll('.v-copies-toggle');
+        for (i = 0; i < copyToggles.length; i++) {
+          (function (btn) {
+            btn.onclick = function (e) {
+              var row = btn;
+              while (row && !hasClass(row, 'version')) row = row.parentNode;
+              if (row) {
+                if (hasClass(row, 'expanded')) { removeClass(row, 'expanded'); btn.setAttribute('aria-expanded', 'false'); }
+                else { addClass(row, 'expanded'); btn.setAttribute('aria-expanded', 'true'); }
+              }
+              if (e && e.preventDefault) e.preventDefault();
+              return false;
+            };
+          })(copyToggles[i]);
         }
 
         // 2) "Runs on" filter: hide versions whose minimum OS is newer than the

@@ -651,27 +651,41 @@ ALTER TABLE public.apps ADD COLUMN IF NOT EXISTS oldest_icon_sha256 text;
 -- (arm64-only / has-extensions on a claimed iOS<7 row loses) and most
 -- store-shaped (installable/encrypted over unknown) copy; prefer the build-time
 -- bundle icon over the download-stamped legacy one. p_app_ids NULL = all apps.
+-- Non-anomalous oldest icon (plans/012 #3): pick the OLDEST icon in the app's
+-- established vocabulary, not a one-off early fluke (Instagram 1.8.7's polaroid
+-- appears once; the camera recurs 17+ versions). Cluster each version's icon by
+-- its icon_aliases canonical, then take the earliest cluster recurring in >=2
+-- versions; fall back to strict oldest when every early icon is a singleton.
 CREATE OR REPLACE FUNCTION public.refresh_oldest_icons(p_app_ids bigint[] DEFAULT NULL)
 RETURNS integer LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
 DECLARE n integer;
 BEGIN
-  WITH cand AS (
-    SELECT av.app_id,
-      COALESCE(b.bundle_icon_sha256, b.icon_sha256) AS sha,
-      public.version_sort_key(av.version_string) AS vkey,
-      CASE WHEN NULLIF(split_part(coalesce(av.minimum_os_version,''), '.', 1), '')::int BETWEEN 1 AND 6
-            AND (b.architectures = ARRAY['arm64']::text[] OR b.has_extensions) THEN 1 ELSE 0 END AS anach,
-      CASE WHEN coalesce(b.install_status,'unknown') IN ('installable','encrypted') THEN 0 ELSE 1 END AS status_rank
+  WITH ver_icon AS (
+    SELECT DISTINCT ON (av.id) av.app_id, av.id AS vid,
+      public.version_sort_key(av.version_string) AS vk,
+      COALESCE(b.bundle_icon_sha256, b.icon_sha256) AS sha
     FROM app_versions av
     JOIN ipa_files f ON f.app_version_id = av.id
     JOIN binaries b ON b.sha1 = f.binary_sha1
     WHERE (b.bundle_icon_sha256 IS NOT NULL OR b.icon_sha256 IS NOT NULL)
       AND (b.tamper_status IS NULL OR b.tamper_status NOT IN ('resigned','injected','wrapper','suspect'))
       AND (p_app_ids IS NULL OR av.app_id = ANY(p_app_ids))
+    ORDER BY av.id,
+      CASE WHEN NULLIF(split_part(coalesce(av.minimum_os_version,''), '.', 1), '')::int BETWEEN 1 AND 6
+            AND (b.architectures = ARRAY['arm64']::text[] OR b.has_extensions) THEN 1 ELSE 0 END ASC,
+      CASE WHEN coalesce(b.install_status,'unknown') IN ('installable','encrypted') THEN 0 ELSE 1 END ASC
+  ),
+  clustered AS (
+    SELECT vi.app_id, vi.vk, COALESCE(al.canonical_sha256, vi.sha) AS cluster
+    FROM ver_icon vi LEFT JOIN icon_aliases al ON al.sha256 = vi.sha
+  ),
+  support AS (
+    SELECT app_id, cluster, count(*) AS n_versions, min(vk) AS first_vk
+    FROM clustered GROUP BY app_id, cluster
   ),
   pick AS (
-    SELECT DISTINCT ON (app_id) app_id, sha
-    FROM cand ORDER BY app_id, vkey ASC, anach ASC, status_rank ASC
+    SELECT DISTINCT ON (app_id) app_id, cluster AS sha
+    FROM support ORDER BY app_id, (n_versions >= 2) DESC, first_vk ASC
   )
   UPDATE apps a SET oldest_icon_sha256 = pick.sha
   FROM pick WHERE a.id = pick.app_id AND a.oldest_icon_sha256 IS DISTINCT FROM pick.sha;
