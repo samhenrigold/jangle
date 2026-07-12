@@ -37,8 +37,10 @@ const FONT = 14;
 // so relative lengths stay honest.
 const END_GAP = 14;
 
+// Both lists are interpolated into double-quoted font-family="…" attributes,
+// so quoted family names are pre-escaped as &quot;.
 const SANS = '&quot;Lucida Grande&quot;, &quot;Lucida Sans Unicode&quot;, Arial, Verdana, sans-serif';
-const MONO = 'Menlo, Monaco, "Courier New", monospace';
+const MONO = 'Menlo, Monaco, &quot;Courier New&quot;, monospace';
 
 function esc(s: string): string {
   return String(s)
