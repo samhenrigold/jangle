@@ -17,7 +17,7 @@ export const GET: APIRoute = async (ctx) => {
     const { data: ipa, error } = await supabase
       .from('ipa_files')
       .select(`
-        id, filename, info_plist_path, file_size, md5_hash, binary_sha1,
+        id, filename, info_plist_path, file_size, md5_hash, binary_sha1, available,
         app_version:app_versions!ipa_files_app_version_id_fkey(
           version_string,
           app:apps!app_versions_app_id_fkey(bundle_id, app_store_name, display_name, icon_url)
@@ -32,6 +32,10 @@ export const GET: APIRoute = async (ctx) => {
     const version = ipa?.app_version;
     const app = (version as any)?.app;
     if (!ipa || !version || !app) {
+      return new Response('Not found', { status: 404 });
+    }
+    // Dead archive.org copies can't install; don't hand out a manifest for one.
+    if ((ipa as any).available === false) {
       return new Response('Not found', { status: 404 });
     }
 
@@ -57,9 +61,18 @@ export const GET: APIRoute = async (ctx) => {
     if ((ipa as any).binary_sha1) {
       const { data: bin } = await supabase
         .from('binaries')
-        .select('icon_sha256, bundle_icon_sha256')
+        .select('icon_sha256, bundle_icon_sha256, tamper_status')
         .eq('sha1', (ipa as any).binary_sha1)
         .maybeSingle();
+      // Quarantined repackage (re-signed/tweak-injected/wrapper): never serve
+      // an install manifest, no matter how the URL was obtained — the app page
+      // hides these, but itms-services URLs are shareable. NULL (unclassified)
+      // passes. This lookup is best-effort for icons but load-bearing here: a
+      // failed query yields bin=undefined, which fails open by design (same as
+      // unclassified) rather than 404ing every install during a DB blip.
+      if (bin?.tamper_status && ['resigned', 'injected', 'wrapper'].indexOf(bin.tamper_status) >= 0) {
+        return new Response('Not found', { status: 404 });
+      }
       displayIconSha = bin?.bundle_icon_sha256 || bin?.icon_sha256 || null;
       largeIconSha = bin?.icon_sha256 || null;
     }

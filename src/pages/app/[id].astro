@@ -131,7 +131,7 @@ const loadCore = async () => {
     for (let i = 0; i < shas.length; i += CHUNK) {
       const { data, error } = await supabase
         .from('binaries')
-        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app, has_extensions')
+        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app, has_extensions, tamper_status')
         .in('sha1', shas.slice(i, i + CHUNK));
       if (error) {
         console.error('binaries query failed:', error.message);
@@ -281,6 +281,12 @@ const ratingRows = sampleEvenly(
 
 // Dead archive.org copies (available=false) never render a button; a version
 // whose every copy is dead says so instead of "no file".
+// Quarantined copies (re-signed/tweak-injected/wrapper repackages that reuse a
+// real bundle id — see the Colophon's "What belongs in the archive") are
+// dropped outright: editorial suppression, so unlike encrypted-only versions
+// they do NOT come back under "Show everything". NULL tamper_status (not yet
+// classified) passes.
+const QUARANTINED = ['resigned', 'injected', 'wrapper'];
 const filesByVersionId = new Map<number, any[]>();
 const unavailableCountByVersion = new Map<number, number>();
 for (const f of ipaFiles) {
@@ -288,6 +294,8 @@ for (const f of ipaFiles) {
     unavailableCountByVersion.set(f.app_version_id, (unavailableCountByVersion.get(f.app_version_id) || 0) + 1);
     continue;
   }
+  const tamper = f.binary_sha1 ? binariesBySha1.get(f.binary_sha1)?.tamper_status : null;
+  if (tamper && QUARANTINED.indexOf(tamper) >= 0) continue;
   const arr = filesByVersionId.get(f.app_version_id) || [];
   arr.push(f);
   filesByVersionId.set(f.app_version_id, arr);
@@ -583,7 +591,7 @@ if (sizePoints.length >= 3) {
                         <a class={`navbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={row.primary.ipaUrl} download><span class="navbtn-label">Download</span></a>
                       </span>
                     ) : (
-                      <span class="file-buttons"><span class="navbtn navbtn-disabled"><span class="navbtn-label">Download</span></span></span>
+                      <span class="file-buttons"><span class="navbtn navbtn-disabled" aria-disabled="true"><span class="navbtn-label">Download</span></span></span>
                     )}
                     <span class="file-stat">
                       {row.primary.detail && <span class="file-stat-size">{row.primary.detail}</span>}
@@ -594,7 +602,7 @@ if (sizePoints.length >= 3) {
                 ) : (
                   // No available copy: still show a (disabled) action so the row reads consistently.
                   <span class="file-actions">
-                    <span class="file-buttons"><span class="navbtn navbtn-disabled"><span class="navbtn-label">Download</span></span></span>
+                    <span class="file-buttons"><span class="navbtn navbtn-disabled" aria-disabled="true"><span class="navbtn-label">Download</span></span></span>
                   </span>
                 )}
               </div>
@@ -981,6 +989,7 @@ if (sizePoints.length >= 3) {
     /* Disabled action (no available file): looks like a button, does nothing. */
     .navbtn-disabled {
       opacity: 0.4;
+      pointer-events: none;
     }
 
     /* Universal ("fat binary") apps: Apple's + badge, rendered as a pseudo-

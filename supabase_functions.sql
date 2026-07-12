@@ -266,22 +266,34 @@ WITH av AS (
     count(*) FILTER (WHERE price > 0) AS p_paid
   FROM app_versions
 ),
+-- Quarantined binaries (tamper_status resigned/injected/wrapper — modded
+-- repackages, see the Colophon's "What belongs in the archive") are
+-- editorially suppressed: stats must not count them or their file copies.
+-- NULL tamper_status (not yet classified) counts as clean.
+bins AS (
+  SELECT sha1, install_status, architectures, icon_sha256, bundle_icon_sha256, has_watch_app
+  FROM binaries
+  WHERE tamper_status IS NULL OR tamper_status NOT IN ('resigned','injected','wrapper')
+),
 ipf AS (
   SELECT count(*) AS copies,
-         count(*) FILTER (WHERE available) AS copies_available,
-         sum(file_size) AS total_bytes
-  FROM ipa_files
+         count(*) FILTER (WHERE f.available) AS copies_available,
+         sum(f.file_size) AS total_bytes
+  FROM ipa_files f
+  LEFT JOIN binaries b ON b.sha1 = f.binary_sha1
+  WHERE b.tamper_status IS NULL OR b.tamper_status NOT IN ('resigned','injected','wrapper')
 )
 SELECT jsonb_build_object(
   'apps',              (SELECT count(*) FROM apps),
   'developers',        (SELECT count(*) FROM developers),
   'versions',          (SELECT count(*) FROM app_versions),
-  'binaries',          (SELECT count(*) FROM binaries),
+  'binaries',          (SELECT count(*) FROM bins),
+  'quarantined',       (SELECT count(*) FROM binaries WHERE tamper_status IN ('resigned','injected','wrapper')),
   'copies',            ipf.copies,
   'copies_available',  ipf.copies_available,
   'archive_items',     (SELECT count(*) FROM archive_items),
   'total_bytes',       ipf.total_bytes,
-  'distinct_icons',    (SELECT count(DISTINCT coalesce(bundle_icon_sha256, icon_sha256)) FROM binaries),
+  'distinct_icons',    (SELECT count(DISTINCT coalesce(bundle_icon_sha256, icon_sha256)) FROM bins),
   'wayback_captures',  (SELECT reltuples::bigint FROM pg_class WHERE oid = 'public.wayback_captures'::regclass),
   'listing_snapshots', (SELECT count(*) FROM app_listing_snapshots),
   'reviews',           (SELECT count(*) FROM app_reviews),
@@ -289,10 +301,10 @@ SELECT jsonb_build_object(
   'chart_positions',   (SELECT reltuples::bigint FROM pg_class WHERE oid = 'public.chart_positions'::regclass),
   'chart_snapshots',   (SELECT count(*) FROM chart_snapshots),
   'chart_years',       (SELECT jsonb_build_object('min', min(substr(captured_ts, 1, 4)), 'max', max(substr(captured_ts, 1, 4))) FROM chart_snapshots),
-  'install',           (SELECT jsonb_object_agg(coalesce(install_status, 'unknown'), n) FROM (SELECT install_status, count(*) n FROM binaries GROUP BY 1) s),
-  'archs',             (SELECT jsonb_object_agg(a, n) FROM (SELECT unnest(architectures) a, count(*) n FROM binaries GROUP BY 1) s),
-  'armv6_only_installable', (SELECT count(*) FROM binaries WHERE architectures = ARRAY['armv6'] AND install_status = 'installable'),
-  'watch_apps',        (SELECT count(*) FROM binaries WHERE has_watch_app),
+  'install',           (SELECT jsonb_object_agg(coalesce(install_status, 'unknown'), n) FROM (SELECT install_status, count(*) n FROM bins GROUP BY 1) s),
+  'archs',             (SELECT jsonb_object_agg(a, n) FROM (SELECT unnest(architectures) a, count(*) n FROM bins GROUP BY 1) s),
+  'armv6_only_installable', (SELECT count(*) FROM bins WHERE architectures = ARRAY['armv6'] AND install_status = 'installable'),
+  'watch_apps',        (SELECT count(*) FROM bins WHERE has_watch_app),
   'apps_checked',      (SELECT count(*) FROM apps WHERE is_available IS NOT NULL),
   'apps_delisted',     (SELECT count(*) FROM apps WHERE is_available = false),
   -- Known dates only; pre-2008 values are ingest junk (the store opened 2008-07-10)
@@ -312,22 +324,23 @@ SELECT jsonb_build_object(
   -- price integers mix currencies; ranking only makes sense within one, so USD
   'priciest',          (SELECT jsonb_agg(x) FROM (
                           SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url,
-                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN binaries b ON b.sha1=f.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
+                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN bins b ON b.sha1=f.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
                             'price', v.price_display) x
                           FROM app_versions v JOIN apps a ON a.id = v.app_id
                           WHERE v.price > 0 AND v.price_display LIKE '$%'
                           ORDER BY v.price DESC LIMIT 3) s),
   'most_versions',     (SELECT jsonb_agg(x) FROM (
                           SELECT jsonb_build_object('name', coalesce(display_name, app_store_name), 'id', app_store_id, 'icon', icon_url,
-                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN binaries b ON b.sha1=f.binary_sha1 WHERE v2.app_id=apps.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
+                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN bins b ON b.sha1=f.binary_sha1 WHERE v2.app_id=apps.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
                             'n', version_count) x
                           FROM apps WHERE app_store_name IS NOT NULL AND app_store_id IS NOT NULL
                           ORDER BY version_count DESC LIMIT 5) s),
   'biggest',           (SELECT jsonb_agg(x) FROM (
                           SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url,
-                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f2 ON f2.app_version_id=v2.id JOIN binaries b ON b.sha1=f2.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
+                            'icon_sha', (SELECT coalesce(b2.bundle_icon_sha256, b2.icon_sha256) FROM app_versions v2 JOIN ipa_files f2 ON f2.app_version_id=v2.id JOIN bins b2 ON b2.sha1=f2.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b2.bundle_icon_sha256,b2.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
                             'bytes', f.file_size) x
                           FROM ipa_files f
+                          JOIN bins b ON b.sha1 = f.binary_sha1
                           JOIN app_versions v ON v.id = f.app_version_id
                           JOIN apps a ON a.id = v.app_id
                           WHERE a.app_store_name IS NOT NULL

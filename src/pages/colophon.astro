@@ -140,6 +140,50 @@ export const prerender = true;
       without ever crawling the Internet Archive again.
     </p>
 
+    <h2 class="col-h2">What belongs in the archive</h2>
+    <p>
+      Not everything uploaded to the Internet Archive as an <code>.ipa</code> is an App
+      Store app. The mid-2010s sideloading scene left behind thousands of
+      <em>modified</em> repackages — "Snapchat++", ad-stripped YouTube builds,
+      tweak-injected clones — almost all of which reuse the real app's bundle
+      identifier. Ingested naïvely, they attach themselves to the real app's page
+      as bogus "versions." At one point Snapchat's page here listed more
+      counterfeit copies than genuine ones.
+    </p>
+    <p>So the archive draws an editorial line:</p>
+    <p>
+      <strong>In: anything Apple shipped.</strong> A genuine App Store binary belongs here
+      whether it is still FairPlay-encrypted or has been decrypted. Decryption does
+      not alter what the app <em>is</em> — the program, its resources, its history are
+      Apple's original bytes — and decrypted copies are precisely the ones that
+      still run. An archive that excluded them would be an archive of apps that no
+      longer launch.
+    </p>
+    <p>
+      <strong>Out: anything altered after Apple signed it.</strong> Re-signed bundles,
+      tweak-injected builds, sideload-store repackages, and wrapper shells are not
+      versions of the app — they are derivative works of unknown provenance,
+      frequently carrying injected code nobody audited. They are catalogued (their
+      hashes are remembered, so they can never sneak back in) but quarantined: they
+      never appear on an app's page, are never counted in its version history, and
+      are never offered for install or download. The files themselves remain where
+      they always were, on the Internet Archive — this index simply will not point
+      at them.
+    </p>
+    <p>
+      The judgment is made on the <strong>binary's own evidence</strong>, never on who
+      uploaded it or what the file was named. Two file-level signals turn out to be
+      nearly perfect discriminators. An App Store download never contains a
+      provisioning profile — <code>embedded.mobileprovision</code> inside the bundle means it
+      was re-signed for sideloading. And a foreign <code>.dylib</code> inside the bundle
+      (Substrate hooks, tweak payloads) means injected code. Both are visible in
+      the zip manifest the pipeline already keeps for every binary, so the whole
+      corpus can be re-judged from stored evidence at any time, without touching
+      the source archives. Ambiguous single-signal cases are flagged for human
+      review rather than auto-quarantined; nothing is deleted, so every verdict is
+      reversible.
+    </p>
+
     <h2 class="col-h2">The charts archive</h2>
     <p>The second half of the archive reconstructs history.</p>
     <p>
