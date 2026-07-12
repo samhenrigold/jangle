@@ -244,58 +244,55 @@ em { font-style: italic; }
    say Install / Download). Autoprefixer emits old-gradient syntax for
    iOS 4-6. */
 
-/* The real iOS-6 App Store button, drawn from its nine-slice PNGs (retina @2x,
-   sliced 6px caps rendered at 3 CSS px). PurchaseButton normally, its pressed
-   (blue) state on :active; universal apps overlay the "+" corner badge;
+/* The iOS-6 App Store button, drawn from its PNGs as a horizontal 3-slice
+   (retina @2x): a fixed left cap, a 1px middle that stretches, and a right cap
+   that's the corner radius. Height isn't sliced (the button is the asset's own
+   height). Blue normally, its pressed variant on :active; universal apps use
+   the "+"-baked BluePlus asset (a wider left cap holds the "+" cleanly);
    disabled uses PurchasedAlready. */
 .wsfbtn {
   display: inline-block;
   position: relative;
   height: 25px;
-  line-height: 19px;
+  line-height: 25px;
   padding: 0 14px;
   min-width: 58px;
   text-align: center;
   vertical-align: middle;
   -webkit-box-sizing: border-box;
   box-sizing: border-box;
-  border: 3px solid transparent;
-  border-image: url(/wsf/buttons/purchase@2x.png) 6 fill / 3px stretch;
-  /* Fallback for browsers without border-image fill (very old WebKit): a plain
-     grey rounded button. Covered by the nine-slice everywhere it's supported. */
-  background-color: #8590a4;
+  border: 0 solid transparent;
+  border-image: url(/wsf/buttons/blue@2x.png) 0 3 0 10 fill / 0 1.5px 0 5px stretch;
+  /* Fallback for browsers without border-image fill (very old WebKit). */
+  background-color: #4966a0;
   border-radius: 4px;
   color: #fff !important;
   font-size: 12px;
   font-weight: bold;
-  text-shadow: 0 -1px 1px rgba(0, 20, 45, 0.4);
+  text-shadow: 0 -1px 1px rgba(0, 15, 40, 0.45);
   cursor: pointer;
 }
 .wsfbtn:hover { text-decoration: none; }
 .wsfbtn:active {
-  border-image-source: url(/wsf/buttons/purchase-pressed@2x.png);
+  border-image-source: url(/wsf/buttons/blue-pressed@2x.png);
 }
 .wsfbtn-primary { } /* alias kept for markup symmetry; one button style fits all */
 
-/* Universal ("fat binary") apps — the same pill as everything else, with the
-   App Store "+" badge (extracted from PurchasePlusButton) overlaid crisply in
-   the top-left corner. (Nine-slicing the baked-in "+" smeared it — a fixed
-   overlay is pixel-clean and stays put while the pill stretches.) */
-.wsfbtn.nav-universal { padding-left: 16px; }
-.wsfbtn.nav-universal::before {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 4px;
-  width: 9px;
-  height: 9px;
-  background: url(/wsf/buttons/plus-badge@2x.png) center no-repeat;
-  background-size: 9px 9px;
+/* Universal ("fat binary") apps — BluePlus with the "+" baked into the left
+   cap. A 16px left cap fully contains the "+" so it renders 1:1 (no stretch,
+   no smear) while only the middle stretches. */
+.wsfbtn.nav-universal {
+  padding-left: 18px;
+  border-image: url(/wsf/buttons/blue-plus@2x.png) 0 3 0 16 fill / 0 1.5px 0 8px stretch;
+  background-color: #4966a0;
+}
+.wsfbtn.nav-universal:active {
+  border-image-source: url(/wsf/buttons/blue-plus-pressed@2x.png);
 }
 
 .wsfbtn-disabled {
   pointer-events: none;
-  border-image: url(/wsf/buttons/purchased@2x.png) 6 fill / 3px stretch;
+  border-image: url(/wsf/buttons/purchased@2x.png) 0 3 0 10 fill / 0 1.5px 0 5px stretch;
   background-color: #dcdcdc;
   color: #9a9a9a !important;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
