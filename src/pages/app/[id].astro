@@ -431,8 +431,13 @@ const pathname = requestUrl.pathname;
 const searchParams = requestUrl.searchParams;
 const origin = requestUrl.origin;
 
-// Versions are always sorted by date now; only the direction toggles.
-const currentDir = coerceDir(searchParams.get('dir') || 'desc');
+// Versions are always sorted by date; only the direction toggles. The default
+// server representation — the one that edge-caches for everyone — is oldest
+// first (the preservation view). Legacy iOS devices, the archive's actual
+// target hardware, instead get newest-first with their OS filter preset; that
+// happens via a one-time client redirect to ?dir=desc&ios=<major> (see the
+// inline script below), so the default stays device-agnostic and cacheable.
+const currentDir = coerceDir(searchParams.get('dir') || 'asc');
 
 // The page is rendered identically for every device (no User-Agent sniffing),
 // so it edge-caches. The old auto "hide newer than your iOS" filter is now an
@@ -640,6 +645,33 @@ if (sizePoints.length >= 3) {
       <DbError />
     ) : (
       <>
+        {/* Legacy-device default: the page renders oldest-first for everyone (so
+            it edge-caches), but an actual vintage iOS device wants the newest
+            build it can run at the top. On a fresh visit (no explicit sort yet)
+            redirect such a device once to the newest-first, OS-filtered view.
+            Both params then live in the URL, so this never re-fires and the
+            toggle/filter render consistently server-side. Runs before the list
+            paints; old-WebKit-safe (no ES6). Modern iOS + desktop keep the
+            oldest-first default. */}
+        <script is:inline>
+          (function () {
+            try {
+              var ua = navigator.userAgent;
+              if (!/iPhone|iPad|iPod/.test(ua)) return;
+              var m = ua.match(/OS (\d+)_/);
+              if (!m) return;
+              var major = parseInt(m[1], 10);
+              var LEGACY_IOS_MAX = 12; /* iOS <=12 ~ real vintage hardware; 13+ is modern */
+              if (!(major > 0 && major <= LEGACY_IOS_MAX)) return;
+              var s = location.search;
+              if (/[?&]dir=/.test(s)) return; /* user already chose a sort */
+              var add = 'dir=desc';
+              if (!/[?&]ios=/.test(s)) add += '&ios=' + major;
+              location.replace(location.pathname + s + (s ? '&' : '?') + add);
+            } catch (e) {}
+          })();
+        </script>
+
         {/* Title lockup — h1 + "By developer", as on the original preview page */}
         <div id="title" class="intro">
           <h1>{appTitle}</h1>
@@ -700,7 +732,7 @@ if (sizePoints.length >= 3) {
           <a class="filter-chip" href={sortToggleHref()}>Sort by Date <span class="sort-tri">{currentDir === 'asc' ? '▴' : '▾'}</span></a>
           {iosMajors.length > 1 && (
             <form class="filter-runs" method="get" action={pathname}>
-              {currentDir === 'asc' && <input type="hidden" name="dir" value="asc" />}
+              {currentDir === 'desc' && <input type="hidden" name="dir" value="desc" />}
               {showEverything && <input type="hidden" name="all" value="1" />}
               <label class="filter-label">Runs on
                 <select name="ios" class="js-ios-select">
@@ -1521,29 +1553,14 @@ if (sizePoints.length >= 3) {
           }
         }
 
-        var serverPicked = false;
+        // The dropdown filters in place. Automatic device-based presetting is
+        // handled server-side instead: legacy iOS devices are redirected to an
+        // ?ios=<major> URL up front (see the head-of-body script), so the rows
+        // arrive already filtered and this only needs to honor manual changes.
         if (iosSelect) {
-          if (iosSelect.value) serverPicked = true; // URL already chose an iOS
           iosSelect.onchange = function () {
             applyIos(iosSelect.value ? parseInt(iosSelect.value, 10) : null);
           };
-        }
-
-        // Auto-apply the device's own iOS version (set on <html> by the head
-        // script), unless the URL already chose a specific one.
-        var iosAttr = document.documentElement.getAttribute('data-ios');
-        if (iosSelect && iosAttr && !serverPicked) {
-          var maj = parseInt(iosAttr, 10);
-          // Only select an option we actually offer.
-          var opts = iosSelect.options, matched = null;
-          for (i = 0; i < opts.length; i++) {
-            var ov = parseInt(opts[i].value, 10);
-            if (ov > 0 && ov >= maj && (matched === null || ov < matched)) matched = ov;
-          }
-          if (matched !== null) {
-            iosSelect.value = String(matched);
-            applyIos(matched);
-          }
         }
       });
     })();
