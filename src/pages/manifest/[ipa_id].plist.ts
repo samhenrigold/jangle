@@ -64,13 +64,14 @@ export const GET: APIRoute = async (ctx) => {
         .select('icon_sha256, bundle_icon_sha256, tamper_status')
         .eq('sha1', (ipa as any).binary_sha1)
         .maybeSingle();
-      // Quarantined repackage (re-signed/tweak-injected/wrapper): never serve
-      // an install manifest, no matter how the URL was obtained — the app page
-      // hides these, but itms-services URLs are shareable. NULL (unclassified)
-      // passes. This lookup is best-effort for icons but load-bearing here: a
-      // failed query yields bin=undefined, which fails open by design (same as
-      // unclassified) rather than 404ing every install during a DB blip.
-      if (bin?.tamper_status && ['resigned', 'injected', 'wrapper'].indexOf(bin.tamper_status) >= 0) {
+      // Quarantined repackage (re-signed/tweak-injected/wrapper/suspect): never
+      // serve an install manifest, no matter how the URL was obtained — the app
+      // page hides these, but itms-services URLs are shareable. NULL
+      // (unclassified) passes. This lookup is best-effort for icons but
+      // load-bearing here: a failed query yields bin=undefined, which fails open
+      // by design (same as unclassified) rather than 404ing every install during
+      // a DB blip.
+      if (bin?.tamper_status && ['resigned', 'injected', 'wrapper', 'suspect'].indexOf(bin.tamper_status) >= 0) {
         return new Response('Not found', { status: 404 });
       }
       displayIconSha = bin?.bundle_icon_sha256 || bin?.icon_sha256 || null;

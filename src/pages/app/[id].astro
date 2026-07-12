@@ -285,8 +285,10 @@ const ratingRows = sampleEvenly(
 // real bundle id — see the Colophon's "What belongs in the archive") are
 // dropped outright: editorial suppression, so unlike encrypted-only versions
 // they do NOT come back under "Show everything". NULL tamper_status (not yet
-// classified) passes.
-const QUARANTINED = ['resigned', 'injected', 'wrapper'];
+// classified) passes. 'suspect' (one weak signal — usually a real mod, but a
+// small fraction are legit apps caught as collateral) is hidden too; those are
+// recoverable by reclassifying to 'clean', which un-hides them.
+const QUARANTINED = ['resigned', 'injected', 'wrapper', 'suspect'];
 const filesByVersionId = new Map<number, any[]>();
 const unavailableCountByVersion = new Map<number, number>();
 for (const f of ipaFiles) {

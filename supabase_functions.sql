@@ -273,7 +273,7 @@ WITH av AS (
 bins AS (
   SELECT sha1, install_status, architectures, icon_sha256, bundle_icon_sha256, has_watch_app
   FROM binaries
-  WHERE tamper_status IS NULL OR tamper_status NOT IN ('resigned','injected','wrapper')
+  WHERE tamper_status IS NULL OR tamper_status NOT IN ('resigned','injected','wrapper','suspect')
 ),
 ipf AS (
   SELECT count(*) AS copies,
@@ -281,14 +281,14 @@ ipf AS (
          sum(f.file_size) AS total_bytes
   FROM ipa_files f
   LEFT JOIN binaries b ON b.sha1 = f.binary_sha1
-  WHERE b.tamper_status IS NULL OR b.tamper_status NOT IN ('resigned','injected','wrapper')
+  WHERE b.tamper_status IS NULL OR b.tamper_status NOT IN ('resigned','injected','wrapper','suspect')
 )
 SELECT jsonb_build_object(
   'apps',              (SELECT count(*) FROM apps),
   'developers',        (SELECT count(*) FROM developers),
   'versions',          (SELECT count(*) FROM app_versions),
   'binaries',          (SELECT count(*) FROM bins),
-  'quarantined',       (SELECT count(*) FROM binaries WHERE tamper_status IN ('resigned','injected','wrapper')),
+  'quarantined',       (SELECT count(*) FROM binaries WHERE tamper_status IN ('resigned','injected','wrapper','suspect')),
   'copies',            ipf.copies,
   'copies_available',  ipf.copies_available,
   'archive_items',     (SELECT count(*) FROM archive_items),
