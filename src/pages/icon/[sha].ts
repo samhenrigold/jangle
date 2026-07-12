@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { blankGif } from '../../lib/http';
+import { supabaseFor } from '../../lib/supabase';
 
 // binaries.icon_sha256 → content-addressed icon in the public R2 bucket. The
 // object extension varies (.jpg or .png, not recorded in the DB), so this
@@ -15,6 +16,29 @@ const blank = (status: number) => blankGif(status, 'public, max-age=86400, s-max
 export const GET: APIRoute = async (ctx) => {
   const sha = ctx.params.sha || '';
   if (!/^[0-9a-f]{64}$/.test(sha)) return blank(400);
+
+  // Perceptual-duplicate canonicalization (plans/012 phase 2): ~40% of icons
+  // are byte-variants of another (JPEG artifacts, resolutions). icon_aliases
+  // maps each variant to its cluster's best member; redirecting means the edge
+  // cache converges on ONE object per real icon. Best-effort — a lookup failure
+  // just serves the requested sha directly.
+  try {
+    const { data: alias } = await supabaseFor(ctx)
+      .from('icon_aliases')
+      .select('canonical_sha256')
+      .eq('sha256', sha)
+      .maybeSingle();
+    if (alias?.canonical_sha256 && alias.canonical_sha256 !== sha) {
+      return new Response(null, {
+        status: 301,
+        headers: {
+          Location: `/icon/${alias.canonical_sha256}`,
+          // Aliases are stable (recomputed only by explicit re-runs); cache hard.
+          'Cache-Control': 'public, max-age=604800, s-maxage=2592000',
+        },
+      });
+    }
+  } catch { /* serve directly */ }
 
   for (const ext of ['jpg', 'png']) {
     try {
