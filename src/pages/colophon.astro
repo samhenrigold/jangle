@@ -31,11 +31,13 @@ export const prerender = true;
 
     <h2 class="col-h2">What this is, and why it exists</h2>
     <p>
-      There are roughly <strong>65,000 distinct iOS app binaries</strong> in the archive,
-      deduplicated by content hash from <strong>over 90,000 archived file copies</strong> held on
-      the Internet Archive. Around a third of those copies are exact duplicates of one
-      another; the archive treats the binary — identified by its hash — as the thing
-      worth knowing about, and folds the copies together.
+      There are <strong>more than 200,000 archived <code>.ipa</code> file copies</strong> on the
+      Internet Archive, which deduplicate by content hash to roughly <strong>160,000 distinct
+      binaries</strong>. About 115,000 of those are genuine App Store apps; the rest are
+      re-signed or repackaged copies the archive catalogues but keeps out of its listings —
+      why, and how they are told apart, is further down. The archive treats the binary —
+      identified by its hash — as the thing worth knowing about, and folds duplicate copies
+      together.
     </p>
     <p>
       The problem this solves is specific and, if you have ever tried it, familiar.
@@ -171,17 +173,37 @@ export const prerender = true;
       at them.
     </p>
     <p>
+      <strong>Also out: things that were never App Store apps to begin with.</strong>
+      Apple's own bundled system apps, jailbreak and sideloading utilities, and
+      developer-template placeholder identities that dozens of unrelated uploads
+      happen to share are excluded from the listings even when the binary itself is
+      untampered — they are simply not what this archive is of. As always, the
+      binaries are remembered; they just don't get a page of their own.
+    </p>
+    <p>
       The judgment is made on the <strong>binary's own evidence</strong>, never on who
-      uploaded it or what the file was named. Two file-level signals turn out to be
-      nearly perfect discriminators. An App Store download never contains a
-      provisioning profile — <code>embedded.mobileprovision</code> inside the bundle means it
-      was re-signed for sideloading. And a foreign <code>.dylib</code> inside the bundle
-      (Substrate hooks, tweak payloads) means injected code. Both are visible in
-      the zip manifest the pipeline already keeps for every binary, so the whole
-      corpus can be re-judged from stored evidence at any time, without touching
-      the source archives. Ambiguous single-signal cases are flagged for human
-      review rather than auto-quarantined; nothing is deleted, so every verdict is
-      reversible.
+      uploaded it or what the file was named. Most of the tells sit right in the zip
+      manifest and <code>Info.plist</code> the pipeline already keeps for every binary. An App
+      Store download never contains a provisioning profile, so an
+      <code>embedded.mobileprovision</code> means the bundle was re-signed for sideloading. A
+      foreign <code>.dylib</code> the app has no business shipping — a Substrate hook, a tweak
+      payload — means injected code; the pipeline allows the short, known list of
+      libraries Apple and common toolchains legitimately bundle and treats anything
+      else as injection. Sideloader wrapper shells, and the telltale bundle
+      identifiers repackagers stamp onto their output, are caught the same way.
+      Because every check reads from stored metadata, the whole corpus can be
+      re-judged at any time without touching the source archives.
+    </p>
+    <p>
+      Some counterfeits carry no code-level tell at all: the repackager leaves the
+      real app's frameworks intact and only swaps the app icon. Those are caught by
+      <strong>consensus</strong> instead. Because every icon is content-addressed, the archive
+      can notice when a single copy of a version wears an icon no other copy of that
+      app has ever shipped — the way a repackaged build of Twitter, its bird quietly
+      replaced, gives itself away against the hundreds of genuine copies that agree
+      on the real one. Ambiguous cases are flagged for human review rather than
+      auto-quarantined, and every determination is logged and reversible. Nothing is
+      ever deleted.
     </p>
 
     <h2 class="col-h2">The charts archive</h2>
