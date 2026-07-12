@@ -58,21 +58,28 @@ em { font-style: italic; }
 /* The 2010 apple.com search capsule (searchfield_*.png caps), used in the
    product header and in the phone-only strip. */
 
-.ph-search { float: right; margin: 1.2em 0 0 30px; }
-.ph-search .search-wrapper { position: relative; display: block; width: 140px; height: 19px; }
+/* The repeat middle (top+bottom pill border) rides on the WRAPPER, not the
+   input — the input's rendered height drifts with the font and left a gap in
+   the bottom border. Caps overlay the ends; the magnifier lives in the left
+   cap. The input is fully transparent on top. */
+.ph-search { float: right; margin: 12px 0 0 30px; }
+.ph-search .search-wrapper {
+  position: relative; display: block; width: 158px; height: 19px;
+  background: url(/wsf/nav/searchfield_repeat.png) 0 0 repeat-x;
+}
+.ph-search .search-wrapper .left { display: block; position: absolute; left: 0; top: 0; width: 20px; height: 19px; background: url(/wsf/nav/searchfield_leftcap.png) left top no-repeat; }
+.ph-search .search-wrapper .right { display: block; position: absolute; right: 0; top: 0; width: 10px; height: 19px; background: url(/wsf/nav/searchfield_rightcap.png) right top no-repeat; }
 .ph-search .search-wrapper input {
-  position: absolute; top: 0; right: 10px; margin: 0; width: 110px; border: 0;
-  padding: 3px 0 0 0; height: 16px;
-  background: url(/wsf/nav/searchfield_repeat.png) center top repeat-x;
+  position: absolute; top: 0; left: 20px; right: 10px; margin: 0; padding: 0;
+  height: 19px; line-height: 19px; border: 0; background: transparent;
   font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial, Verdana, sans-serif;
+  color: #333;
   outline: none;
   -webkit-appearance: none;
   border-radius: 0;
   -webkit-box-sizing: border-box;
   box-sizing: border-box;
 }
-.ph-search .search-wrapper .left { display: block; position: absolute; left: 0; top: 0; width: 20px; height: 19px; background: url(/wsf/nav/searchfield_leftcap.png) left top no-repeat; }
-.ph-search .search-wrapper .right { display: block; position: absolute; right: 0; top: 0; width: 10px; height: 19px; background: url(/wsf/nav/searchfield_rightcap.png) right top no-repeat; }
 
 /* Phone-only search strip (our responsive addition; hidden on desktop) */
 #phonesearch { display: none; }
@@ -367,7 +374,7 @@ input, select, button { font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial
   .ph-search { display: none; }
   /* Drawn in CSS rather than the 19px cap images so the field is actually
      tappable; 16px font keeps iOS from zooming the page on focus. */
-  #phonesearch { display: block; margin: 8px 12px 0; text-align: left; }
+  #phonesearch { display: block; margin: 8px 12px 14px; text-align: left; }
   #phonesearch .search-wrapper { position: relative; display: block; }
   #phonesearch .search-wrapper input {
     display: block; width: 100%; margin: 0; height: 34px;
@@ -438,10 +445,13 @@ body.charts-landing .charts-title { margin: 0 0 6px 0; }
 body.charts-landing .charts-title img { display: block; }
 body.charts-landing .charts-intro { color: #808080; font-size: 18px; line-height: 24px; font-weight: normal; margin-bottom: 0; }
 
-/* Pill subnav (chart types) */
-body.charts-landing .subnav { min-height: 2.1em; margin: 24px 0 8px -3px; padding: 6px 0 2px 22px; font-size: 11px; line-height: 1.4em; background-color: #3a393b; border-radius: 4px; -webkit-border-radius: 4px; -webkit-box-shadow: 0 2px 5px #1c1c1c; box-shadow: 0 2px 5px #1c1c1c; zoom: 1; }
-body.charts-landing .subnav:after { content: '.'; display: block; clear: both; height: 0; visibility: hidden; }
-body.charts-landing .subnav li { width: auto; margin: 0 12px 4px 0; padding: 2px 18px; float: left; border: 1px solid #3a393b; border-radius: 10px; -webkit-border-radius: 10px; line-height: 1.3em; list-style: none; }
+/* Pill subnav — one dark bar, chart types on top, device pills on their own
+   row below (separated by a hairline). */
+body.charts-landing .subnav { margin: 24px 0 8px -3px; padding: 8px 22px 4px; font-size: 11px; line-height: 1.4em; background-color: #3a393b; border-radius: 4px; -webkit-border-radius: 4px; -webkit-box-shadow: 0 2px 5px #1c1c1c; box-shadow: 0 2px 5px #1c1c1c; }
+body.charts-landing .subnav ul { margin: 0; padding: 0; zoom: 1; }
+body.charts-landing .subnav ul:after { content: '.'; display: block; clear: both; height: 0; visibility: hidden; }
+body.charts-landing .subnav-devices { margin-top: 4px; padding-top: 6px; border-top: 1px solid #302f31; }
+body.charts-landing .subnav li { width: auto; margin: 0 10px 4px 0; padding: 2px 16px; float: left; border: 1px solid #3a393b; border-radius: 10px; -webkit-border-radius: 10px; line-height: 1.3em; list-style: none; }
 body.charts-landing .subnav li a { color: #999; outline: none; }
 body.charts-landing .subnav li a:hover { color: #fff; text-decoration: none; }
 body.charts-landing .subnav li.selected { color: #fff; border: 1px solid #1d1d1d; background: #252425; background: linear-gradient(#151515, #232323 20%, #232323); }
@@ -457,20 +467,22 @@ body.charts-landing .section-title { color: #fff; font-weight: normal; }
 body.charts-landing .section-detail { color: #808080; }
 body.charts-landing .section-detail a { color: #5cc3f6 !important; }
 
-/* The ranked grid (landing #grid): white ranks hanging left of the artwork */
-body.charts-landing .chart-grid { font-size: 11px; line-height: 1.4em; margin: 20px -81px 0 12px; padding-top: 2em; border-top: 1px solid #222; clear: both; zoom: 1; }
-body.charts-landing .chart-grid:after { content: '.'; display: block; clear: both; height: 0; visibility: hidden; }
-body.charts-landing .chart-grid li { float: left; position: relative; width: 150px; margin: 0 43px 13px 0; list-style: none; }
-body.charts-landing .chart-grid li strong { position: relative; right: 155px; top: 13px; text-align: right; color: #fff; display: block; font-weight: bold; }
-body.charts-landing .chart-grid h3, body.charts-landing .chart-grid h4, body.charts-landing .chart-grid .price { display: block; width: 120px; height: 1.3em; margin: 0; font-size: 11px; line-height: 1.3em; font-weight: normal; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #b1b3b6; }
-body.charts-landing .chart-grid h3 { clear: left; }
+/* The ranked grid. Inline-block cells (not floats) so uneven label heights —
+   some entries link out, some don't — wrap cleanly instead of snagging. The
+   rank badges the top-left corner; the icon wears the dark corner-knockout
+   mask so it rounds against the dark slab. */
+body.charts-landing .chart-grid { margin: 20px 0 0 0; padding-top: 20px; border-top: 1px solid #222; font-size: 0; }
+/* Left-aligned cells with the rank hanging in a fixed left gutter — fits
+   two- and three-digit ranks (a centered icon squeezed them). */
+body.charts-landing .chart-grid li { display: inline-block; vertical-align: top; position: relative; width: 138px; margin: 0 0 20px 0; padding: 0 6px 0 32px; text-align: left; -webkit-box-sizing: border-box; box-sizing: border-box; }
+body.charts-landing .chart-grid li strong { position: absolute; top: 4px; left: 4px; width: 24px; text-align: right; color: #fff; font-size: 12px; font-weight: bold; text-shadow: 0 1px 1px #000; }
+body.charts-landing .chart-grid h3, body.charts-landing .chart-grid h4, body.charts-landing .chart-grid .price { display: block; width: 100px; margin: 0; font-size: 11px; line-height: 1.35em; font-weight: normal; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #b1b3b6; }
 body.charts-landing .chart-grid h3 a { color: #fff; }
 body.charts-landing .chart-grid a:hover { text-decoration: underline; color: #fff; }
-body.charts-landing .chart-grid a.more, body.charts-landing .chart-grid a.more:hover { display: inline; color: #5cc3f6; padding-right: 10px; background: url(/wsf/charts/morearrow20090107.gif) no-repeat 100% 50%; }
-/* 100px era app icons had their rounding baked into the artwork; ours are
-   square sources, so round them here (2010 icon radius ≈ 16/100) */
-body.charts-landing .chart-grid .grid-art { display: block; width: 100px; height: 100px; margin-bottom: 6px; background: #2a2a2a; border-radius: 16px; -webkit-border-radius: 16px; overflow: hidden; }
+body.charts-landing .chart-grid a.more, body.charts-landing .chart-grid a.more:hover { display: inline-block; margin-top: 2px; color: #5cc3f6; padding-right: 10px; background: url(/wsf/charts/morearrow20090107.gif) no-repeat 100% 50%; }
+body.charts-landing .chart-grid .grid-art { display: block; position: relative; width: 100px; height: 100px; margin: 0 0 6px 0; background: #2a2a2a; }
 body.charts-landing .chart-grid .grid-art img { display: block; width: 100px; height: 100px; }
+body.charts-landing .chart-grid .grid-art .grid-mask { position: absolute; top: 0; left: -1px; width: 102px; height: 103px; background: url(/wsf/images/mask100dark.png) no-repeat; }
 
 body.charts-landing .pagination { color: #808080; }
 body.charts-landing .pagination a { color: #5cc3f6; }
@@ -489,10 +501,26 @@ body.charts-landing .db-error { background: #333; color: #b1b3b6; }
   body.charts-landing #main #content .padder { padding: 20px 14px 24px; }
   body.charts-landing .charts-title img { width: 158px; height: 22px; }
   body.charts-landing .charts-intro { font-size: 13px; line-height: 18px; }
-  body.charts-landing .subnav { margin-top: 16px; padding-left: 10px; }
-  body.charts-landing .subnav li { margin: 0 4px 4px 0; padding: 4px 12px; }
-  /* Ranks can't hang into the gutter on phones — inline them above the art */
-  body.charts-landing .chart-grid { margin: 16px 0 0 0; }
-  body.charts-landing .chart-grid li { margin-right: 24px; }
-  body.charts-landing .chart-grid li strong { position: static; text-align: left; }
+  body.charts-landing .subnav { margin-top: 16px; padding: 8px 10px 4px; }
+  body.charts-landing .subnav li { margin: 0 4px 4px 0; padding: 3px 12px; }
+  /* Two across on phones — 100px icons plus the rank gutter always fit */
+  body.charts-landing .chart-grid li { width: 50%; }
+}
+
+/* =========================================================================
+   Light app-icon grid (developer page). Inline-block cells wrap cleanly
+   regardless of label height — no float snagging. Icons wear the white
+   corner-knockout mask so they round against the white slab.
+   ========================================================================= */
+.app-grid { list-style: none; margin: 6px 0 20px 0; padding: 0; font-size: 0; }
+.app-grid li { display: inline-block; vertical-align: top; width: 128px; margin: 0 0 22px 0; padding: 0 7px; text-align: center; -webkit-box-sizing: border-box; box-sizing: border-box; }
+.app-grid .grid-icon { display: block; position: relative; width: 100px; height: 100px; margin: 0 auto 8px; background: transparent url('/icon-placeholder.png') no-repeat; background-size: 100px 100px; }
+.app-grid .grid-icon img { display: block; width: 100px; height: 100px; }
+.app-grid .grid-icon .grid-mask { position: absolute; top: 0; left: -1px; width: 102px; height: 103px; background: url('/wsf/images/mask100white.png') no-repeat; }
+.app-grid .grid-name { display: block; font-size: 12px; font-weight: bold; color: #298cda; line-height: 15px; max-height: 30px; overflow: hidden; }
+.app-grid .grid-sub { display: block; margin-top: 2px; color: #898989; font-size: 11px; line-height: 14px; }
+.app-grid a:hover { text-decoration: underline; }
+
+@media screen and (max-width: 767px) {
+  .app-grid li { width: 33.333%; padding: 0 4px; }
 }

@@ -563,7 +563,6 @@ if (sizePoints.length >= 3) {
           {appData.developer_id && (
             <a class="view-more" href={`/developer/${appData.developer_id}`}>View More By This Developer</a>
           )}
-          <p>{versions.length} {versionNoun}, installable directly on your old iOS device.</p>
         </div>
 
         {/* Left rail: the product lockup (artwork + metadata) and, when the
@@ -596,7 +595,7 @@ if (sizePoints.length >= 3) {
           {lockupStars && (
             <div class="extra-list customer-ratings">
               <h4>Customer Ratings</h4>
-              <div>At time of archiving:</div>
+              {latestRating?.captured_at && <div class="ratings-asof">As of {formatDate(latestRating.captured_at)}</div>}
               <div class="rating" role="text" aria-label={lockupStarsLabel}>
                 <div>
                   {lockupStars.map((cls) => <span class={cls}>&nbsp;</span>)}
@@ -954,10 +953,15 @@ if (sizePoints.length >= 3) {
       line-height: 15px;
     }
 
-    /* Extra copies, listed under the lockup when "Show everything" is on. */
+    /* Extra copies, listed under the lockup when "Show everything" is on.
+       The divider only belongs there when the copies are actually visible —
+       otherwise a collapsed row shows a stray line under it. */
     .v-copies {
       margin: 6px 0 0 52px;
-      border-top: 1px solid #e3edf5;
+    }
+
+    .show-everything .v-copies {
+      border-top: 1px solid #ececec;
     }
 
     .file-row {

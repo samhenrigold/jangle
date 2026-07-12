@@ -209,22 +209,27 @@ const pageTitle = snapshot
           Pick a chart and a day.
         </p>
 
-        {/* Pill subnav: chart types (and device, where iPad feeds exist) */}
-        <ul class="subnav">
-          {navTypes.map((t) => (
-            <li class={t.id === chartType?.id ? 'selected' : undefined}>
-              <a href={qs({ type: t.slug, genre: 'all', date: dateParam ? snapshot?.snapshot_date : null })}>{t.name}</a>
-            </li>
-          ))}
+        {/* Pill subnav: chart types on top, device pills always on their own
+            line below (a separate row inside the one dark bar). */}
+        <div class="subnav">
+          <ul class="subnav-types">
+            {navTypes.map((t) => (
+              <li class={t.id === chartType?.id ? 'selected' : undefined}>
+                <a href={qs({ type: t.slug, genre: 'all', date: dateParam ? snapshot?.snapshot_date : null })}>{t.name}</a>
+              </li>
+            ))}
+          </ul>
           {devicesAvailable.size > 1 && (
-            <>
+            <ul class="subnav-devices">
               <li class={device === 'iphone' ? 'selected' : undefined}><a href={qs({ device: 'iphone', genre: 'all' })}>iPhone</a></li>
               <li class={device === 'ipad' ? 'selected' : undefined}><a href={qs({ device: 'ipad', genre: 'all' })}>iPad</a></li>
-            </>
+            </ul>
           )}
-        </ul>
+        </div>
 
         <div class="tm-dark-controls">
+          {/* Selects auto-submit on change (no Go button); a no-JS Go keeps it
+              working when scripting is off. */}
           <form method="get" action="/charts" class="tm-form filters">
             {chartType && chartType.slug !== 'top-free' && <input type="hidden" name="type" value={chartType.slug} />}
             {device !== 'iphone' && <input type="hidden" name="device" value={device} />}
@@ -241,7 +246,7 @@ const pageTitle = snapshot
                 <option value={s.snapshot_date} selected={snapshot?.id === s.id}>{formatDate(s.snapshot_date)}</option>
               ))}
             </select>
-            <button type="submit" class="tm-go">Go</button>
+            <noscript><button type="submit" class="tm-go">Go</button></noscript>
           </form>
 
           {(firstDateOfYear.size > 1 || dates.length > 3) && (
@@ -274,10 +279,10 @@ const pageTitle = snapshot
                 const href = inLibrary ? `/app/${p.apps.app_store_id || p.apps.id}` : null;
                 return (
                   <li>
-                    <strong>{p.position}.</strong>
+                    <strong>{p.position}</strong>
                     {href
-                      ? <a class="grid-art" href={href}>{icon && <img src={icon} alt="" width="100" height="100" loading="lazy" />}</a>
-                      : <span class="grid-art">{icon && <img src={icon} alt="" width="100" height="100" loading="lazy" />}</span>}
+                      ? <a class="grid-art" href={href}>{icon && <img src={icon} alt="" width="100" height="100" loading="lazy" />}<span class="grid-mask"></span></a>
+                      : <span class="grid-art">{icon && <img src={icon} alt="" width="100" height="100" loading="lazy" />}<span class="grid-mask"></span></span>}
                     <h3>{href ? <a href={href}>{p.display_name}</a> : p.display_name}</h3>
                     <h4>{p.developer_name}</h4>
                     {price && <span class="price">{price}</span>}

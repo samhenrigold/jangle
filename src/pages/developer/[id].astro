@@ -2,12 +2,13 @@
 import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
-import AppList from '../../components/AppList.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getOldestIcons } from '../../lib/appicons';
+import { iconSrc } from '../../lib/icons';
+import { appTitleOf } from '../../lib/apps';
 
 const { id } = Astro.params;
 const supabase = supabaseFor(Astro);
@@ -85,7 +86,25 @@ const appNoun = appCount === 1 ? 'app' : 'apps';
           level={1}
           detail={appCount > 0 ? `${formatNumber(appCount)} ${appNoun} in the archive` : undefined}
         />
-        <AppList list={list} iconShas={iconShas} />
+        {appCount > 0 ? (
+          <ul class="app-grid">
+            {(list || []).map((a: any) => {
+              const sha = iconShas && a.id != null ? iconShas.get(Number(a.id)) : null;
+              const icon = sha ? `/icon/${sha}` : iconSrc(a.icon_url);
+              const href = `/app/${a.app_store_id ? a.app_store_id : a.id}`;
+              const vc = a.version_count == null ? null : Number(a.version_count);
+              return (
+                <li>
+                  <a class="grid-icon" href={href}>{icon && <img src={icon} alt="" width="100" height="100" loading="lazy" decoding="async" />}<span class="grid-mask"></span></a>
+                  <a class="grid-name" href={href}>{appTitleOf(a)}</a>
+                  {vc != null && vc > 0 && <span class="grid-sub">{vc} {vc === 1 ? 'version' : 'versions'}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p class="applist-empty">No apps in the archive for this developer yet.</p>
+        )}
       </>
     )}
   </div>

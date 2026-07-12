@@ -1,23 +1,111 @@
 ---
-// `genres` arrives already sorted by the page (see src/lib/genres.ts) — do not
-// re-sort here (that mutated the shared cached array and double-sorted).
-// The query text lives in the nav search field; this form only refines an
-// existing search, carrying q through a hidden input.
+// The iTunes "Power Search" panel: a labeled row of fields on a light bar.
+// Title/Keywords → full-text search (q); Developer Name → developer lookup
+// (dev); Category → genre; plus a sort. `genres` arrives pre-sorted from the
+// page (src/lib/genres.ts) — do not re-sort (that mutated the shared cache).
 import { formatNumber } from '../lib/format';
-const { q = '', genreId = '', sort = 'versions', genres = [] } = Astro.props;
+const { q = '', dev = '', genreId = '', sort = 'versions', genres = [] } = Astro.props;
 ---
-<form class="filters" method="get" action="/search">
-  <input type="hidden" name="q" value={q} />
-  <select name="genre" aria-label="Genre">
-    <option value="">All genres</option>
-    {genres.map((g: any) => (
-      <option value={g.id} selected={String(g.id) === String(genreId)}>{g.genre_name} ({formatNumber(g.app_count)})</option>
-    ))}
-  </select>
-  <select name="sort" aria-label="Sort by">
-    <option value="versions" selected={sort==='versions'}>Most versions</option>
-    <option value="first_date" selected={sort==='first_date'}>Oldest first release</option>
-    <option value="name" selected={sort==='name'}>Name A&ndash;Z</option>
-  </select>
-  <button type="submit">Apply</button>
+<form class="power-search" method="get" action="/search">
+  <div class="ps-lead">
+    <span class="ps-label">Power Search</span>
+    <span class="ps-kind">Apps</span>
+  </div>
+  <div class="ps-field ps-text">
+    <label class="ps-label" for="ps-q">Title / Keywords</label>
+    <input id="ps-q" type="search" name="q" value={q} autocomplete="off" />
+  </div>
+  <div class="ps-field ps-text">
+    <label class="ps-label" for="ps-dev">Developer Name</label>
+    <input id="ps-dev" type="search" name="dev" value={dev} autocomplete="off" />
+  </div>
+  <div class="ps-field">
+    <label class="ps-label" for="ps-genre">Category</label>
+    <select id="ps-genre" name="genre">
+      <option value="">All Categories</option>
+      {genres.map((g: any) => (
+        <option value={g.id} selected={String(g.id) === String(genreId)}>{g.genre_name} ({formatNumber(g.app_count)})</option>
+      ))}
+    </select>
+  </div>
+  <div class="ps-field">
+    <label class="ps-label" for="ps-sort">Sort By</label>
+    <select id="ps-sort" name="sort">
+      <option value="versions" selected={sort === 'versions'}>Most versions</option>
+      <option value="first_date" selected={sort === 'first_date'}>Oldest first release</option>
+      <option value="name" selected={sort === 'name'}>Name A&ndash;Z</option>
+    </select>
+  </div>
+  <div class="ps-field ps-submit">
+    <button type="submit" class="wsfbtn wsfbtn-primary">Search</button>
+  </div>
 </form>
+
+<style>
+  /* iTunes Power Search panel: labeled fields in a row on a light grey bar.
+     inline-block cells (not flex) so it wraps on any width and any-era WebKit. */
+  .power-search {
+    margin: 6px 0 12px 0;
+    padding: 12px 14px 6px;
+    background: #f4f5f6;
+    background: linear-gradient(#fbfbfc, #eceded);
+    border: 1px solid #cfd0d1;
+    border-radius: 5px;
+    -webkit-border-radius: 5px;
+    font-size: 0;
+  }
+
+  .power-search .ps-lead,
+  .power-search .ps-field {
+    display: inline-block;
+    vertical-align: bottom;
+    margin: 0 14px 8px 0;
+  }
+
+  .power-search .ps-label {
+    display: block;
+    margin-bottom: 3px;
+    color: #6b6b6b;
+    font-size: 10px;
+    font-weight: bold;
+  }
+
+  .power-search .ps-kind {
+    display: block;
+    padding: 4px 0;
+    color: #474747;
+    font-size: 12px;
+    font-weight: bold;
+  }
+
+  .power-search .ps-field input,
+  .power-search .ps-field select {
+    display: block;
+    font: 12px "Lucida Grande", "Lucida Sans Unicode", Arial, Verdana, sans-serif;
+    padding: 4px 6px;
+    border: 1px solid #b3b3b3;
+    border-radius: 4px;
+    -webkit-border-radius: 4px;
+    background: #fff;
+    color: #333;
+    outline: none;
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+  }
+
+  .power-search .ps-text input { width: 190px; }
+  .power-search .ps-field select { max-width: 210px; }
+
+  .power-search .ps-submit { margin-right: 0; }
+  .power-search .ps-submit button { height: 26px; line-height: 26px; padding: 0 18px; font-size: 12px; }
+
+  @media screen and (max-width: 767px) {
+    .power-search .ps-lead { display: none; }
+    .power-search .ps-field { display: block; margin-right: 0; }
+    .power-search .ps-text input,
+    .power-search .ps-field select { width: 100%; max-width: none; }
+    /* 16px inputs so iOS doesn't zoom the page on focus */
+    .power-search .ps-field input { font-size: 16px; }
+    .power-search .ps-submit button { width: 100%; }
+  }
+</style>
