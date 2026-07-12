@@ -11,11 +11,13 @@ const blank = (status: number) => blankGif(status, 'public, max-age=86400, s-max
 
 // "mzstatic resurrection" (from plan 010): Apple rarely deletes the underlying
 // image even when an old derivative URL 404s. Old-style pool derivatives
-//   <host>/us/rNN[/NNN]/<Pool>/xx/yy/zz/mzl.<hash>.<W>x<H>-<Q>.<ext>
-// recover from the live thumb service by dropping the host, the /us/rNN/ prefix,
+//   <host>/<cc>/rNN[/NNN]/<Pool>/xx/yy/zz/mzl.<hash>.<W>x<H>-<Q>.<ext>
+// recover from the live thumb service by dropping the host, the /<cc>/rNN/ prefix,
 // the 3-digit shard, and the derivative suffix, then asking for a fresh size.
+// The region <cc> is any storefront (au/eu/nz/...), not just us — the thumb URL
+// carries no region, so a non-us pool url resurrects exactly like its us twin.
 // Originals are usually .png but not always, so try a few extensions.
-const POOL_PATH = /\/us\/r\d+\/(?:\d{3}\/)?(.+)\/([^/]+?)(?:\.\d+x\d+(?:-\d+)?)?\.(?:jpg|jpeg|png|tif)$/i;
+const POOL_PATH = /\/[a-z]{2}\/r\d+\/(?:\d{3}\/)?(.+)\/([^/]+?)(?:\.\d+x\d+(?:-\d+)?)?\.(?:jpg|jpeg|png|tif)$/i;
 
 function resurrectionUrls(target: URL): string[] {
   const m = POOL_PATH.exec(target.pathname);

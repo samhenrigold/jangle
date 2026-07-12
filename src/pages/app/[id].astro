@@ -17,7 +17,7 @@ import {
 import { pickOldestIcon, getOldestIcons } from '../../lib/appicons';
 import AppList from '../../components/AppList.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
-import { osRequirementLabel, osShortLabel } from '../../lib/devices';
+import { osRequirementLabel, osShortLabel, retinaLabel } from '../../lib/devices';
 import { lineChartSVG } from '../../lib/charts';
 
 // Cap on copies rendered inline (hidden) for the client-side "Show everything"
@@ -136,7 +136,7 @@ const loadCore = async () => {
     for (let i = 0; i < shas.length; i += CHUNK) {
       const { data, error } = await supabase
         .from('binaries')
-        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app, has_extensions, tamper_status')
+        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app, has_extensions, tamper_status, retina_iphone, retina_ipad, retina_iphone_plus, device_family_macho')
         .in('sha1', shas.slice(i, i + CHUNK));
       if (error) {
         console.error('binaries query failed:', error.message);
@@ -546,11 +546,18 @@ const versionRows = (sortedVersions || []).map((v: any) => {
   const metaLines: { text: string; title?: string }[] = [];
   const osReq = osRequirementLabel(v.minimum_os_version) || osRequirementLabel(machoMinOs);
   if (osReq) metaLines.push({ text: osReq });
+  // Universal (iPhone + iPad) → the App Store's "fat binary" + badge.
+  const df = (v.device_family || []).map((x: any) => String(x));
+  // Retina support, per idiom (plan 013). The binary's own UIDeviceFamily
+  // (device_family_macho) is authoritative for which idioms the build targets —
+  // the App Store metadata device_family is often missing for archived apps —
+  // so prefer it, falling back to the version's when absent.
+  const binFam = (bin0?.device_family_macho || []).map((x: any) => String(x));
+  const retina = retinaLabel(bin0, binFam.length ? binFam : df);
+  if (retina) metaLines.push(retina);
   if (v.estimated_release_date && datePlausible(v.estimated_release_date, v)) metaLines.push({ text: formatDate(v.estimated_release_date), title: 'Estimated release date' });
   else if (isTrustworthyDate(v.release_date) && datePlausible(v.release_date, v)) metaLines.push({ text: `Released ${formatDate(v.release_date)}` });
   const minosMajor = minOsMajor(v) ?? (machoMinOs ? parseInt(String(machoMinOs).split('.')[0], 10) : null);
-  // Universal (iPhone + iPad) → the App Store's "fat binary" + badge.
-  const df = (v.device_family || []).map((x: any) => String(x));
   const isUniversal = df.indexOf('1') >= 0 && df.indexOf('2') >= 0;
   const multi = groups.length > 1;
   const primary = inlineGroups[0] ? describeCopy(inlineGroups[0].file, false) : null;
