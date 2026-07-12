@@ -20,20 +20,32 @@ export const GET: APIRoute = async (ctx) => {
   // Perceptual-duplicate canonicalization (plans/012 phase 2): ~40% of icons
   // are byte-variants of another (JPEG artifacts, resolutions). icon_aliases
   // maps each variant to its cluster's best member; redirecting means the edge
-  // cache converges on ONE object per real icon. Best-effort — a lookup failure
-  // just serves the requested sha directly.
+  // cache converges on ONE object per real icon.
+  //
+  // icon_upgrades (plans/014): verified same-REVISION hi-res master for a small
+  // icon (pixel test + margin + independent era proof; policy: serve the flat
+  // master as-is). Alias wins if both exist — upgrades are keyed on canonical
+  // shas, so the upgrade fires on the post-redirect request.
+  //
+  // Both looked up in parallel; best-effort — a failure just serves the sha.
   try {
-    const { data: alias } = await supabaseFor(ctx)
-      .from('icon_aliases')
-      .select('canonical_sha256')
-      .eq('sha256', sha)
-      .maybeSingle();
-    if (alias?.canonical_sha256 && alias.canonical_sha256 !== sha) {
+    const supabase = supabaseFor(ctx);
+    const [{ data: alias }, { data: upgrade }] = await Promise.all([
+      supabase.from('icon_aliases').select('canonical_sha256').eq('sha256', sha).maybeSingle(),
+      supabase.from('icon_upgrades').select('hires_sha256').eq('sha256', sha).maybeSingle(),
+    ]);
+    const dest =
+      alias?.canonical_sha256 && alias.canonical_sha256 !== sha
+        ? alias.canonical_sha256
+        : upgrade?.hires_sha256 && upgrade.hires_sha256 !== sha
+          ? upgrade.hires_sha256
+          : null;
+    if (dest) {
       return new Response(null, {
         status: 301,
         headers: {
-          Location: `/icon/${alias.canonical_sha256}`,
-          // Aliases are stable (recomputed only by explicit re-runs); cache hard.
+          Location: `/icon/${dest}`,
+          // Aliases/upgrades are stable (recomputed only by explicit re-runs); cache hard.
           'Cache-Control': 'public, max-age=604800, s-maxage=2592000',
         },
       });

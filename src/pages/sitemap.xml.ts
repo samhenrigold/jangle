@@ -22,6 +22,7 @@ async function fetchSlugs(supabase: any): Promise<string[]> {
     const { data, error } = await supabase
       .from('apps')
       .select('id, app_store_id')
+      .not('excluded', 'is', true)
       .order('id', { ascending: true })
       .range(from, from + CHUNK - 1);
     if (error) throw new Error(`sitemap query failed: ${error.message}`);

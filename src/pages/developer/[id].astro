@@ -46,6 +46,7 @@ if (!dbError && !list) {
     .from('apps')
     .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url, version_count')
     .eq('developer_id', id)
+    .not('excluded', 'is', true)
     .order('version_count', { ascending: false })
     .order('app_store_name', { ascending: true })
     .limit(300);

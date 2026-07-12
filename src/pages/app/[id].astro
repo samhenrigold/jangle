@@ -135,7 +135,7 @@ const loadCore = async () => {
     for (let i = 0; i < shas.length; i += CHUNK) {
       const { data, error } = await supabase
         .from('binaries')
-        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app, has_extensions, tamper_status, retina_iphone, retina_ipad, retina_iphone_plus, device_family_macho')
+        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app, has_extensions, hidden, retina_iphone, retina_ipad, retina_iphone_plus, device_family_macho')
         .in('sha1', shas.slice(i, i + CHUNK));
       if (error) {
         console.error('binaries query failed:', error.message);
@@ -234,6 +234,7 @@ const loadMoreFromDev = async () => {
       .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url, version_count')
       .eq('developer_id', appData.developer_id)
       .neq('id', appData.id)
+      .not('excluded', 'is', true)
       .order('version_count', { ascending: false })
       .limit(12);
     moreFromDev = data || [];
@@ -314,12 +315,11 @@ const ratingRows = sampleEvenly(
 // whose every copy is dead says so instead of "no file".
 // Quarantined copies (re-signed/tweak-injected/wrapper repackages that reuse a
 // real bundle id — see the Colophon's "What belongs in the archive") are
-// dropped outright: editorial suppression, so unlike encrypted-only versions
-// they do NOT come back under "Show everything". NULL tamper_status (not yet
-// classified) passes. 'suspect' (one weak signal — usually a real mod, but a
-// small fraction are legit apps caught as collateral) is hidden too; those are
-// recoverable by reclassifying to 'clean', which un-hides them.
-const QUARANTINED = ['resigned', 'injected', 'wrapper', 'suspect'];
+// dropped outright via binaries.hidden (a DB-generated column, the single
+// definition of the quarantine set): editorial suppression, so unlike
+// encrypted-only versions they do NOT come back under "Show everything".
+// Unclassified binaries (hidden=false) pass; a hidden binary is recoverable by
+// reclassifying to 'clean', which un-hides it everywhere at once.
 const filesByVersionId = new Map<number, any[]>();
 const unavailableCountByVersion = new Map<number, number>();
 for (const f of ipaFiles) {
@@ -327,8 +327,7 @@ for (const f of ipaFiles) {
     unavailableCountByVersion.set(f.app_version_id, (unavailableCountByVersion.get(f.app_version_id) || 0) + 1);
     continue;
   }
-  const tamper = f.binary_sha1 ? binariesBySha1.get(f.binary_sha1)?.tamper_status : null;
-  if (tamper && QUARANTINED.indexOf(tamper) >= 0) continue;
+  if (f.binary_sha1 && binariesBySha1.get(f.binary_sha1)?.hidden) continue;
   const arr = filesByVersionId.get(f.app_version_id) || [];
   arr.push(f);
   filesByVersionId.set(f.app_version_id, arr);
