@@ -35,6 +35,14 @@ const [chartTypes, snapshotIndex, genreNames] = await Promise.all([
 ]);
 if (!chartTypes || !snapshotIndex || !genreNames) dbError = true;
 
+// Only chart types that actually have archived captures appear in the nav
+// ("What's Hot" exists in chart_types but has zero snapshots).
+const typeSnapCount = new Map<number, number>();
+for (const s of snapshotIndex || []) {
+  typeSnapCount.set(s.chart_type_id, (typeSnapCount.get(s.chart_type_id) || 0) + 1);
+}
+const navTypes = (chartTypes || []).filter((t) => (typeSnapCount.get(Number(t.id)) || 0) > 0);
+
 // --- Resolve filters from the query string ---------------------------------
 const typeParam = url.searchParams.get('type') || 'top-free';
 const chartType =
@@ -197,14 +205,13 @@ const pageTitle = snapshot
         {/* Title + intro, per the era's apple.com/itunes/charts/ landing */}
         <h1 class="charts-title"><img src="/wsf/charts/title_charts.png" srcset="/wsf/charts/title_charts@2x.png 2x" width="211" height="29" alt="App Store Charts" /></h1>
         <p class="charts-intro">
-          The real App Store Top Charts, resurrected from Apple's chart feeds as
-          the Wayback Machine saw them. Pick a chart and a day, and browse the
-          store the way it was.
+          The real App Store Top Charts, straight from the Wayback Machine.
+          Pick a chart and a day.
         </p>
 
         {/* Pill subnav: chart types (and device, where iPad feeds exist) */}
         <ul class="subnav">
-          {(chartTypes || []).map((t) => (
+          {navTypes.map((t) => (
             <li class={t.id === chartType?.id ? 'selected' : undefined}>
               <a href={qs({ type: t.slug, genre: 'all', date: dateParam ? snapshot?.snapshot_date : null })}>{t.name}</a>
             </li>

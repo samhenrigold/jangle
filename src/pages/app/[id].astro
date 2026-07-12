@@ -847,7 +847,7 @@ if (sizePoints.length >= 3) {
 
     /* One-row filter/sort bar above the version list */
     .filter-bar {
-      margin: 0 0 10px 0;
+      margin: 0 0 12px 2px;
       font-size: 11px;
       color: #898989;
     }
@@ -907,10 +907,8 @@ if (sizePoints.length >= 3) {
       width: 40px;
       height: 40px;
       margin-right: 12px;
-      background: #f3f3f3 url('/icon-placeholder.png') no-repeat;
+      background: transparent url('/icon-placeholder.png') no-repeat;
       background-size: 100% 100%;
-      border-radius: 8px;
-      overflow: hidden;
     }
 
     .v-icon img {
@@ -919,10 +917,12 @@ if (sizePoints.length >= 3) {
       height: 40px;
     }
 
+    /* Blue-panel surface: Apple's blue-cornered gloss mask */
     .v-icon .icon-mask {
       left: 0;
       width: 100%;
       height: 100%;
+      background-image: url('/wsf/images/mask100blue.png');
       background-size: 100% 100%;
     }
 
@@ -1007,17 +1007,6 @@ if (sizePoints.length >= 3) {
       margin-top: 3px;
     }
 
-    /* Universal ("fat binary") apps: Apple's + badge on the button corner. */
-    .nav-universal::before {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 3px;
-      width: 10px;
-      height: 11px;
-      background: url('/wsf/images/fat-binary-badge.png') 0 0 no-repeat;
-    }
-
     .file-name {
       display: block;
       overflow: hidden;
@@ -1050,7 +1039,7 @@ if (sizePoints.length >= 3) {
     }
 
     .size-chart {
-      padding: 12px 16px;
+      padding: 4px 0;
     }
 
     /* --- Progressive-enhancement hooks (each defaults to the no-JS state) --- */
@@ -1077,16 +1066,14 @@ if (sizePoints.length >= 3) {
     /* Install vs Download visibility lives in the is:global block below —
        the .is-ios/.is-desktop class is on <html>, outside these scoped styles. */
 
-    /* Wayback history sections — blue panels like the track lists */
+    /* Wayback history sections — plain reading surfaces on the white slab
+       (the era kept blue for interactive modules only) */
     .history-card {
-      background: #F3F9FD;
-      border-radius: 4px;
-      padding: 8px 16px;
       margin-bottom: 8px;
     }
 
     .history-row {
-      border-bottom: 1px solid #e3edf5;
+      border-bottom: 1px solid #ececec;
       padding: 8px 0;
     }
 
@@ -1143,12 +1130,12 @@ if (sizePoints.length >= 3) {
       font-size: 10px;
       font-weight: bold;
       padding: 4px 8px 4px 0;
-      border-bottom: 1px solid #e3edf5;
+      border-bottom: 1px solid #ececec;
     }
 
     .ratings-table td {
       padding: 4px 8px 4px 0;
-      border-bottom: 1px solid #e3edf5;
+      border-bottom: 1px solid #ececec;
       color: #898989;
     }
 
@@ -1163,7 +1150,7 @@ if (sizePoints.length >= 3) {
     /* Archived reviews — the original .customer-review pattern (title + star
        row + "by author"), with stars drawn by the global rating rules. */
     .review {
-      border-bottom: 1px solid #e3edf5;
+      border-bottom: 1px solid #ececec;
       padding: 8px 0 2px;
     }
 

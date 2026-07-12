@@ -386,9 +386,16 @@ if (stats) {
       height: 29px;
       margin: 0 9px 0 0;
       border-radius: 6px;
-      background: #f2f2f4 url('/icon-placeholder.png') no-repeat;
+      background: transparent url('/icon-placeholder.png') no-repeat;
       background-size: 100% 100%;
-      overflow: hidden;
+    }
+
+    .record-icon .icon-mask {
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: url('/wsf/images/mask100blue.png');
+      background-size: 100% 100%;
     }
 
     .record-icon img {

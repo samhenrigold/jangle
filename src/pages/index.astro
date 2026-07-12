@@ -220,10 +220,8 @@ if (dbError) setDegraded(Astro.response);
       width: 29px;
       height: 29px;
       margin-right: 8px;
-      background: #f3f3f3 url('/icon-placeholder.png') no-repeat;
+      background: transparent url('/icon-placeholder.png') no-repeat;
       background-size: 100% 100%;
-      border-radius: 6px;
-      overflow: hidden;
     }
 
     .hero-icon img {
@@ -232,10 +230,12 @@ if (dbError) setDegraded(Astro.response);
       height: 29px;
     }
 
+    /* Blue-panel surface: use Apple's blue-cornered gloss mask */
     .hero-icon .icon-mask {
       left: 0;
       width: 100%;
       height: 100%;
+      background-image: url('/wsf/images/mask100blue.png');
       background-size: 100% 100%;
     }
 

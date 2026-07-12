@@ -68,14 +68,12 @@ if (dbError) setDegraded(Astro.response);
     .cat-list {
       list-style: none;
       margin: 10px 0 20px 0;
-      padding: 8px 16px;
-      background: #F3F9FD;
-      border-radius: 4px;
+      padding: 0;
       overflow: hidden;
     }
 
     .cat {
-      border-bottom: 1px solid #e3edf5;
+      border-bottom: 1px solid #ececec;
     }
 
     .cat:last-child {
@@ -101,10 +99,8 @@ if (dbError) setDegraded(Astro.response);
       width: 40px;
       height: 40px;
       margin-right: 12px;
-      background: #f3f3f3 url('/icon-placeholder.png') no-repeat;
+      background: transparent url('/icon-placeholder.png') no-repeat;
       background-size: 100% 100%;
-      border-radius: 8px;
-      overflow: hidden;
     }
 
     .cat-icon img {
