@@ -627,3 +627,147 @@ CREATE TRIGGER trg_chart_snapshot_count_ins AFTER INSERT ON public.chart_positio
   REFERENCING NEW TABLE AS chg FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_chart_snapshot_count();
 CREATE TRIGGER trg_chart_snapshot_count_del AFTER DELETE ON public.chart_positions
   REFERENCING OLD TABLE AS chg FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_chart_snapshot_count();
+
+-- ── Precomputed period-authentic app icon (applied 2026-07-12) ───────────────
+-- List surfaces used to derive each app's "oldest icon" per request via a
+-- versions→files→binaries fan-out that had to page past PostgREST's 1000-row
+-- cap (apps with few files silently lost their icon on a shared page — the
+-- Boomerang/Flickr bug). That pick is now precomputed into apps.oldest_icon_sha256
+-- and read as one indexed column; getOldestIcons() in the app just selects it.
+-- A pg_cron job keeps it fresh against ongoing ingest / quarantine changes.
+
+-- Natural version sort: pad each numeric segment so lexical order = version order.
+CREATE OR REPLACE FUNCTION public.version_sort_key(v text)
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path = public, pg_temp AS $$
+  SELECT COALESCE(string_agg(lpad(seg, 6, '0'), '.'), '')
+  FROM unnest(string_to_array(regexp_replace(coalesce(v, ''), '[^0-9.]', '', 'g'), '.')) AS seg
+  WHERE seg ~ '^[0-9]+$'
+$$;
+
+ALTER TABLE public.apps ADD COLUMN IF NOT EXISTS oldest_icon_sha256 text;
+
+-- SQL port of the frontend pickOldestIcon: among an app's CLEAN, icon-bearing
+-- binaries take the earliest version; within it prefer the least anachronistic
+-- (arm64-only / has-extensions on a claimed iOS<7 row loses) and most
+-- store-shaped (installable/encrypted over unknown) copy; prefer the build-time
+-- bundle icon over the download-stamped legacy one. p_app_ids NULL = all apps.
+CREATE OR REPLACE FUNCTION public.refresh_oldest_icons(p_app_ids bigint[] DEFAULT NULL)
+RETURNS integer LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+DECLARE n integer;
+BEGIN
+  WITH cand AS (
+    SELECT av.app_id,
+      COALESCE(b.bundle_icon_sha256, b.icon_sha256) AS sha,
+      public.version_sort_key(av.version_string) AS vkey,
+      CASE WHEN NULLIF(split_part(coalesce(av.minimum_os_version,''), '.', 1), '')::int BETWEEN 1 AND 6
+            AND (b.architectures = ARRAY['arm64']::text[] OR b.has_extensions) THEN 1 ELSE 0 END AS anach,
+      CASE WHEN coalesce(b.install_status,'unknown') IN ('installable','encrypted') THEN 0 ELSE 1 END AS status_rank
+    FROM app_versions av
+    JOIN ipa_files f ON f.app_version_id = av.id
+    JOIN binaries b ON b.sha1 = f.binary_sha1
+    WHERE (b.bundle_icon_sha256 IS NOT NULL OR b.icon_sha256 IS NOT NULL)
+      AND (b.tamper_status IS NULL OR b.tamper_status NOT IN ('resigned','injected','wrapper','suspect'))
+      AND (p_app_ids IS NULL OR av.app_id = ANY(p_app_ids))
+  ),
+  pick AS (
+    SELECT DISTINCT ON (app_id) app_id, sha
+    FROM cand ORDER BY app_id, vkey ASC, anach ASC, status_rank ASC
+  )
+  UPDATE apps a SET oldest_icon_sha256 = pick.sha
+  FROM pick WHERE a.id = pick.app_id AND a.oldest_icon_sha256 IS DISTINCT FROM pick.sha;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  UPDATE apps a SET oldest_icon_sha256 = NULL
+  WHERE a.oldest_icon_sha256 IS NOT NULL
+    AND (p_app_ids IS NULL OR a.id = ANY(p_app_ids))
+    AND NOT EXISTS (
+      SELECT 1 FROM app_versions av JOIN ipa_files f ON f.app_version_id = av.id
+      JOIN binaries b ON b.sha1 = f.binary_sha1
+      WHERE av.app_id = a.id
+        AND (b.bundle_icon_sha256 IS NOT NULL OR b.icon_sha256 IS NOT NULL)
+        AND (b.tamper_status IS NULL OR b.tamper_status NOT IN ('resigned','injected','wrapper','suspect')));
+  RETURN n;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.refresh_oldest_icons(bigint[]) FROM PUBLIC, anon, authenticated;
+
+-- Keep it fresh (full recompute ~4s). Runs every 30 min.
+SELECT cron.schedule('refresh-oldest-icons', '*/30 * * * *', 'SELECT public.refresh_oldest_icons()')
+WHERE NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'refresh-oldest-icons');
+
+-- get_apps_sorted_* re-created to add oldest_icon_sha256 to the row type, so
+-- list pages read the precomputed icon straight from the RPC result (last-wins
+-- over the earlier definitions above).
+DROP FUNCTION IF EXISTS get_apps_sorted_by_version_count(integer,integer,bigint,boolean,text);
+CREATE FUNCTION get_apps_sorted_by_version_count(
+  p_limit INTEGER DEFAULT 20, p_offset INTEGER DEFAULT 0,
+  p_genre_id BIGINT DEFAULT NULL, p_ascending BOOLEAN DEFAULT TRUE,
+  p_search_query TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  id BIGINT, bundle_id TEXT, app_store_id BIGINT, app_store_name TEXT,
+  developer_id BIGINT, genre_id BIGINT, copyright TEXT, icon_url TEXT,
+  display_name TEXT, executable_name TEXT, created_at TIMESTAMPTZ,
+  developer_artist_name TEXT, genre_genre_name TEXT,
+  version_count BIGINT, first_version_date TIMESTAMPTZ, oldest_icon_sha256 TEXT
+)
+LANGUAGE plpgsql STABLE SET search_path = public, pg_temp AS $$
+BEGIN
+  IF p_ascending THEN
+    RETURN QUERY
+      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name, a.developer_id, a.genre_id,
+             a.copyright, a.icon_url, a.display_name, a.executable_name, a.created_at,
+             d.artist_name, g.genre_name, a.version_count::bigint, a.first_version_date, a.oldest_icon_sha256
+      FROM apps a LEFT JOIN developers d ON a.developer_id = d.id LEFT JOIN genres g ON a.genre_id = g.id
+      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+      ORDER BY a.version_count ASC, a.display_name ASC LIMIT p_limit OFFSET p_offset;
+  ELSE
+    RETURN QUERY
+      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name, a.developer_id, a.genre_id,
+             a.copyright, a.icon_url, a.display_name, a.executable_name, a.created_at,
+             d.artist_name, g.genre_name, a.version_count::bigint, a.first_version_date, a.oldest_icon_sha256
+      FROM apps a LEFT JOIN developers d ON a.developer_id = d.id LEFT JOIN genres g ON a.genre_id = g.id
+      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+      ORDER BY a.version_count DESC, a.display_name ASC LIMIT p_limit OFFSET p_offset;
+  END IF;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION get_apps_sorted_by_version_count(integer,integer,bigint,boolean,text) TO anon, authenticated;
+
+DROP FUNCTION IF EXISTS get_apps_sorted_by_first_version_date(integer,integer,bigint,boolean,text);
+CREATE FUNCTION get_apps_sorted_by_first_version_date(
+  p_limit INTEGER DEFAULT 20, p_offset INTEGER DEFAULT 0,
+  p_genre_id BIGINT DEFAULT NULL, p_ascending BOOLEAN DEFAULT TRUE,
+  p_search_query TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  id BIGINT, bundle_id TEXT, app_store_id BIGINT, app_store_name TEXT,
+  developer_id BIGINT, genre_id BIGINT, copyright TEXT, icon_url TEXT,
+  display_name TEXT, executable_name TEXT, created_at TIMESTAMPTZ,
+  developer_artist_name TEXT, genre_genre_name TEXT,
+  version_count BIGINT, first_version_date TIMESTAMPTZ, oldest_icon_sha256 TEXT
+)
+LANGUAGE plpgsql STABLE SET search_path = public, pg_temp AS $$
+BEGIN
+  IF p_ascending THEN
+    RETURN QUERY
+      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name, a.developer_id, a.genre_id,
+             a.copyright, a.icon_url, a.display_name, a.executable_name, a.created_at,
+             d.artist_name, g.genre_name, a.version_count::bigint, a.first_version_date, a.oldest_icon_sha256
+      FROM apps a LEFT JOIN developers d ON a.developer_id = d.id LEFT JOIN genres g ON a.genre_id = g.id
+      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+      ORDER BY a.first_version_date ASC, a.display_name ASC LIMIT p_limit OFFSET p_offset;
+  ELSE
+    RETURN QUERY
+      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name, a.developer_id, a.genre_id,
+             a.copyright, a.icon_url, a.display_name, a.executable_name, a.created_at,
+             d.artist_name, g.genre_name, a.version_count::bigint, a.first_version_date, a.oldest_icon_sha256
+      FROM apps a LEFT JOIN developers d ON a.developer_id = d.id LEFT JOIN genres g ON a.genre_id = g.id
+      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+      ORDER BY a.first_version_date DESC, a.display_name ASC LIMIT p_limit OFFSET p_offset;
+  END IF;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION get_apps_sorted_by_first_version_date(integer,integer,bigint,boolean,text) TO anon, authenticated;
