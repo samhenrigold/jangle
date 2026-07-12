@@ -1001,12 +1001,12 @@ if (sizePoints.length >= 3) {
       background-color: #eaf3f8;
     }
 
-    /* Lockup: icon + stacked facts on the left, action buttons opposite.
-       Flexbox (autoprefixed to the 2009 -webkit-box for iOS 4-6) centers the
-       buttons against the whole stack. */
+    /* Lockup: icon + stacked facts on the left, action column opposite.
+       Flexbox (autoprefixed to the 2009 -webkit-box for iOS 4-6); items align
+       to the top of the row. */
     .v-lockup {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       position: relative;
     }
 
@@ -1071,7 +1071,9 @@ if (sizePoints.length >= 3) {
       margin: 6px 0 0 52px;
     }
 
-    .show-everything .v-copies {
+    /* The divider only belongs there when the copies are actually visible. */
+    .version.expanded .v-copies,
+    .show-everything:not(.js-copies) .v-copies {
       border-top: 1px solid #ececec;
     }
 
@@ -1136,9 +1138,8 @@ if (sizePoints.length >= 3) {
       font-size: 11px;
       font-weight: bold;
     }
-    .more-copies .mc-tri { display: inline-block; transition: transform 0.15s; }
-    .js-copies .version[data-copies].expanded .more-copies .mc-tri,
-    .js-copies.show-everything .version[data-copies] .more-copies .mc-tri { transform: rotate(90deg); }
+    .more-copies .mc-tri { display: inline-block; }
+    .js-copies .version[data-copies].expanded .more-copies .mc-tri { transform: rotate(90deg); }
 
     .file-name {
       display: block;
@@ -1182,8 +1183,11 @@ if (sizePoints.length >= 3) {
       display: none;
     }
 
-    .show-everything .v-extra,
-    .version.expanded .v-extra {
+    /* Copies show per-row via .expanded. With JS on, "Show everything" adds
+       .expanded to every row (so each stays independently collapsible). The
+       no-JS ?all=1 path (no .js-copies) still bulk-reveals everything. */
+    .version.expanded .v-extra,
+    .show-everything:not(.js-copies) .v-extra {
       display: flex;
     }
 
@@ -1432,8 +1436,21 @@ if (sizePoints.length >= 3) {
       ready(function () {
         var i;
 
-        // 1) Global "Show everything" toggle (extra copies + hidden versions).
+        // 1) Global "Show everything" toggle. With JS on, it works by setting
+        //    every copy-row's own .expanded flag (plus .show-everything for the
+        //    hidden versions) — so afterwards each row can still be collapsed or
+        //    expanded on its own.
         var versionsRoot = document.querySelector('.versions');
+        var copyRows = document.querySelectorAll('.version[data-copies]');
+        function setAllExpanded(on) {
+          for (var k = 0; k < copyRows.length; k++) {
+            if (on) addClass(copyRows[k], 'expanded'); else removeClass(copyRows[k], 'expanded');
+          }
+        }
+        // Server ?all=1 renders everything up front; mirror it into per-row
+        // .expanded so the copies stay visible once JS takes over the CSS.
+        if (versionsRoot && hasClass(versionsRoot, 'show-everything')) setAllExpanded(true);
+
         var everythingToggles = document.querySelectorAll('a.js-everything-toggle');
         for (i = 0; i < everythingToggles.length; i++) {
           (function (link) {
@@ -1441,9 +1458,11 @@ if (sizePoints.length >= 3) {
               if (!versionsRoot) return true;
               if (hasClass(versionsRoot, 'show-everything')) {
                 removeClass(versionsRoot, 'show-everything');
+                setAllExpanded(false);
                 link.innerHTML = link.getAttribute('data-expand');
               } else {
                 addClass(versionsRoot, 'show-everything');
+                setAllExpanded(true);
                 link.innerHTML = link.getAttribute('data-collapse');
               }
               if (e && e.preventDefault) e.preventDefault();

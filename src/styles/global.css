@@ -146,7 +146,7 @@ em { font-style: italic; }
 /* 2013 sidebar rhythm: blocks separated below (not above), 27px apart. */
 #main #content #left-stack > div { margin-bottom: 27px; }
 #main #content #left-stack > div:last-child { margin-bottom: 0; }
-#main #content #left-stack div.artwork, #main #content #left-stack div.lockup { margin-top: 0; }
+#main #content #left-stack div.artwork, #main #content #left-stack div.lockup { margin-top: 0; margin-bottom: 16px; }
 #main #content #left-stack div.lockup, #main #content #left-stack div.artwork { margin-top: 0; }
 
 #main #content .center-stack { overflow: hidden; zoom: 1; }
@@ -176,8 +176,7 @@ em { font-style: italic; }
 #main #content #left-stack div.lockup ul.list li.copyright { width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #main #content #left-stack div.app-rating { margin-bottom: 2em; }
 #main #content #left-stack span.app-requirements { font-weight: bold; }
-/* Space between the artwork (with its drop shadow) and the blurb below it. */
-#main #content #left-stack div.fat-binary-blurb { margin-top: 16px; margin-bottom: 12px; zoom: 1; }
+#main #content #left-stack div.fat-binary-blurb { margin-bottom: 12px; zoom: 1; }
 #main #content #left-stack div.fat-binary-blurb:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
 #main #content #left-stack div.fat-binary-blurb span.fat-binary-badge { display: block; float: left; width: 14px; height: 14px; margin-right: 5px; margin-top: 2px; background: url(/wsf/images/fat-binary-badge.png) 0 0 no-repeat; text-indent: -9999px; overflow: hidden; }
 
@@ -344,7 +343,8 @@ a.app-link:hover { text-decoration: none; background-color: #eaf3f8; }
 /* Install-status label — flat coloured text, not a pill (rounded pills weren't
    an iTunes-2010 idiom). */
 .chip { display: inline-block; font-size: 10px; line-height: 15px; font-weight: bold; vertical-align: 1px; }
-.chip-warn { color: #b0741f; }
+/* !important to beat the id-heavy #main #content .center-stack span colour. */
+.chip-warn { color: #FF9500 !important; }
 
 input, select, button { font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial, Verdana, sans-serif; padding: 3px; }
 
