@@ -268,12 +268,27 @@ if (!dbError && chartHistory.length && chartTypesById.size) {
   );
 }
 
+// The listing snapshots mix storefronts and rating bases: a US all-versions
+// total (millions) sits next to a small non-US storefront capture or an
+// Apple "this version only" count (thousands), so a raw plot whiplashes between
+// them. An app's all-versions total only grows over time, so we keep a
+// monotonic envelope — drop any capture whose count falls well below the
+// highest established level (those are the non-US / current-version outliers),
+// while still allowing the count to climb.
+let ratingMax = 0;
+const ratingEnvelope = (ratingHistory || []).filter((r: any) => {
+  const c = Number(r.rating_count);
+  if (!Number.isFinite(c) || c <= 0) return r.rating_count == null; // keep count-less avg points
+  if (ratingMax > 0 && c < ratingMax * 0.5) return false;          // storefront/current-version dip
+  if (c > ratingMax) ratingMax = c;
+  return true;
+});
 // Rating snapshots arrive in bursts (several captures of the same listing
 // state) — collapse identical consecutive states, then thin to a readable table.
 const ratingRows = sampleEvenly(
-  ratingHistory.filter((r: any, i: number) => {
+  ratingEnvelope.filter((r: any, i: number) => {
     if (i === 0) return true;
-    const prev = ratingHistory[i - 1];
+    const prev = ratingEnvelope[i - 1];
     return !(r.version === prev.version && r.rating_count === prev.rating_count && r.rating_avg === prev.rating_avg);
   }),
   15

@@ -689,8 +689,8 @@ BEGIN
 END $$;
 REVOKE EXECUTE ON FUNCTION public.refresh_oldest_icons(bigint[]) FROM PUBLIC, anon, authenticated;
 
--- Keep it fresh (full recompute ~4s). Runs every 30 min.
-SELECT cron.schedule('refresh-oldest-icons', '*/30 * * * *', 'SELECT public.refresh_oldest_icons()')
+-- Keep it fresh (full recompute ~4s). Hourly (30-min was overkill for a 4s job).
+SELECT cron.schedule('refresh-oldest-icons', '7 * * * *', 'SELECT public.refresh_oldest_icons()')
 WHERE NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'refresh-oldest-icons');
 
 -- get_apps_sorted_* re-created to add oldest_icon_sha256 to the row type, so

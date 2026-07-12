@@ -247,12 +247,18 @@ export async function getAppReviews(
   const key = `tm:reviews:${appStoreId}`;
   const cached = cacheGet<{ rows: any[]; total: number }>(key);
   if (cached) return cached;
+  // Chronological, oldest first. Ordering by vote_sum surfaced the handful of
+  // recently live-fetched reviews (stamped with today's fetch date) over the
+  // hundreds of genuine period reviews recovered from archived feeds — which
+  // carry app_version + the capture timestamp (first_seen_ts) but no vote_sum.
+  // first_seen_ts (14-digit Wayback ts) sorts lexically = chronologically; the
+  // few live rows (first_seen_ts NULL) fall to the end.
   const { data, error, count } = await supabase
     .from('app_reviews')
     .select('review_id, stars, title, body, author, app_version, vote_sum, vote_count, reviewed_at, first_seen_ts', { count: 'exact' })
     .eq('app_store_id', appStoreId)
-    .order('vote_sum', { ascending: false })
-    .order('review_id', { ascending: false })
+    .order('first_seen_ts', { ascending: true, nullsFirst: false })
+    .order('review_id', { ascending: true })
     .limit(limit);
   if (error) {
     console.error('archived reviews query failed:', error.message);
