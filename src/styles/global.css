@@ -63,15 +63,16 @@ em { font-style: italic; }
    the bottom border. Caps overlay the ends; the magnifier lives in the left
    cap. The input is fully transparent on top. */
 .ph-search { float: right; margin: 12px 0 0 30px; }
-.ph-search .search-wrapper {
-  position: relative; display: block; width: 158px; height: 19px;
-  background: url(/wsf/nav/searchfield_repeat.png) 0 0 repeat-x;
-}
+.ph-search .search-wrapper { position: relative; display: block; width: 158px; height: 19px; }
 .ph-search .search-wrapper .left { display: block; position: absolute; left: 0; top: 0; width: 20px; height: 19px; background: url(/wsf/nav/searchfield_leftcap.png) left top no-repeat; }
 .ph-search .search-wrapper .right { display: block; position: absolute; right: 0; top: 0; width: 10px; height: 19px; background: url(/wsf/nav/searchfield_rightcap.png) right top no-repeat; }
+/* The repeat middle only spans BETWEEN the caps (the input's box), so its
+   straight top/bottom border can't poke past the caps' rounded corners. The
+   input is exactly 19px (border-box) so the bottom border stays continuous. */
 .ph-search .search-wrapper input {
-  position: absolute; top: 0; left: 20px; right: 10px; margin: 0; padding: 0;
-  height: 19px; line-height: 19px; border: 0; background: transparent;
+  position: absolute; top: 0; left: 20px; right: 10px; margin: 0; padding: 0 0 0 2px;
+  height: 19px; line-height: 19px; border: 0;
+  background: url(/wsf/nav/searchfield_repeat.png) 0 0 repeat-x;
   font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial, Verdana, sans-serif;
   color: #333;
   outline: none;
@@ -172,7 +173,7 @@ em { font-style: italic; }
 #main #content #left-stack span.app-requirements { font-weight: bold; }
 #main #content #left-stack div.fat-binary-blurb { margin-bottom: 12px; zoom: 1; }
 #main #content #left-stack div.fat-binary-blurb:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
-#main #content #left-stack div.fat-binary-blurb span.fat-binary-badge { display: block; float: left; width: 14px; height: 14px; margin-right: 5px; margin-top: 2px; background: url(/wsf/images/fat-binary-badge.png) 0 0 no-repeat; text-indent: -9999px; overflow: hidden; }
+#main #content #left-stack div.fat-binary-blurb span.fat-binary-badge { display: block; float: left; width: 14px; height: 16px; margin-right: 6px; margin-top: 1px; background: url(/wsf/images/fat-binary-badge.png) 50% 50% no-repeat; text-indent: -9999px; overflow: hidden; }
 
 /* --------------------------------------------------------- star ratings -- */
 
