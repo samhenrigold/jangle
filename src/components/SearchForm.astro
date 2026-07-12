@@ -7,10 +7,6 @@ import { formatNumber } from '../lib/format';
 const { q = '', dev = '', genreId = '', sort = 'versions', genres = [] } = Astro.props;
 ---
 <form class="power-search" method="get" action="/search">
-  <div class="ps-lead">
-    <span class="ps-label">Power Search</span>
-    <span class="ps-kind">Apps</span>
-  </div>
   <div class="ps-field ps-text">
     <label class="ps-label" for="ps-q">Title / Keywords</label>
     <input id="ps-q" type="search" name="q" value={q} autocomplete="off" />
@@ -32,6 +28,7 @@ const { q = '', dev = '', genreId = '', sort = 'versions', genres = [] } = Astro
     <label class="ps-label" for="ps-sort">Sort By</label>
     <select id="ps-sort" name="sort">
       <option value="versions" selected={sort === 'versions'}>Most versions</option>
+      <option value="newest" selected={sort === 'newest'}>Newest first release</option>
       <option value="first_date" selected={sort === 'first_date'}>Oldest first release</option>
       <option value="name" selected={sort === 'name'}>Name A&ndash;Z</option>
     </select>
@@ -55,7 +52,6 @@ const { q = '', dev = '', genreId = '', sort = 'versions', genres = [] } = Astro
     font-size: 0;
   }
 
-  .power-search .ps-lead,
   .power-search .ps-field {
     display: inline-block;
     vertical-align: bottom;
@@ -67,14 +63,6 @@ const { q = '', dev = '', genreId = '', sort = 'versions', genres = [] } = Astro
     margin-bottom: 3px;
     color: #6b6b6b;
     font-size: 10px;
-    font-weight: bold;
-  }
-
-  .power-search .ps-kind {
-    display: block;
-    padding: 4px 0;
-    color: #474747;
-    font-size: 12px;
     font-weight: bold;
   }
 
@@ -100,7 +88,6 @@ const { q = '', dev = '', genreId = '', sort = 'versions', genres = [] } = Astro
   .power-search .ps-submit button { height: 26px; line-height: 26px; padding: 0 18px; font-size: 12px; }
 
   @media screen and (max-width: 767px) {
-    .power-search .ps-lead { display: none; }
     .power-search .ps-field { display: block; margin-right: 0; }
     .power-search .ps-text input,
     .power-search .ps-field select { width: 100%; max-width: none; }

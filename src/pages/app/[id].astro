@@ -570,8 +570,7 @@ if (sizePoints.length >= 3) {
         <div id="left-stack">
           <div class="lockup product application">
             <div class="artwork">
-              {appIcon && <img src={appIcon} width="175" height="175" class="artwork" alt={appTitle} />}
-              <span class="mask"></span>
+              {appIcon ? <><img src={appIcon} width="175" height="175" class="artwork" alt={appTitle} /><span class="mask"></span></> : null}
             </div>
             {isUniversalApp && (
               <div class="fat-binary-blurb"><span class="fat-binary-badge">+</span><span>This app is designed for both iPhone and iPad</span></div>
@@ -641,7 +640,7 @@ if (sizePoints.length >= 3) {
                   copy's action button opposite, with size + badge stacked under
                   it. Universal apps get the fat-binary "+" on the button. */}
               <div class="v-lockup">
-                <span class="v-icon">{row.vIconSha && <img src={`/icon/${row.vIconSha}`} alt="" loading="lazy" />}<span class="icon-mask"></span></span>
+                <span class="v-icon">{row.vIconSha ? <><img src={`/icon/${row.vIconSha}`} alt="" loading="lazy" /><span class="icon-mask"></span></> : null}</span>
                 <div class="v-body">
                   <div class="v-title">
                     <strong>{row.versionLabel}</strong>

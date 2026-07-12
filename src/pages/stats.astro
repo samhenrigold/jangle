@@ -240,8 +240,7 @@ if (stats) {
               {group.entries.map((e) => (
                 <li>
                   <span class="record-icon">
-                    {e.icon && <img src={e.icon} alt="" width="29" height="29" loading="lazy" decoding="async" />}
-                    <span class="icon-mask"></span>
+                    {e.icon ? <><img src={e.icon} alt="" width="29" height="29" loading="lazy" decoding="async" /><span class="icon-mask"></span></> : null}
                   </span>
                   {e.href ? <a class="record-link" href={e.href}>{e.text}</a> : <span class="record-link">{e.text}</span>}
                   <span class="record-detail">{e.detail}</span>

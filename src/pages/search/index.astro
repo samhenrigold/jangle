@@ -20,10 +20,16 @@ const q = url.searchParams.get('q')?.trim() || '';
 // Power Search "Developer Name" field. search_vector holds no developer names,
 // so this is a separate lookup: match developers, then filter apps to them.
 const dev = (url.searchParams.get('dev')?.trim() || '').slice(0, 80);
-const genreId = url.searchParams.get('genre');
+// Escape LIKE wildcards so a literal % or _ in the developer name matches
+// itself rather than acting as a pattern. (The ilike value is parameterized by
+// supabase-js, so this is about matching semantics, not SQL injection.)
+const devLike = dev.replace(/[\\%_]/g, (m) => `\\${m}`);
+// genre must be a positive integer or it's ignored (no injection, no junk keys).
+const rawGenre = url.searchParams.get('genre');
+const genreId = rawGenre && /^\d{1,7}$/.test(rawGenre) ? rawGenre : null;
 // Coerce to a known sort so a junk ?sort= value can't mint a distinct cache key
 // (all falling through to the same list) or silently pick the wrong branch.
-const SORTS = ['versions', 'first_date', 'name'];
+const SORTS = ['versions', 'newest', 'first_date', 'name'];
 const sortParam = url.searchParams.get('sort') || 'versions';
 const sort = SORTS.indexOf(sortParam) >= 0 ? sortParam : 'versions';
 const page = clampPage(url.searchParams.get('page'));
@@ -40,6 +46,10 @@ const genresPromise = fetchGenresWithCounts(supabase);
 let searchResults: any[] = [];
 let total = 0;
 let totalPages = 1;
+// Developers matching the "Developer Name" field, shown as their own section
+// above the apps.
+let matchingDevs: any[] = [];
+let matchingDevTotal = 0;
 
 // Only fetch results if the Power Search has any term (keywords, developer,
 // or a category).
@@ -57,13 +67,17 @@ if (q || genreId || dev) {
     // them (bypasses the version-count RPCs, which don't take developer ids).
     const { data: devRows, error: devErr } = await supabase
       .from('developers')
-      .select('id')
-      .ilike('artist_name', `%${dev}%`)
+      .select('id, artist_name')
+      .ilike('artist_name', `%${devLike}%`)
+      .order('artist_name', { ascending: true })
       .limit(200);
     if (devErr) {
       console.error('developer lookup failed:', devErr.message);
       dbError = true;
     }
+    // The matching developers themselves are shown first (page 1 only).
+    if (page === 1) matchingDevs = (devRows || []).slice(0, 18);
+    matchingDevTotal = (devRows || []).length;
     const devIds = (devRows || []).map((d: any) => Number(d.id));
     if (!devIds.length) {
       total = 0;
@@ -88,6 +102,7 @@ if (q || genreId || dev) {
       );
       if (sort === 'name') listQ = listQ.order('display_name', { ascending: true });
       else if (sort === 'first_date') listQ = listQ.order('first_version_date', { ascending: true, nullsFirst: false });
+      else if (sort === 'newest') listQ = listQ.order('first_version_date', { ascending: false, nullsFirst: false });
       else listQ = listQ.order('version_count', { ascending: false });
       const { data, error: lErr } = await listQ.range(offset, offset + pageSize - 1);
       if (lErr) { console.error('dev list failed:', lErr.message); dbError = true; }
@@ -126,8 +141,12 @@ if (q || genreId || dev) {
         p_search_query: tsquery,
       };
       let listError: { message: string } | null = null;
-      if (sort === 'first_date') {
-        const { data, error } = await supabase.rpc('get_apps_sorted_by_first_version_date', rpcArgs);
+      if (sort === 'first_date' || sort === 'newest') {
+        // ascending = oldest first; descending = newest first.
+        const { data, error } = await supabase.rpc('get_apps_sorted_by_first_version_date', {
+          ...rpcArgs,
+          p_ascending: sort === 'first_date',
+        });
         listError = error;
         searchResults = data || [];
       } else if (sort === 'name') {
@@ -203,7 +222,7 @@ function pageHref(p: number) {
 }
 ---
 
-<Layout title={pageTitle} activeTab="search" searchQuery={q} description="Search Legacy Store — archived versions of classic iPhone and iPad apps, by name, developer, or category.">
+<Layout title={pageTitle} activeTab="search" searchQuery={q} bodyClass="search-page" description="Search Legacy Store — archived versions of classic iPhone and iPad apps, by name, developer, or category.">
   <div class="content">
     {dbError ? (
       <DbError message="The archive is having trouble searching right now. Please try again in a minute." />
@@ -211,23 +230,41 @@ function pageHref(p: number) {
       <>
         <SearchForm q={q} dev={dev} genreId={genreId} sort={sort} genres={sortedGenres} />
 
-        {!hasQuery ? (
-          <p class="ps-hint">Search by title or keyword, by developer, or browse a category. Matching starts at the beginning of each word, so &ldquo;ang&rdquo; finds Angry Birds.</p>
-        ) : searchResults.length > 0 ? (
+        {hasQuery && (
           <>
-            <SectionHeader
-              title={resultLabel}
-              level={1}
-              detail={Number(total) > 0 ? `${formatNumber(total)} found` : undefined}
-            />
-            <AppList list={searchResults} iconShas={iconShas} />
-            {totalPages > 1 && <Pagination page={page} totalPages={totalPages} hrefFor={pageHref} />}
+            {/* Developer-name search surfaces the matching developers first. */}
+            {matchingDevs.length > 0 && (
+              <>
+                <SectionHeader
+                  title={`Developers matching “${dev}”`}
+                  level={1}
+                  detail={matchingDevTotal > matchingDevs.length ? `${matchingDevs.length} of ${formatNumber(matchingDevTotal)}` : undefined}
+                />
+                <ul class="dev-matches">
+                  {matchingDevs.map((d: any) => (
+                    <li><a href={`/developer/${d.id}`}>{d.artist_name}</a></li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {searchResults.length > 0 ? (
+              <>
+                <SectionHeader
+                  title={dev ? `Apps${matchingDevs.length ? ' by these developers' : ` by ${dev}`}` : resultLabel}
+                  level={matchingDevs.length ? 2 : 1}
+                  detail={Number(total) > 0 ? `${formatNumber(total)} found` : undefined}
+                />
+                <AppList list={searchResults} iconShas={iconShas} />
+                {totalPages > 1 && <Pagination page={page} totalPages={totalPages} hrefFor={pageHref} />}
+              </>
+            ) : matchingDevs.length === 0 ? (
+              <div class="no-results">
+                <p>{dev ? `No developer matches “${dev}”.` : q ? `No apps matched “${q}”.` : 'No apps in this genre yet.'}</p>
+                {q && <p>Search matches the beginnings of words — try a shorter prefix, a different word, or check the spelling.</p>}
+              </div>
+            ) : null}
           </>
-        ) : (
-          <div class="no-results">
-            <p>{dev ? `No apps from a developer matching “${dev}”.` : q ? `No apps matched “${q}”.` : 'No apps in this genre yet.'}</p>
-            {q && <p>Search matches the beginnings of words — try a shorter prefix, a different word, or check the spelling.</p>}
-          </div>
         )}
       </>
     )}
@@ -236,17 +273,41 @@ function pageHref(p: number) {
   <style>
     /* Power Search panel styling lives in SearchForm.astro (Astro scopes
        styles to the component that owns the markup). */
-    .ps-hint {
-      margin: 8px 2px 0;
-      color: #898989;
-      font-size: 12px;
-      line-height: 17px;
+
+    /* Matching-developers section: a compact wrapping list of name links. */
+    .dev-matches {
+      list-style: none;
+      margin: 0 0 20px 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .dev-matches li {
+      float: left;
+      width: 33.333%;
+      padding: 5px 12px 5px 0;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
+    }
+
+    .dev-matches li a {
+      display: block;
+      font-size: 13px;
+      font-weight: bold;
+      color: #298cda;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .no-results {
       text-align: center;
       padding: 34px 20px;
       color: #767676;
+    }
+
+    @media screen and (max-width: 767px) {
+      .dev-matches li { width: 50%; }
     }
   </style>
 </Layout>

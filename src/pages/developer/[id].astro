@@ -95,7 +95,7 @@ const appNoun = appCount === 1 ? 'app' : 'apps';
               const vc = a.version_count == null ? null : Number(a.version_count);
               return (
                 <li>
-                  <a class="grid-icon" href={href}>{icon && <img src={icon} alt="" width="100" height="100" loading="lazy" decoding="async" />}<span class="grid-mask"></span></a>
+                  <a class="grid-icon" href={href}>{icon ? <><img src={icon} alt="" width="100" height="100" loading="lazy" decoding="async" /><span class="grid-mask"></span></> : null}</a>
                   <a class="grid-name" href={href}>{appTitleOf(a)}</a>
                   {vc != null && vc > 0 && <span class="grid-sub">{vc} {vc === 1 ? 'version' : 'versions'}</span>}
                 </li>

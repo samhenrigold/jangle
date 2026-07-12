@@ -12,8 +12,12 @@ const { page, totalPages, hrefFor, nextLabel = 'Next' } = Astro.props;
 
 {totalPages > 1 && (
   <div class="pagination">
-    {page > 1 && <a href={hrefFor(page - 1)}>&#9664; Previous</a>}
-    <span>Page {page} of {totalPages}</span>
-    {page < totalPages && <a href={hrefFor(page + 1)}>{nextLabel} &#9654;</a>}
+    {page > 1
+      ? <a href={hrefFor(page - 1)}>&#9664; Previous</a>
+      : <span class="page-disabled">&#9664; Previous</span>}
+    <span class="page-of">Page {page} of {totalPages}</span>
+    {page < totalPages
+      ? <a href={hrefFor(page + 1)}>{nextLabel} &#9654;</a>
+      : <span class="page-disabled">{nextLabel} &#9654;</span>}
   </div>
 )}

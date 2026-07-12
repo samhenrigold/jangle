@@ -54,7 +54,7 @@ if (dbError) setDegraded(Astro.response);
             <a href={`/categories/${genre.id}`} class="cat-link">
               <span class="chevron">&#8250;</span>
               <span class="cat-count">{formatNumber(genre.app_count)}</span>
-              <span class="cat-icon">{genreIcon.get(Number(genre.id)) && <img src={genreIcon.get(Number(genre.id))} alt="" width="40" height="40" loading="lazy" />}<span class="icon-mask"></span></span>
+              <span class="cat-icon">{genreIcon.get(Number(genre.id)) ? <><img src={genreIcon.get(Number(genre.id))} alt="" width="40" height="40" loading="lazy" /><span class="icon-mask"></span></> : null}</span>
               <span class="cat-name">{genre.genre_name}</span>
             </a>
           </li>

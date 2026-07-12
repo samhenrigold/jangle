@@ -161,7 +161,9 @@ em { font-style: italic; }
 /* ------------------------------------------------------- product lockup -- */
 /* Left-rail lockup on app pages: artwork, price, metadata list, rating. */
 
-#content #left-stack .lockup.product div.artwork { min-height: 180px; }
+/* Placeholder graphic behind the artwork — shows (already rounded) when an
+   app has no archived icon; a real icon+mask covers it. */
+#content #left-stack .lockup.product div.artwork { position: relative; width: 175px; min-height: 175px; background: transparent url('/icon-placeholder.png') 0 0 no-repeat; background-size: 175px 175px; }
 #main #content #left-stack div.lockup .list .price { color: #515151; font-weight: bold; display: block; margin-bottom: .3em; }
 #main #content #left-stack div.lockup ul.list li { line-height: 18px; }
 #main #content #left-stack div.lockup ul.list li .label { font-weight: bold; color: #6e6e6e; }
@@ -263,7 +265,7 @@ em { font-style: italic; }
 
 /* ------------------------------------------------------- #globalfooter --- */
 
-#globalfooter { width: 980px; color: #888; font-size: 10px; margin: 0 auto; padding-bottom: 36px; text-align: left !important; }
+#globalfooter { width: 980px; color: #888; font-size: 10px; margin: 28px auto 0; padding-bottom: 36px; text-align: left !important; }
 #globalfooter a { color: #08c; }
 #globalfooter p { margin-bottom: 1em; }
 #globalfooter p.gf-buy { float: left; width: 52%; margin: 18px 0 9px 3px; }
@@ -345,6 +347,8 @@ input, select, button { font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial
 .pagination { margin: 1em auto; text-align: center; color: #898989; zoom: 1; }
 .pagination a { display: inline-block; margin: 0 9px; color: #298cda; font-size: 1.2em; font-weight: bold; }
 .pagination span { margin: 0 9px; }
+/* Prev/Next stay in place at the ends, greyed out. */
+.pagination .page-disabled { display: inline-block; margin: 0 9px; color: #c3c3c7; font-size: 1.2em; font-weight: bold; cursor: default; }
 
 .total { margin-top: 10px; color: #898989; font-size: 11px; }
 
@@ -407,13 +411,17 @@ input, select, button { font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial
   #main #content #title p { float: none; }
 
   /* Product lockup on phones: 96px artwork with the list beside it */
-  #content #left-stack .lockup.product div.artwork { float: left; width: 96px; min-height: 0; margin-right: 14px; }
+  #content #left-stack .lockup.product div.artwork { float: left; width: 96px; min-height: 96px; margin-right: 14px; background-size: 96px 96px; }
   #main #content div.lockup.application div.artwork > img.artwork { width: 96px; height: 96px; }
   #main #content div.lockup.application div.artwork > span.mask { width: 98px; height: 99px; background-size: 98px 99px; }
   #main #content #left-stack div.lockup ul.list, #main #content #left-stack div.fat-binary-blurb { overflow: hidden; }
   #main #content #left-stack div.lockup > p { clear: both; padding-top: 8px; }
 
-  #globalfooter { margin: 0 8px; }
+  /* Search page: the Power Search panel's Title/Keywords field replaces the
+     top search strip on phones. */
+  body.search-page #phonesearch { display: none; }
+
+  #globalfooter { margin: 18px 8px 0; }
   #globalfooter p.gf-buy { float: none; width: auto; margin: 12px 3px 6px; }
   #globalfooter .gf-links { float: none; margin: 0 3px 9px; }
   #globalfooter .gf-links a { padding-left: 0; padding-right: 10px; margin-left: 0; border-left: 0; }
@@ -448,9 +456,10 @@ body.charts-landing .charts-intro { color: #808080; font-size: 18px; line-height
 /* Pill subnav — one dark bar, chart types on top, device pills on their own
    row below (separated by a hairline). */
 body.charts-landing .subnav { margin: 24px 0 8px -3px; padding: 8px 22px 4px; font-size: 11px; line-height: 1.4em; background-color: #3a393b; border-radius: 4px; -webkit-border-radius: 4px; -webkit-box-shadow: 0 2px 5px #1c1c1c; box-shadow: 0 2px 5px #1c1c1c; }
-body.charts-landing .subnav ul { margin: 0; padding: 0; zoom: 1; }
-body.charts-landing .subnav ul:after { content: '.'; display: block; clear: both; height: 0; visibility: hidden; }
-body.charts-landing .subnav-devices { margin-top: 4px; padding-top: 6px; border-top: 1px solid #302f31; }
+body.charts-landing .subnav-types { zoom: 1; }
+body.charts-landing .subnav-types:after, body.charts-landing .subnav-devices:after { content: '.'; display: block; clear: both; height: 0; visibility: hidden; }
+/* Device pills on their own row, just given breathing room — no divider line. */
+body.charts-landing .subnav-devices { margin-top: 8px; zoom: 1; }
 body.charts-landing .subnav li { width: auto; margin: 0 10px 4px 0; padding: 2px 16px; float: left; border: 1px solid #3a393b; border-radius: 10px; -webkit-border-radius: 10px; line-height: 1.3em; list-style: none; }
 body.charts-landing .subnav li a { color: #999; outline: none; }
 body.charts-landing .subnav li a:hover { color: #fff; text-decoration: none; }
@@ -480,12 +489,15 @@ body.charts-landing .chart-grid h3, body.charts-landing .chart-grid h4, body.cha
 body.charts-landing .chart-grid h3 a { color: #fff; }
 body.charts-landing .chart-grid a:hover { text-decoration: underline; color: #fff; }
 body.charts-landing .chart-grid a.more, body.charts-landing .chart-grid a.more:hover { display: inline-block; margin-top: 2px; color: #5cc3f6; padding-right: 10px; background: url(/wsf/charts/morearrow20090107.gif) no-repeat 100% 50%; }
-body.charts-landing .chart-grid .grid-art { display: block; position: relative; width: 100px; height: 100px; margin: 0 0 6px 0; background: #2a2a2a; }
+/* Empty tiles (apps not in the archive) are a clean dark rounded well — the
+   border-radius rounds them since there's no icon+mask on top. */
+body.charts-landing .chart-grid .grid-art { display: block; position: relative; width: 100px; height: 100px; margin: 0 0 6px 0; background: #2f2f31; border-radius: 18px; -webkit-border-radius: 18px; }
 body.charts-landing .chart-grid .grid-art img { display: block; width: 100px; height: 100px; }
 body.charts-landing .chart-grid .grid-art .grid-mask { position: absolute; top: 0; left: -1px; width: 102px; height: 103px; background: url(/wsf/images/mask100dark.png) no-repeat; }
 
 body.charts-landing .pagination { color: #808080; }
 body.charts-landing .pagination a { color: #5cc3f6; }
+body.charts-landing .pagination .page-disabled { color: #565658; }
 
 /* Teaser panel (the era's #related box) */
 body.charts-landing .tm-top25 { display: block; margin: 24px 0 0; padding: 16px 18px; background: #282828 url(/wsf/charts/rel_content_bg20090107.gif) repeat-x; border-radius: 6px; -webkit-border-radius: 6px; overflow: hidden; }

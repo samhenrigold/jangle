@@ -20,14 +20,18 @@ const { list = [], startRank, peakLines, iconShas } = Astro.props;
     <li class="app">
       <a class="app-link" href={`/app/${a.app_store_id ? a.app_store_id : a.id}`}>
         {typeof startRank === 'number' && <span class="rank">{startRank + i}</span>}
-        <span class="icon">{icon && <img src={icon} alt="" width="60" height="60" loading="lazy" decoding="async" />}<span class="icon-mask"></span></span>
+        {/* The corner mask only goes over a real square icon; a missing icon
+            shows the already-rounded placeholder, so no mask (its opaque
+            corners would mismatch the background). */}
+        <span class="icon">{icon ? <><img src={icon} alt="" width="60" height="60" loading="lazy" decoding="async" /><span class="icon-mask"></span></> : null}</span>
         <span class="chevron">&#8250;</span>
         {count != null && count > 0 && (
           <span class="count">{count}<span class="count-label">{count === 1 ? 'version' : 'versions'}</span></span>
         )}
         <span class="info">
           <span class="name">{appTitleOf(a)}</span>
-          <span class="meta">{[a.developer_artist_name, a.bundle_id].filter(Boolean).join(' · ')}</span>
+          {a.developer_artist_name && <span class="meta">{a.developer_artist_name}</span>}
+          {a.bundle_id && <span class="meta meta-bundle">{a.bundle_id}</span>}
           {peak && <span class="peak">{peak}</span>}
         </span>
       </a>
