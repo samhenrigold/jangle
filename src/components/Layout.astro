@@ -1,6 +1,5 @@
 ---
 import '../styles/global.css';
-import TopNavigation from './TopNavigation.astro';
 import { SITE_ORIGIN } from '../lib/http';
 
 const {
@@ -8,12 +7,30 @@ const {
   activeTab = 'featured',
   description = 'Legacy Store — install archived versions of classic iPhone and iPad apps directly on old iOS devices.',
   searchQuery = '',
-  mobileSearch = false,
+  // Breadcrumb label for the footer trail; defaults to the active nav item,
+  // else the page title's first segment.
+  crumb = '',
   // Set on pages reachable under several URLs (an app has app_store_id,
   // internal-id, and bundle-id aliases plus filter params) so search engines
   // consolidate them. Omit everywhere else.
   canonicalPath = '',
+  // Extra class on <body> for page-specific chrome (e.g. 'charts-landing').
+  bodyClass = '',
 } = Astro.props;
+
+// The productheader row carries the real site navigation — the slot the
+// original page used for its apple.com/itunes links.
+const NAV = [
+  { key: 'featured', label: 'Featured', href: '/' },
+  { key: 'charts', label: 'Charts', href: '/charts' },
+  { key: 'categories', label: 'Categories', href: '/categories' },
+  { key: 'most-archived', label: 'Most Archived', href: '/most-archived' },
+  { key: 'search', label: 'Search', href: '/search' },
+];
+const crumbLabel =
+  crumb ||
+  NAV.find((n) => n.key === activeTab)?.label ||
+  (title.split(' — ')[0] || 'Legacy Store');
 ---
 <!DOCTYPE html>
 <html lang="en">
@@ -44,57 +61,89 @@ const {
       })();
     </script>
   </head>
-  <body>
-    <TopNavigation activeTab={activeTab} searchQuery={searchQuery} mobileSearch={mobileSearch} />
+  <body class={bodyClass ? `software ${bodyClass}` : 'software'}>
+    <div id="productheader">
+      <h2><a class="wordmark" href="/"><img src="/wsf/images/legacystore.png" srcset="/wsf/images/legacystore@2x.png 2x" width="179" height="32" alt="Legacy Store" /></a></h2>
+      <form class="ph-search" action="/search" method="get">
+        <span class="search-wrapper">
+          <span class="left"></span>
+          <input type="search" name="q" value={searchQuery} placeholder="Search" aria-label="Search Legacy Store" />
+          <span class="right"></span>
+        </span>
+      </form>
+      <ul>
+        {NAV.map((n) => (
+          <li><a href={n.href} class={activeTab === n.key ? 'active' : undefined}>{n.label}</a></li>
+        ))}
+      </ul>
+    </div>
 
-    <main class="site-main">
-      <slot />
-    </main>
+    <!-- Phone-only search strip (the sprite nav above is hidden < 768px) -->
+    <form id="phonesearch" action="/search" method="get">
+      <span class="search-wrapper">
+        <span class="left"></span>
+        <input type="search" name="q" value={searchQuery} placeholder="Search" aria-label="Search Legacy Store" />
+        <span class="right"></span>
+      </span>
+    </form>
 
-    <footer class="site-footer">
-      <div class="site-footer-inner">
-        <a class="footer-brand" href="/">Legacy Store</a>
-        <span class="footer-sep">·</span>
-        <a href="/colophon">Colophon</a>
-        <span class="footer-sep">·</span>
-        <a href="/stats">Stats</a>
-        <span class="footer-sep">·</span>
-        <a href="https://github.com/samhenrigold/jangle" rel="noopener">Source</a>
+    <div id="main">
+      <div id="content">
+        <div class="cap top"></div>
+        <div class="padder">
+          <slot />
+        </div>
+        <div class="cap bottom"></div>
       </div>
-      <p class="footer-note">A metadata-only preservation archive. App binaries are hosted by the Internet Archive, not here.</p>
-    </footer>
+    </div>
 
-    <style>
-      .site-footer {
-        border-top: 1px solid #e1e1e1;
-        margin-top: 24px;
-        padding: 16px 8px 28px 8px;
-        text-align: center;
-        color: #8e8e93;
-        font-size: 12px;
-        line-height: 18px;
-      }
-
-      .site-footer-inner a {
-        color: #385487;
-        font-weight: bold;
-      }
-
-      .footer-brand {
-        font-weight: bold;
-        color: #666;
-      }
-
-      .footer-sep {
-        margin: 0 6px;
-        color: #c7c7cc;
-      }
-
-      .footer-note {
-        margin: 6px auto 0 auto;
-        max-width: 460px;
-        text-wrap: balance;
-      }
-    </style>
+    <div id="globalfooter">
+      <div id="breadory">
+        <ol id="breadcrumbs">
+          <li class="home"><a href="/">Home</a></li>
+          <li>{crumbLabel}</li>
+        </ol>
+        <div id="directorynav" class="itunes">
+          <div id="dn-cola" class="column first">
+            <h3>Browse</h3>
+            <ul>
+              <li><a href="/">Featured</a></li>
+              <li><a href="/charts">Charts</a></li>
+              <li><a href="/categories">Categories</a></li>
+              <li><a href="/most-archived">Most Archived</a></li>
+              <li><a href="/search">Search</a></li>
+            </ul>
+          </div>
+          <div id="dn-colb" class="column">
+            <h3>About</h3>
+            <ul>
+              <li><a href="/colophon">Colophon</a></li>
+              <li><a href="/stats">Archive Stats</a></li>
+            </ul>
+          </div>
+          <div id="dn-colc" class="column">
+            <h3>Elsewhere</h3>
+            <ul>
+              <li><a href="https://github.com/samhenrigold/jangle" rel="noopener">Source on GitHub</a></li>
+              <li><a href="https://archive.org/" rel="noopener">Internet Archive</a></li>
+            </ul>
+          </div>
+          <div class="capbottom"></div>
+        </div>
+      </div>
+      <p class="gf-buy">A metadata-only preservation archive. App binaries are hosted by the <a href="https://archive.org/" rel="noopener">Internet Archive</a>, not here.</p>
+      <ul class="gf-links piped">
+        <li><a href="/colophon" class="first">Colophon</a></li>
+        <li><a href="/stats">Stats</a></li>
+        <li><a href="https://github.com/samhenrigold/jangle" class="contact_us" rel="noopener">Source</a></li>
+        <li><a href="/" class="choose" title="United States"><img src="/wsf/nav/worldwide_us.png" alt="United States" width="22" height="22" /></a></li>
+      </ul>
+      <div class="gf-sosumi">
+        <p>Not affiliated with Apple Inc. Design recreated from the 2010 iTunes Preview website for preservation.</p>
+        <ul class="piped">
+          <li><a href="/colophon" class="first">About this design</a></li>
+        </ul>
+      </div>
+    </div>
   </body>
 </html>

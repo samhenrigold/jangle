@@ -79,7 +79,7 @@ if (!dbError && (topChartsApps || []).length) {
 if (dbError) setDegraded(Astro.response);
 ---
 
-<Layout title="Top 25 Most Archived — Legacy Store" activeTab="none" description="The most-archived apps on Legacy Store — classic iPhone and iPad apps ranked by how many versions the archive holds.">
+<Layout title="Top 25 Most Archived — Legacy Store" activeTab="most-archived" description="The most-archived apps on Legacy Store — classic iPhone and iPad apps ranked by how many versions the archive holds.">
   <div class="content">
     {dbError ? (
       <DbError />

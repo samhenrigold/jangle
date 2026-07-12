@@ -1,62 +1,481 @@
-body { font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif; margin: 0; background: #fff; color: #000; -webkit-text-size-adjust: 100%; }
-a { color: inherit; text-decoration: none; }
+/*
+ * iTunes Preview (November 2010) theme.
+ *
+ * Ported from Apple's web-storefront-base.cssz / web-storefront-preview.cssz,
+ * htmlResources revision 5B73 — the exact stylesheets behind
+ * itunes.apple.com/us/app/... as captured by the Wayback Machine on
+ * 2010-11-04 (the same day as the reference snapshot). Selectors and metrics
+ * are kept as close to the originals as possible so the markup in
+ * Layout.astro can mirror the original page structure (#globalheader,
+ * #productheader, #main > #content > .padder, #globalfooter).
+ *
+ * The original site was a fixed 980px desktop layout; the responsive layer
+ * at the bottom of this file is ours, not Apple's.
+ *
+ * Era image assets live in /public/wsf/ (fetched raw from the same archive
+ * revision — see the colophon).
+ */
 
-.site-main { padding: 12px 8px 24px 8px; }
-.content { max-width: 900px; margin: 0 auto; padding: 0 8px; }
+/* ---------------------------------------------------------------- reset -- */
 
-/* Section headers (iOS grouped-table style) — subtitle stacks under the title */
-.section-header { margin: 12px 4px 6px 4px; }
-.section-title { display: block; margin: 0; font-size: 18px; line-height: 22px; font-weight: bold; color: #4c566c; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8); }
-.section-detail { display: block; color: #8e8e93; font-size: 13px; line-height: 17px; }
+html, body, div, ul, ol, li, dl, dt, dd, h1, h2, h3, h4, h5, h6, pre, form, p,
+blockquote, fieldset, input { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+fieldset, img { border: none; }
+table { border-collapse: collapse; border-spacing: 0; }
+.clear { clear: both; }
+
+/* ----------------------------------------------------- base typography -- */
+
+html { background-color: #f5f6f7; }
+body {
+  font: 12px/18px "Lucida Grande", "Lucida Sans Unicode", Arial, Verdana, sans-serif;
+  background-color: #f7f8f9;
+  color: #000;
+  text-align: center; /* era-style centering; #main resets to left */
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+a { color: #298cda; outline: none; }
+a:link, a:visited, a:active { text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+p { margin-bottom: 18px; }
+h1 { font-weight: bold; font-size: 22px; line-height: 22px; margin-bottom: 18px; color: #000; }
+h2 { font-weight: bold; font-size: 1.5em; line-height: 18px; margin-bottom: 18px; color: #000; }
+h3 { font-weight: bold; font-size: 1.4em; line-height: 18px; color: #000; }
+h4 { font-weight: bold; font-size: 1.4em; line-height: 18px; color: #000; }
+h5 { font-weight: bold; font-size: 1em; line-height: 12px; }
+strong, b { font-weight: bold; }
+em { font-style: italic; }
+
+.piped { display: block; zoom: 1; }
+.piped:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+.piped li { float: left; display: inline; }
+
+/* ------------------------------------------------- era search fields ---- */
+/* The 2010 apple.com search capsule (searchfield_*.png caps), used in the
+   product header and in the phone-only strip. */
+
+.ph-search { float: right; margin: 1.2em 0 0 30px; }
+.ph-search .search-wrapper { position: relative; display: block; width: 140px; height: 19px; }
+.ph-search .search-wrapper input {
+  position: absolute; top: 0; right: 10px; margin: 0; width: 110px; border: 0;
+  padding: 3px 0 0 0; height: 16px;
+  background: url(/wsf/nav/searchfield_repeat.png) center top repeat-x;
+  font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial, Verdana, sans-serif;
+  outline: none;
+  -webkit-appearance: none;
+  border-radius: 0;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+}
+.ph-search .search-wrapper .left { display: block; position: absolute; left: 0; top: 0; width: 20px; height: 19px; background: url(/wsf/nav/searchfield_leftcap.png) left top no-repeat; }
+.ph-search .search-wrapper .right { display: block; position: absolute; right: 0; top: 0; width: 10px; height: 19px; background: url(/wsf/nav/searchfield_rightcap.png) right top no-repeat; }
+
+/* Phone-only search strip (our responsive addition; hidden on desktop) */
+#phonesearch { display: none; }
+
+/* ----------------------------------------------------- #productheader ---- */
+/* Wordmark row: on the original this held the "iTunes Preview" logo and
+   links out to apple.com/itunes. Here it carries the site wordmark and the
+   real site navigation, styled identically. */
+
+#productheader { padding: 1em 0 .2em; overflow: hidden; width: 980px; margin: 10px auto 0; border: 0; text-align: left; }
+#productheader h2 { height: 32px; line-height: 32px; display: inline; float: left; margin: 1px 0 6px 8px !important; padding: 0; }
+#productheader h2 a { display: inline; line-height: 32px; height: 32px; color: #888; font-weight: normal; text-decoration: none; outline: none; }
+#productheader h2 a:hover { text-decoration: none; }
+/* Wordmark set in type (the original was itunespreview_en.png, 263×32) */
+.wordmark { font-family: "Myriad Set Pro", "Myriad Pro", "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 28px; letter-spacing: -0.5px; }
+.wordmark .wm-strong { color: #6e6e6e; }
+.wordmark .wm-light { color: #a9a9a9; }
+#productheader ul { display: inline; float: right; margin: 0; }
+#productheader ul li { display: inline; }
+#productheader ul li a { color: #333; float: left !important; margin-top: 1em; margin-left: 30px; margin-right: 8px; padding: 0; text-decoration: none; text-shadow: #fff 0 1px 0; }
+#productheader ul li a:hover { color: #08c !important; }
+#productheader ul li a.active { color: #888; cursor: default; }
+
+/* ------------------------------------------------ #main / #content slab -- */
+
+#main { position: relative; width: 986px; height: auto; margin: 0 auto; text-align: left; }
+#main:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+
+#main #content { position: relative; width: 980px; margin-top: 0; padding: 0 3px; color: #333; background: url(/wsf/images/contentbg.png) 0 0 repeat-y; zoom: 1; }
+#main #content:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+#main #content .cap { position: absolute; left: 0; width: 986px; font-size: 1px; }
+#main #content .cap.top { top: 0; height: 8px; background: url(/wsf/images/captop.png) 0 0 no-repeat; }
+#main #content .cap.bottom { bottom: 0; height: 9px; background: url(/wsf/images/capbottom.png) 0 0 no-repeat; }
+#main #content .padder { margin: 0; padding: 2em 40px 4em; background: #fff url(/wsf/images/contentbg2.png) 0 0 repeat-x; zoom: 1; }
+#main #content .padder:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+
+#main #content h1 { font-size: 22px; line-height: 36px; margin-bottom: 6px; color: #474747; }
+
+/* Intro block (page title + byline), as on genre/preview pages */
+#main #content .padder .intro { clear: both; margin-bottom: 2.5em; }
+#main #content .padder .intro h2 { font-size: 1.5em; margin-bottom: .5em; color: #474747; }
+#main #content .padder .intro p { margin-bottom: 0; font-size: 1.2em; color: #767676; }
+
+/* Title lockup (app pages): h1 + "By developer" + view-more on the right */
+#content #title { position: relative; margin-bottom: 18px; zoom: 1; }
+#content #title:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+#main #content #title h1 { display: inline-block; float: left; color: #474747; line-height: 36px; margin-right: 25px; }
+#main #content #title h2 { display: inline; float: left; margin-bottom: 6px; font-size: 17px; line-height: 36px; font-weight: bold; color: #595959; }
+#content #title h2 a { font-weight: bold; color: #595959; }
+#content #title .view-more { position: relative; float: right; min-width: 90px; max-width: 210px; font-weight: bold; margin: 10px 0 0 0; z-index: 1; }
+#main #content #title p { clear: both; float: left; }
+
+/* ----------------------------------------------------- content columns -- */
+/* Original: .center-stack floated right at 683px beside a 190px #left-stack.
+   Ours keeps the 190px rail but lets the center column flow fluidly
+   (margin-left instead of a fixed float) so the responsive layer can
+   collapse it. At 980px the result is pixel-equivalent. */
+
+#content #left-stack { float: left; width: 190px; margin-right: 24px; color: #858989; }
+#content #left-stack h4 { color: #474747; font-size: 1.3em; font-weight: bold; margin-bottom: 5px; }
+#main #content #left-stack > div { margin-top: 2em; }
+#main #content #left-stack div.lockup, #main #content #left-stack div.artwork { margin-top: 0; }
+
+#main #content .center-stack { overflow: hidden; zoom: 1; }
+#main #content .center-stack h3, #main #content .center-stack h4 { color: #474747; }
+#main #content .center-stack span, #main #content .center-stack p { color: #898989; }
+#main #content .center-stack a, #main #content .center-stack a span { color: #298cda; }
+#main #content div.center-stack > div { zoom: 1; }
+#main #content div.center-stack > div:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+
+/* ------------------------------------------------------------ artwork --- */
+
+#content div.artwork { position: relative; zoom: 1; }
+#content div.artwork img.artwork { border: 1px solid #fff; -webkit-box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3); box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3); }
+/* App icons: no CSS shadow — the gloss/rounding comes from Apple's mask PNGs */
+#main #content div.lockup.application div.artwork > img.artwork { position: relative; z-index: 0; -webkit-box-shadow: none; box-shadow: none; border: none; display: block; }
+#main #content div.lockup.application div.artwork > span.mask { display: block; position: absolute; top: 0; left: -1px; z-index: 1; width: 177px; height: 179px; background: url(/wsf/images/mask175.png) 0 0 no-repeat; }
+
+/* ------------------------------------------------------- product lockup -- */
+/* Left-rail lockup on app pages: artwork, price, metadata list, rating. */
+
+#content #left-stack .lockup.product div.artwork { min-height: 180px; }
+#main #content #left-stack div.lockup .list .price { color: #515151; font-weight: bold; display: block; margin-bottom: .3em; }
+#main #content #left-stack div.lockup ul.list li { line-height: 18px; }
+#main #content #left-stack div.lockup ul.list li .label { font-weight: bold; color: #6e6e6e; }
+#main #content #left-stack div.lockup ul.list li.copyright { width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#main #content #left-stack div.app-rating { margin-bottom: 2em; }
+#main #content #left-stack span.app-requirements { font-weight: bold; }
+#main #content #left-stack div.fat-binary-blurb { margin-bottom: 12px; zoom: 1; }
+#main #content #left-stack div.fat-binary-blurb:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+#main #content #left-stack div.fat-binary-blurb span.fat-binary-badge { display: block; float: left; width: 14px; height: 14px; margin-right: 5px; margin-top: 2px; background: url(/wsf/images/fat-binary-badge.png) 0 0 no-repeat; text-indent: -9999px; overflow: hidden; }
+
+/* --------------------------------------------------------- star ratings -- */
+
+#main #content div.rating { margin: 0; }
+#main #content div.rating div { float: left; margin: 2px 5px 0 0; }
+#main #content div.rating div span.rating-star { display: block; float: left; width: 11px; height: 11px; margin-right: 2px; background: url(/wsf/images/rating_star.png) 0 0 no-repeat; overflow: hidden; }
+#main #content div.rating div span.rating-star.half { width: 6px; background: url(/wsf/images/rating_star_half.png) 0 0 no-repeat; }
+#main #content div.rating div span.rating-star.ghost { position: absolute; width: 0; margin: 0; background: none; }
+#main #content div.rating .rating-count { color: #898989; }
+#main #content #left-stack div.customer-ratings > div { margin-top: 5px; }
+#main #content #left-stack div.customer-ratings > div.rating { margin-top: 0; zoom: 1; }
+#main #content #left-stack div.customer-ratings > div.rating:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+
+/* ------------------------------------------------------ customer review -- */
+
+#main #content div.customer-review h5 { color: #898989; }
+#main #content div.customer-review h5 .customerReviewTitle { font-weight: bold; }
+#main #content div.customer-review div.rating { display: inline-block; margin: 2px 5px 0 0; zoom: 1; }
+#main #content div.customer-review span.user-info { display: block; margin: 2px 0 10px; }
+#main #content div.customer-review { margin-bottom: 1em; zoom: 1; }
+#main #content div.customer-review:after { content: " "; display: block; clear: both; height: 0; visibility: hidden; }
+
+/* ------------------------------------------------- swoosh / blue panels -- */
+/* The light-blue rounded container ("Customers Also Bought", track lists). */
+
+#main #content .center-stack div.swoosh { padding-bottom: 16px; zoom: 1; }
+#main #content div.swoosh.application, #main #content .track-list, .blue-panel {
+  background-color: #F3F9FD;
+  border-radius: 4px;
+  -webkit-border-radius: 4px;
+  zoom: 1;
+}
+#main #content .center-stack div.lockup-container.application { clear: both; margin-bottom: 2em; }
+#main #content .center-stack div > div.title { display: block; padding: 14px 0 0 16px; }
+#main #content .center-stack div > div.title h2 { color: #474747; text-align: left; }
+
+/* Small app lockups inside a swoosh (icon + name + genre) */
+#main #content .center-stack .lockup { position: relative; display: block; float: left; margin-bottom: 0 !important; width: 112px; padding-left: 18px; text-align: left; }
+#main #content .center-stack div.lockup.application.small { padding-left: 24px; padding-bottom: 16px; }
+#main #content .center-stack .lockup div.artwork { height: 100px; }
+#main #content div.center-stack div.lockup.application.small div.artwork > span.mask { width: 102px; height: 103px; background: url(/wsf/images/mask100blue.png) 0 0 no-repeat; }
+#main #content .center-stack div.content div.lockup div.lockup-info { margin-top: 8px; }
+#main #content .center-stack div.lockup-info ul li { display: block; overflow: hidden; text-overflow: ellipsis; max-width: 130px; white-space: nowrap; }
+
+/* "more" arrow links */
+#content a.more, #content a.see-all, #content a.view-in-itunes { display: inline-block; padding-right: 8px; background: url(/wsf/images/more.gif) 100% 50% no-repeat; }
+
+/* -------------------------------------------------------- track list ----- */
+/* The blue listing panel with hover-highlight rows (album track list). Used
+   here for version lists and app rows. */
+
+#main #content .track-list { padding: 16px; }
+#main #content .track-list table { position: relative; width: 100%; margin: 0; border-collapse: collapse; }
+#main #content .track-list table thead tr th { padding-left: 12px; color: #898989; border: 0; font-weight: bold; overflow: hidden; white-space: nowrap; text-align: left; }
+#main #content .track-list table tr td { padding-left: 12px; height: 25px; border: 1px solid transparent; border-bottom-color: #edf0f2; border-width: 1px 0; color: #898989; border-collapse: separate; }
+#main #content .track-list table tbody tr:hover td, #main #content .track-list table tbody tr.selected td { border-color: transparent; background: url(/wsf/images/selectedtrack_bg.png) repeat-x; }
+#main #content .track-list table tr td a.title { color: #898989; font-weight: bold; }
+#main #content .track-list table tr th.index, #main #content .track-list table tr td.index { text-align: right; width: 23px; min-width: 23px; }
+
+/* ------------------------------------------------------------ buttons ---- */
+/* Era-style glossy capsule buttons (the original used image buttons like
+   viewinitunes_en.png at 23px; these are CSS equivalents so the labels can
+   say Install / Download). Autoprefixer emits old-gradient syntax for
+   iOS 4-6. */
+
+.wsfbtn {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  height: 22px;
+  line-height: 22px;
+  padding: 0 14px;
+  vertical-align: middle;
+  border: 0;
+  border-radius: 12px;
+  background: #298cda;
+  background: linear-gradient(#acdcf7, #57b8ee 8%, #339be2 55%, #298cda 88%, #2681c8);
+  color: #fff !important;
+  font-size: 11px;
+  font-weight: bold;
+  text-shadow: 0 -1px 1px rgba(0, 30, 60, 0.3);
+  -webkit-box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+.wsfbtn:hover { text-decoration: none; }
+.wsfbtn:active { background: linear-gradient(#2681c8, #298cda 12%, #57b8ee 92%, #acdcf7); }
+.wsfbtn-primary { } /* alias kept for markup symmetry; one capsule style fits all */
+.wsfbtn-disabled { opacity: 0.45; pointer-events: none; }
+
+/* ------------------------------------------------------- #globalfooter --- */
+
+#globalfooter { width: 980px; color: #888; font-size: 10px; margin: 0 auto; padding-bottom: 36px; text-align: left !important; }
+#globalfooter a { color: #08c; }
+#globalfooter p { margin-bottom: 1em; }
+#globalfooter p.gf-buy { float: left; width: 52%; margin: 18px 0 9px 3px; }
+#globalfooter .gf-links { float: right; margin: 18px 3px 9px 0; }
+#globalfooter .gf-links a { padding: 0 10px; white-space: nowrap; }
+#globalfooter ul.piped a { padding: 0 0 0 1.5em; margin-left: 1.5em; border-left: 1px solid #d0d0d0; }
+#globalfooter ul.piped a.first { border-left: 0 !important; padding-left: 0; margin-left: 0 !important; }
+#globalfooter ul.piped a.contact_us { padding-right: 1.5em; border-right: 1px solid #d0d0d0; }
+#globalfooter ul.piped a.choose { margin-left: 0; border: 0; }
+#globalfooter ul.piped a.choose img { vertical-align: middle; margin-top: -5px; }
+#globalfooter .gf-sosumi { clear: both; width: 100%; border-top: 1px solid #ddd; padding-top: 9px; }
+#globalfooter .gf-sosumi a { padding: 0 10px; }
+#globalfooter .gf-sosumi p { float: left; margin-left: 3px; margin-right: 1.5em; }
+
+#breadory { border: 1px solid #ddd; width: 978px; margin: 0 auto; border-radius: 4px; -webkit-border-radius: 4px; }
+#globalfooter #breadory ol#breadcrumbs { background: none; clear: both; float: none; height: 3em; line-height: 3em; font-size: 11px; color: #666; margin: 0; list-style: none; font-weight: bold; text-shadow: 0 1px 0 #fff; zoom: 1; }
+#globalfooter #breadory ol#breadcrumbs:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+#breadory ol#breadcrumbs li { background: none; float: left; margin: 0; padding: 0 0 0 1em; }
+#breadory ol#breadcrumbs li a { float: left; color: #666; text-decoration: none; padding: 0 1.75em 0 0; margin-left: 0; background: url(/wsf/nav/breadcrumb_separator.png) no-repeat 100% 50%; }
+#breadory ol#breadcrumbs li a:hover { color: #333; text-decoration: none; }
+#breadory ol#breadcrumbs li.home { background: none; margin: 0; padding: 0; }
+#breadory ol#breadcrumbs li.home a { background: url(/wsf/nav/breadcrumb_home.png) no-repeat 1.25em 50%; margin: 0; padding: 0 0 0 1.25em; width: 30px; text-indent: -9999px; overflow: hidden; }
+#breadory ol#breadcrumbs li.home a:hover { background-image: url(/wsf/nav/breadcrumb_home_over.png); }
+
+#directorynav { font-size: 11px; line-height: 18px; border-top: 1px solid #e5e5e5; float: left; width: 100%; zoom: 1; }
+#breadory #directorynav { background: none; clear: both; float: none; margin-top: 0; overflow: hidden; }
+#directorynav .column { float: left; }
+#directorynav.itunes .column { width: 190px; padding: 9px 0 0 54px; }
+#directorynav h3 { color: #666; font-weight: bold; margin: 0; font-size: 1em; line-height: 18px; }
+#directorynav a { color: #888; text-decoration: none; display: block; zoom: 1; }
+#directorynav a:hover { color: #333 !important; text-decoration: none !important; }
+#directorynav ul { margin-bottom: 0; padding-bottom: 9px; }
+#breadory #directorynav .capbottom { height: 0; font-size: 1px; }
+
+/* =========================================================================
+   Shared site components, reskinned to the era
+   ========================================================================= */
+
+/* Section headers — the swoosh-title look, standalone */
+.section-header { margin: 24px 0 10px 0; }
+.section-title { display: inline; margin: 0; font-size: 1.5em; line-height: 18px; font-weight: bold; color: #474747; }
+.section-detail { display: inline; margin-left: 10px; color: #898989; font-size: 11px; line-height: 18px; }
 
 /* Degraded (DB error) notice */
-.db-error { margin: 30px auto; padding: 20px; max-width: 420px; text-align: center; color: #666; background: #f7f7f8; border: 1px solid #e1e1e1; border-radius: 8px; }
+.db-error { margin: 30px auto; padding: 20px; max-width: 420px; text-align: center; color: #767676; background: #F3F9FD; border-radius: 4px; }
 
-/* App list (iOS table style) */
-.applist { list-style: none; padding: 0; margin: 10px 0; border: 1px solid #e1e1e1; border-radius: 8px; background: #fff; overflow: hidden; }
-.app { border-bottom: 1px solid #e1e1e1; }
+/* App list — rows in the blue listing panel */
+.applist { list-style: none; padding: 8px 16px; margin: 0 0 18px 0; background: #F3F9FD; border-radius: 4px; -webkit-border-radius: 4px; overflow: hidden; }
+.app { border-bottom: 1px solid #e3edf5; zoom: 1; }
 .app:last-child { border-bottom: none; }
-/* overflow:hidden contains the floated icon/rank so rows never collapse
-   shorter than the 57px icon */
-.app-link { display: block; padding: 8px 10px; overflow: hidden; }
-.app-link:active { background-color: #e8ebef; }
-.rank { float: left; width: 30px; margin: 0 6px 0 -4px; line-height: 57px; text-align: center; font-size: 19px; font-weight: bold; color: #8e8e93; }
-/* Icon slots show the App Store's own grey placeholder artwork (iOS 6
-   AppStore_PlaceholderApp) while an icon loads — and, because the /icon and
-   /img miss responses are transparent GIFs, whenever artwork is missing. */
-.icon { position: relative; float: left; width: 57px; height: 57px; margin-right: 10px; background: #f3f3f3 url('/icon-placeholder.png') no-repeat; background-size: 100% 100%; border-radius: 11px; overflow: hidden; }
-.icon img { display: block; width: 57px; height: 57px; }
-/* App Store icon mask overlay — the period-authentic rounded-rect frame, shared by
-   every icon surface. Parent must be position:relative; the mask sits over the img. */
-.icon-mask { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: url('/icon-mask.png') no-repeat; background-size: 100% 100%; }
-.chevron { float: right; margin: 15px 0 0 2px; color: #c7c7cc; font-size: 24px; line-height: 26px; font-weight: bold; font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif; }
-.count { float: right; margin: 11px 6px 0 10px; text-align: right; color: #385487; font-size: 16px; font-weight: bold; line-height: 18px; }
-.count-label { display: block; color: #8e8e93; font-size: 11px; font-weight: normal; }
+.app-link { display: block; padding: 8px 4px; overflow: hidden; color: #898989; }
+a.app-link:hover { text-decoration: none; background-color: #eaf3f8; }
+.rank { float: left; width: 26px; margin: 0 8px 0 -4px; line-height: 60px; text-align: right; font-size: 12px; font-weight: bold; color: #898989; }
+/* Icon slot: grey placeholder under the artwork; Apple's 60px gloss mask on top */
+.icon { position: relative; float: left; width: 60px; height: 60px; margin-right: 12px; background: #f3f3f3 url('/icon-placeholder.png') no-repeat; background-size: 100% 100%; }
+.icon img { display: block; width: 60px; height: 60px; }
+.icon-mask { position: absolute; top: 0; left: -1px; width: 62px; height: 63px; background: url('/wsf/images/mask60.png') no-repeat; }
+.chevron { display: none; }
+.count { float: right; margin: 12px 6px 0 10px; text-align: right; color: #898989; font-size: 12px; font-weight: bold; line-height: 16px; }
+.count-label { display: block; color: #a9b4bc; font-size: 10px; font-weight: normal; }
 .info { display: block; overflow: hidden; padding-top: 10px; }
-.name { display: block; font-size: 16px; font-weight: bold; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meta { color: #666; font-size: 13px; }
-.info .meta { display: block; line-height: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Archived-chart peak badge line (AppList peakLines prop) */
-.info .peak { display: block; color: #385487; font-size: 11px; line-height: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.applist-empty { padding: 24px 10px; text-align: center; color: #8e8e93; }
+.name { display: block; font-size: 13px; font-weight: bold; line-height: 18px; color: #298cda; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { color: #898989; font-size: 11px; }
+.info .meta { display: block; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info .peak { display: block; color: #898989; font-size: 10px; line-height: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.applist-empty { padding: 24px 10px; text-align: center; color: #898989; }
 
-/* Install-status chip — only exceptions get badged (encrypted; installable is
-   the default and unbadged) */
-.chip { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 11px; line-height: 15px; font-weight: bold; vertical-align: 1px; }
-.chip-warn { background: #fdf0d5; color: #91600e; border: 1px solid #ecd39c; }
+/* Install-status chip */
+.chip { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; line-height: 15px; font-weight: bold; vertical-align: 1px; }
+.chip-warn { background: #fbf3dc; color: #977c28; border: 1px solid #e6d5a5; }
 
-input, select, button { font: inherit; padding: 6px; }
+input, select, button { font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial, Verdana, sans-serif; padding: 3px; }
 
 /* Filter bar (search page) */
 .filters { display: block; margin: 0; }
 .filters > * { display: inline-block; vertical-align: middle; margin: 0 8px 0 0; }
-@media screen and (max-width: 480px) {
-  .filters > * { display: block; margin: 6px 0; width: 100%; -webkit-box-sizing: border-box; box-sizing: border-box; }
+
+/* Pagination — the era's plain blue paginate links */
+.pagination { margin: 1em auto; text-align: center; color: #898989; zoom: 1; }
+.pagination a { display: inline-block; margin: 0 9px; color: #298cda; font-size: 1.2em; font-weight: bold; }
+.pagination span { margin: 0 9px; }
+
+.total { margin-top: 10px; color: #898989; font-size: 11px; }
+
+/* =========================================================================
+   Responsive layer — OURS, not Apple's. The original was fixed 980px; these
+   overrides let the same chrome collapse for iPad (768–999) and iPhone
+   (<768) while desktop stays pixel-authentic.
+   ========================================================================= */
+
+@media screen and (max-width: 999px) {
+  #productheader { width: auto; padding-left: 8px; padding-right: 8px; }
+  #productheader ul li a { margin-left: 18px; }
+
+  #main { width: auto; }
+  /* Drop the fixed-width slab images; corner + shadow drawn in CSS instead */
+  #main #content { width: auto; margin: 0 12px; padding: 0; background: none; border-radius: 5px; -webkit-border-radius: 5px; -webkit-box-shadow: 0 0 4px rgba(0, 0, 0, 0.25); box-shadow: 0 0 4px rgba(0, 0, 0, 0.25); }
+  #main #content .cap { display: none; }
+  #main #content .padder { padding: 1.5em 24px 3em; border-radius: 5px; -webkit-border-radius: 5px; background-size: 100% 207px; }
+
+  #globalfooter { width: auto; margin: 0 12px; }
+  #breadory { width: auto; }
+  #directorynav.itunes .column { width: 30%; padding: 9px 0 0 3%; }
 }
 
-.pagination { margin: 16px 0; text-align: center; color: #666; font-size: 14px; }
-.pagination a { display: inline-block; margin: 0 6px; padding: 10px 14px; color: #385487; font-weight: bold; border: 1px solid #b5b5b5; border-radius: 8px; background-color: #f7f7f8; }
-.pagination a:active { background-color: #e8ebef; }
-.pagination span { margin: 0 6px; }
+@media screen and (max-width: 767px) {
+  /* Phones: the header search collapses into a standalone strip */
+  .ph-search { display: none; }
+  #phonesearch { display: block; margin: 10px 12px 0; text-align: left; }
+  #phonesearch .search-wrapper { position: relative; display: block; height: 19px; }
+  #phonesearch .search-wrapper input {
+    position: absolute; top: 0; left: 14px; right: 8px; margin: 0; border: 0;
+    padding: 3px 0 0 0; height: 16px; width: 90%; width: -webkit-calc(100% - 22px); width: calc(100% - 22px);
+    background: url(/wsf/nav/searchfield_repeat.png) center top repeat-x;
+    font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial, Verdana, sans-serif;
+    outline: none; -webkit-appearance: none; border-radius: 0;
+  }
+  #phonesearch .search-wrapper .left { display: block; position: absolute; left: 0; top: 0; width: 20px; height: 19px; background: url(/wsf/nav/searchfield_leftcap.png) left top no-repeat; }
+  #phonesearch .search-wrapper .right { display: block; position: absolute; right: 0; top: 0; width: 10px; height: 19px; background: url(/wsf/nav/searchfield_rightcap.png) right top no-repeat; }
 
-.total { margin-top: 10px; color: #666; font-size: 13px; }
+  #productheader { padding-top: .6em; }
+  #productheader h2 { float: none; display: block; text-align: center; margin: 0 !important; }
+  #productheader ul { display: block; float: none; text-align: center; margin: 2px 0 4px; }
+  #productheader ul li a { float: none !important; display: inline-block; margin: 4px 8px 0; }
+
+  #main #content { margin: 0 8px; }
+  #main #content .padder { padding: 1.2em 12px 2em; }
+
+  /* Single column: the left rail stacks above the center column */
+  #content #left-stack { float: none; width: auto; margin-bottom: 1.5em; zoom: 1; }
+  #content #left-stack:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
+
+  #main #content #title h1 { line-height: 26px; margin-right: 12px; }
+  #main #content #title h2 { line-height: 20px; }
+  #content #title .view-more { float: none; clear: both; display: block; margin: 6px 0 0; }
+
+  #globalfooter { margin: 0 8px; }
+  #globalfooter p.gf-buy { float: none; width: auto; margin: 12px 3px 6px; }
+  #globalfooter .gf-links { float: none; margin: 0 3px 9px; }
+  #globalfooter .gf-links a { padding-left: 0; padding-right: 10px; margin-left: 0; border-left: 0; }
+  #directorynav.itunes .column { float: none; width: auto; padding: 9px 12px 0; }
+  #breadory ol#breadcrumbs { padding-left: 8px; }
+}
+
+/* =========================================================================
+   Charts landing — the dark room. Ported from Apple's charts.css
+   (images.apple.com/itunes/charts/styles/charts.css, Nov 2010): dark rounded
+   slab, pill subnav, grid of ranked artwork. Activated by bodyClass
+   "charts-landing" on /charts.
+   ========================================================================= */
+
+body.charts-landing #main #content { background: none; -webkit-box-shadow: none; box-shadow: none; }
+body.charts-landing #main #content .cap { display: none; }
+body.charts-landing #main #content .padder {
+  padding: 40px 41px 40px;
+  overflow: hidden;
+  color: #b1b3b6;
+  background: #414042 url(/wsf/charts/content_bg_landing20090107.gif) repeat-x;
+  border-radius: 6px;
+  -webkit-border-radius: 6px;
+}
+body.charts-landing #main #content a { color: #b2b2b2; }
+body.charts-landing #main #content a:hover { color: #fff; }
+
+body.charts-landing .charts-title { margin: 0 0 6px 0; }
+body.charts-landing .charts-title img { display: block; }
+body.charts-landing .charts-intro { color: #808080; font-size: 18px; line-height: 24px; font-weight: normal; margin-bottom: 0; }
+
+/* Pill subnav (chart types) */
+body.charts-landing .subnav { min-height: 2.1em; margin: 30px 0 8px -3px; padding: 6px 0 2px 22px; font-size: 11px; line-height: 1.4em; background-color: #3a393b; border-radius: 4px; -webkit-border-radius: 4px; -webkit-box-shadow: 0 2px 5px #1c1c1c; box-shadow: 0 2px 5px #1c1c1c; zoom: 1; }
+body.charts-landing .subnav:after { content: '.'; display: block; clear: both; height: 0; visibility: hidden; }
+body.charts-landing .subnav li { width: auto; margin: 0 12px 4px 0; padding: 2px 18px; float: left; border: 1px solid #3a393b; border-radius: 10px; -webkit-border-radius: 10px; line-height: 1.3em; list-style: none; }
+body.charts-landing .subnav li a { color: #999; outline: none; }
+body.charts-landing .subnav li a:hover { color: #fff; text-decoration: none; }
+body.charts-landing .subnav li.selected { color: #fff; border: 1px solid #1d1d1d; background: #252425; background: linear-gradient(#151515, #232323 20%, #232323); }
+body.charts-landing .subnav li.selected a { color: #fff; cursor: default; }
+
+/* Date picker row + year strip, dark */
+body.charts-landing .tm-dark-controls { margin: 0 0 4px -3px; color: #808080; }
+body.charts-landing .tm-dark-controls form { display: inline; }
+body.charts-landing .tm-years { margin: 6px 0 0 -3px; white-space: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+body.charts-landing .tm-year { display: inline-block; margin: 0 10px 2px 0; color: #b2b2b2; font-size: 11px; font-weight: bold; }
+body.charts-landing .tm-year.active { color: #fff; cursor: default; }
+body.charts-landing .section-title { color: #fff; font-weight: normal; }
+body.charts-landing .section-detail { color: #808080; }
+body.charts-landing .section-detail a { color: #5cc3f6 !important; }
+
+/* The ranked grid (landing #grid): white ranks hanging left of the artwork */
+body.charts-landing .chart-grid { font-size: 11px; line-height: 1.4em; margin: 20px -81px 0 12px; padding-top: 2em; border-top: 1px solid #222; clear: both; zoom: 1; }
+body.charts-landing .chart-grid:after { content: '.'; display: block; clear: both; height: 0; visibility: hidden; }
+body.charts-landing .chart-grid li { float: left; position: relative; width: 150px; margin: 0 43px 13px 0; list-style: none; }
+body.charts-landing .chart-grid li strong { position: relative; right: 155px; top: 13px; text-align: right; color: #fff; display: block; font-weight: bold; }
+body.charts-landing .chart-grid h3, body.charts-landing .chart-grid h4, body.charts-landing .chart-grid .price { display: block; width: 120px; height: 1.3em; margin: 0; font-size: 11px; line-height: 1.3em; font-weight: normal; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #b1b3b6; }
+body.charts-landing .chart-grid h3 { clear: left; }
+body.charts-landing .chart-grid h3 a { color: #fff; }
+body.charts-landing .chart-grid a:hover { text-decoration: underline; color: #fff; }
+body.charts-landing .chart-grid a.more, body.charts-landing .chart-grid a.more:hover { display: inline; color: #5cc3f6; padding-right: 10px; background: url(/wsf/charts/morearrow20090107.gif) no-repeat 100% 50%; }
+/* 100px era app icons had their rounding baked into the artwork; ours are
+   square sources, so round them here (2010 icon radius ≈ 16/100) */
+body.charts-landing .chart-grid .grid-art { display: block; width: 100px; height: 100px; margin-bottom: 6px; background: #2a2a2a; border-radius: 16px; -webkit-border-radius: 16px; overflow: hidden; }
+body.charts-landing .chart-grid .grid-art img { display: block; width: 100px; height: 100px; }
+
+body.charts-landing .pagination { color: #808080; }
+body.charts-landing .pagination a { color: #5cc3f6; }
+
+/* Teaser panel (the era's #related box) */
+body.charts-landing .tm-top25 { display: block; margin: 24px 0 0; padding: 16px 18px; background: #282828 url(/wsf/charts/rel_content_bg20090107.gif) repeat-x; border-radius: 6px; -webkit-border-radius: 6px; overflow: hidden; }
+body.charts-landing .tm-top25:hover { text-decoration: none; }
+body.charts-landing .tm-top25 .tm-top25-title { display: block; color: #fff; font-size: 13px; font-weight: normal; line-height: 18px; }
+body.charts-landing .tm-top25 .tm-top25-sub { display: block; color: #979697; font-size: 11px; line-height: 16px; }
+body.charts-landing .tm-top25 .tm-top25-chevron { float: right; margin: 8px 0 0 6px; width: 4px; height: 7px; overflow: hidden; text-indent: -9999px; background: url(/wsf/charts/morearrow20090107.gif) 0 0 no-repeat; }
+
+body.charts-landing .applist-empty { color: #808080; }
+body.charts-landing .db-error { background: #333; color: #b1b3b6; }
+
+@media screen and (max-width: 767px) {
+  body.charts-landing #main #content .padder { padding: 20px 14px 24px; }
+  /* Ranks can't hang into the gutter on phones — inline them above the art */
+  body.charts-landing .chart-grid { margin: 16px 0 0 0; }
+  body.charts-landing .chart-grid li { margin-right: 24px; }
+  body.charts-landing .chart-grid li strong { position: static; text-align: left; }
+}

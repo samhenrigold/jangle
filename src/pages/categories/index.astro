@@ -64,18 +64,18 @@ if (dbError) setDegraded(Astro.response);
   </div>
 
   <style>
+    /* Category rows in the era's blue listing panel */
     .cat-list {
       list-style: none;
       margin: 10px 0 20px 0;
-      padding: 0;
-      border: 1px solid #e1e1e1;
-      border-radius: 8px;
-      background: #fff;
+      padding: 8px 16px;
+      background: #F3F9FD;
+      border-radius: 4px;
       overflow: hidden;
     }
 
     .cat {
-      border-bottom: 1px solid #e1e1e1;
+      border-bottom: 1px solid #e3edf5;
     }
 
     .cat:last-child {
@@ -84,60 +84,61 @@ if (dbError) setDegraded(Astro.response);
 
     .cat-link {
       display: block;
-      padding: 9px 10px;
+      padding: 7px 2px;
       min-height: 40px;
       text-decoration: none;
-      color: #000;
     }
 
-    .cat-link:active {
-      background-color: #e8ebef;
+    .cat-link:hover {
+      text-decoration: none;
+      background-color: #eaf3f8;
     }
 
-    /* Genre row icon (top app in the genre), App Store mask applied. */
+    /* Genre row icon (top app in the genre), gloss mask applied. */
     .cat-icon {
       position: relative;
       float: left;
       width: 40px;
       height: 40px;
-      margin-right: 10px;
+      margin-right: 12px;
       background: #f3f3f3 url('/icon-placeholder.png') no-repeat;
       background-size: 100% 100%;
       border-radius: 8px;
+      overflow: hidden;
     }
 
     .cat-icon img {
       display: block;
       width: 40px;
       height: 40px;
-      border-radius: 8px;
+    }
+
+    .cat-icon .icon-mask {
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-size: 100% 100%;
     }
 
     .cat-name {
       display: block;
       overflow: hidden;
-      font-size: 17px;
+      font-size: 13px;
       font-weight: bold;
+      color: #298cda;
       line-height: 40px;
     }
 
     .cat-count {
       float: right;
-      margin: 0 8px 0 10px;
-      color: #8e8e93;
-      font-size: 15px;
+      margin: 0 4px 0 10px;
+      color: #898989;
+      font-size: 11px;
       line-height: 40px;
     }
 
-    /* margin:0 beats the app-list chevron's 15px top margin from global.css */
     .chevron {
-      float: right;
-      margin: 0 0 0 2px;
-      color: #c7c7cc;
-      font-size: 20px;
-      line-height: 40px;
-      font-weight: bold;
-      font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif;
+      display: none;
     }
   </style>
 </Layout>

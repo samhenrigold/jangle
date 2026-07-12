@@ -20,7 +20,7 @@ const { list = [], startRank, peakLines, iconShas } = Astro.props;
     <li class="app">
       <a class="app-link" href={`/app/${a.app_store_id ? a.app_store_id : a.id}`}>
         {typeof startRank === 'number' && <span class="rank">{startRank + i}</span>}
-        <span class="icon">{icon && <img src={icon} alt="" width="57" height="57" loading="lazy" decoding="async" />}<span class="icon-mask"></span></span>
+        <span class="icon">{icon && <img src={icon} alt="" width="60" height="60" loading="lazy" decoding="async" />}<span class="icon-mask"></span></span>
         <span class="chevron">&#8250;</span>
         {count != null && count > 0 && (
           <span class="count">{count}<span class="count-label">{count === 1 ? 'version' : 'versions'}</span></span>

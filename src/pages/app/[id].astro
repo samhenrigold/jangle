@@ -417,6 +417,36 @@ const appIcon = oldestIconSha ? `/icon/${oldestIconSha}` : (appData ? iconSrc(ap
 const developerName = appData?.developers?.artist_name;
 const versionNoun = versions.length === 1 ? 'archived version' : 'archived versions';
 
+// --- Left-rail product lockup (iTunes Preview style) -----------------------
+
+// Star row for the era rating widget: full / half stars, invisible "ghost"
+// placeholders for the rest (matching the original markup exactly).
+function starSpans(avg: number): string[] {
+  const out: string[] = [];
+  const rounded = Math.round(avg * 2) / 2;
+  for (let i = 1; i <= 5; i++) {
+    if (rounded >= i) out.push('rating-star');
+    else if (rounded >= i - 0.5) out.push('rating-star half');
+    else out.push('rating-star ghost');
+  }
+  return out;
+}
+
+// Latest archived listing state → the lockup's price + Customer Ratings box.
+const latestRating = ratingHistory.length ? ratingHistory[ratingHistory.length - 1] : null;
+const lockupPrice = latestRating ? formatPrice(latestRating.price_amount, latestRating.price_currency) : null;
+const lockupStars = latestRating?.rating_avg != null ? starSpans(Number(latestRating.rating_avg)) : null;
+const lockupStarsLabel = latestRating?.rating_avg != null ? `${Number(latestRating.rating_avg).toFixed(1)} stars` : '';
+
+// "Compatible with …. Requires iOS X or later" from the archived versions.
+const familySet = new Set<string>();
+for (const v of versions || []) for (const d of v.device_family || []) familySet.add(String(d));
+const isUniversalApp = familySet.has('1') && familySet.has('2');
+const compatDevices = isUniversalApp
+  ? 'iPhone, iPod touch, and iPad'
+  : familySet.has('2') ? 'iPad' : 'iPhone and iPod touch';
+const requirementsText = `Compatible with ${compatDevices}.${iosMajors.length ? ` Requires iOS ${iosMajors[0]}.0 or later.` : ''}`;
+
 // One archived copy of a version → its display detail + download affordances.
 function describeCopy(f: any, withFilename: boolean) {
   const bin = binaryOf(f);
@@ -514,34 +544,72 @@ if (sizePoints.length >= 3) {
 <Layout
   title={`${appTitle} — Legacy Store`}
   activeTab="none"
+  crumb={appTitle}
   description={appData ? `${appTitle}${developerName ? ` by ${developerName}` : ''} — ${versions.length} ${versionNoun} for old iOS devices, installable directly on iPhone, iPad, and iPod touch.` : 'Legacy Store'}
   canonicalPath={appData ? `/app/${appData.app_store_id || appData.id}` : ''}
 >
-  <div class="content">
     {dbError ? (
       <DbError />
     ) : (
       <>
-        <div class="app-header">
-          {appIcon && <span class="app-icon"><img src={appIcon} alt="" /><span class="icon-mask"></span></span>}
-          <div class="app-titles">
-            <h1 class="app-name">{appTitle}<span class="app-bundle">{appData.bundle_id}</span></h1>
-            {developerName && (
-              <div class="app-byline">
-                {appData.developer_id
-                  ? <a class="app-dev-link" href={`/developer/${appData.developer_id}`}>{developerName}</a>
-                  : developerName}
-              </div>
-            )}
-            {genreName && appData.genre_id && (
-              <div class="app-facts">
-                <a class="app-genre" href={`/categories/${appData.genre_id}`}>{genreName}</a>
-                {subgenre && <span> · {subgenre}</span>}
-              </div>
-            )}
-          </div>
+        {/* Title lockup — h1 + "By developer", as on the original preview page */}
+        <div id="title" class="intro">
+          <h1>{appTitle}</h1>
+          {developerName && (
+            <h2>By {appData.developer_id
+              ? <a href={`/developer/${appData.developer_id}`}>{developerName}</a>
+              : developerName}</h2>
+          )}
+          {appData.developer_id && (
+            <a class="view-more" href={`/developer/${appData.developer_id}`}>View More By This Developer</a>
+          )}
+          <p>{versions.length} {versionNoun}, installable directly on your old iOS device.</p>
         </div>
 
+        {/* Left rail: the product lockup (artwork + metadata) and, when the
+            Wayback data has one, the era Customer Ratings box. */}
+        <div id="left-stack">
+          <div class="lockup product application">
+            <div class="artwork">
+              {appIcon && <img src={appIcon} width="175" height="175" class="artwork" alt={appTitle} />}
+              <span class="mask"></span>
+            </div>
+            {isUniversalApp && (
+              <div class="fat-binary-blurb"><span class="fat-binary-badge">+</span><span>This app is designed for both iPhone and iPad</span></div>
+            )}
+            <ul class="list">
+              {lockupPrice && <li><div class="price">{lockupPrice}</div></li>}
+              {genreName && appData.genre_id && (
+                <li class="genre"><span class="label">Category: </span><a href={`/categories/${appData.genre_id}`}>{genreName}</a></li>
+              )}
+              {subgenre && <li class="genre"><span class="label">Subgenre: </span>{subgenre}</li>}
+              <li><span class="label">Versions: </span>{versions.length} archived</li>
+              {installableVersionCount > 0 && (
+                <li><span class="label">Installable: </span>{installableVersionCount} of {versions.length}</li>
+              )}
+              {developerName && <li><span class="label">Seller: </span>{developerName}</li>}
+              <li class="copyright" title={appData.bundle_id}>{appData.bundle_id}</li>
+            </ul>
+            <p><span class="app-requirements">Requirements: </span>{requirementsText}</p>
+          </div>
+
+          {lockupStars && (
+            <div class="extra-list customer-ratings">
+              <h4>Customer Ratings</h4>
+              <div>At time of archiving:</div>
+              <div class="rating" role="text" aria-label={lockupStarsLabel}>
+                <div>
+                  {lockupStars.map((cls) => <span class={cls}>&nbsp;</span>)}
+                </div>
+                {latestRating.rating_count != null && (
+                  <span class="rating-count">{formatNumber(latestRating.rating_count)} Ratings</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div class="center-stack">
         <div class="filter-bar">
           <a class="filter-chip" href={sortToggleHref()}>Sort by Date {currentDir === 'asc' ? '↑' : '↓'}</a>
           {iosMajors.length > 1 && (
@@ -589,11 +657,11 @@ if (sizePoints.length >= 3) {
                   <span class="file-actions">
                     {row.primary.ipaUrl ? (
                       <span class="file-buttons">
-                        <a class={`navbtn navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(row.primary.manifestUrl)}`}><span class="navbtn-label">Install</span></a>
-                        <a class={`navbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={row.primary.ipaUrl} download><span class="navbtn-label">Download</span></a>
+                        <a class={`wsfbtn wsfbtn-primary navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(row.primary.manifestUrl)}`}>Install</a>
+                        <a class={`wsfbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={row.primary.ipaUrl} download>Download</a>
                       </span>
                     ) : (
-                      <span class="file-buttons"><span class="navbtn navbtn-disabled" aria-disabled="true"><span class="navbtn-label">Download</span></span></span>
+                      <span class="file-buttons"><span class="wsfbtn wsfbtn-disabled" aria-disabled="true">Download</span></span>
                     )}
                     <span class="file-stat">
                       {row.primary.detail && <span class="file-stat-size">{row.primary.detail}</span>}
@@ -604,7 +672,7 @@ if (sizePoints.length >= 3) {
                 ) : (
                   // No available copy: still show a (disabled) action so the row reads consistently.
                   <span class="file-actions">
-                    <span class="file-buttons"><span class="navbtn navbtn-disabled" aria-disabled="true"><span class="navbtn-label">Download</span></span></span>
+                    <span class="file-buttons"><span class="wsfbtn wsfbtn-disabled" aria-disabled="true">Download</span></span>
                   </span>
                 )}
               </div>
@@ -620,8 +688,8 @@ if (sizePoints.length >= 3) {
                       {c.ipaUrl && (
                         <span class="file-actions">
                           <span class="file-buttons">
-                            <a class={`navbtn navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(c.manifestUrl)}`}><span class="navbtn-label">Install</span></a>
-                            <a class={`navbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={c.ipaUrl} download><span class="navbtn-label">Download</span></a>
+                            <a class={`wsfbtn wsfbtn-primary navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(c.manifestUrl)}`}>Install</a>
+                            <a class={`wsfbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={c.ipaUrl} download>Download</a>
                           </span>
                         </span>
                       )}
@@ -733,9 +801,15 @@ if (sizePoints.length >= 3) {
             <div class="history-card">
               {archivedReviews.map((r: any) => (
                 <div class="review">
-                  <div class="review-head">
-                    <span class="review-stars">{starString(r.stars)}</span>
-                    {r.title && <strong class="review-title">{r.title}</strong>}
+                  <div class="review-head customer-review">
+                    {r.title && <strong class="review-title customerReviewTitle">{r.title}</strong>}
+                    {r.stars != null && (
+                      <div class="rating" role="text" aria-label={`${r.stars} stars`}>
+                        <div>
+                          {starSpans(Number(r.stars)).map((cls) => <span class={cls}>&nbsp;</span>)}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div class="meta">
                     {(() => {
@@ -756,87 +830,26 @@ if (sizePoints.length >= 3) {
         {moreFromDev.length > 0 && (
           <>
             <SectionHeader title={`More from ${developerName}`}>
-              <a class="tm-more" href={`/developer/${appData.developer_id}`}>All apps ›</a>
+              <a class="tm-more see-all" href={`/developer/${appData.developer_id}`}>All apps</a>
             </SectionHeader>
             <AppList list={moreFromDev} iconShas={moreFromIcons} />
           </>
         )}
+        </div>
       </>
     )}
-  </div>
 
   <style>
-    .app-header {
-      margin-top: 10px;
-      overflow: hidden;
-    }
+    /* Page-scoped styles: iTunes Preview era. Chrome, columns, lockup,
+       ratings stars, and blue panels come from global.css; this block only
+       styles what is unique to the app page (version rows, filter bar,
+       history sections). */
 
-    .app-icon {
-      position: relative;
-      float: left;
-      width: 72px;
-      height: 72px;
-      margin-right: 12px;
-      background: #f3f3f3 url('/icon-placeholder.png') no-repeat;
-      background-size: 100% 100%;
-      border-radius: 13px;
-    }
-
-    .app-icon img {
-      display: block;
-      width: 72px;
-      height: 72px;
-      border-radius: 13px;
-    }
-
-    /* .icon-mask (the App Store rounded-rect overlay) comes from global.css. */
-
-    .app-titles {
-      overflow: hidden;
-    }
-
-    .app-name {
-      margin: 0;
-      font-size: 21px;
-      line-height: 24px;
-    }
-
-    /* Bundle id sits inline after the title, small and baseline-aligned. */
-    .app-bundle {
-      margin-left: 8px;
-      font-size: 12px;
-      font-weight: normal;
-      color: #8e8e93;
-      word-break: break-all;
-    }
-
-    .app-byline {
-      color: #666;
-      font-size: 14px;
-      line-height: 18px;
-    }
-
-    .app-dev-link {
-      color: #385487;
-      font-weight: bold;
-    }
-
-    .app-facts {
-      font-size: 13px;
-      color: #666;
-      line-height: 18px;
-    }
-
-    .app-genre {
-      color: #385487;
-      font-weight: bold;
-    }
-
-    /* One-row filter/sort bar: a direction chip, the Runs-on select, and the
-       copies toggle, all inline. */
+    /* One-row filter/sort bar above the version list */
     .filter-bar {
-      margin: 10px 4px;
-      font-size: 13px;
+      margin: 0 0 10px 0;
+      font-size: 11px;
+      color: #898989;
     }
 
     .filter-bar > * {
@@ -846,68 +859,71 @@ if (sizePoints.length >= 3) {
     }
 
     .filter-chip {
-      color: #385487;
+      color: #298cda;
       font-weight: bold;
     }
 
     .filter-label {
-      color: #666;
+      color: #898989;
     }
 
     .filter-runs select {
-      font: inherit;
-      margin-left: 4px;
-      padding: 2px;
-    }
-
-    .filter-go {
-      font: inherit;
       margin-left: 4px;
     }
 
+    /* Versions — the blue track-list panel, one lockup row per version */
     .versions {
-      border: 1px solid #e1e1e1;
-      border-radius: 8px;
-      background: #fff;
-      overflow: hidden;
+      background: #F3F9FD;
+      border-radius: 4px;
+      padding: 8px 16px;
+      margin-bottom: 18px;
     }
 
     .version {
-      border-bottom: 1px solid #e1e1e1;
-      padding: 10px;
-      overflow: hidden;
+      border-bottom: 1px solid #e3edf5;
+      padding: 8px 4px;
     }
 
     .version:last-child {
       border-bottom: none;
     }
 
-    /* Lockup: icon + stacked facts on the left, action button centered opposite.
+    .version:hover {
+      background-color: #eaf3f8;
+    }
+
+    /* Lockup: icon + stacked facts on the left, action buttons opposite.
        Flexbox (autoprefixed to the 2009 -webkit-box for iOS 4-6) centers the
-       button against the whole stack. */
+       buttons against the whole stack. */
     .v-lockup {
       display: flex;
       align-items: center;
     }
 
-    /* Period-accurate icon for this version, from its build-time bundle icon.
-       Masked (rounded + border + shadow) via the App Store overlay. */
+    /* Period-accurate icon for this version, from its build-time bundle icon. */
     .v-icon {
       position: relative;
       flex-shrink: 0;
-      width: 44px;
-      height: 44px;
-      margin-right: 10px;
+      width: 40px;
+      height: 40px;
+      margin-right: 12px;
       background: #f3f3f3 url('/icon-placeholder.png') no-repeat;
       background-size: 100% 100%;
-      border-radius: 9px;
+      border-radius: 8px;
+      overflow: hidden;
     }
 
     .v-icon img {
       display: block;
-      width: 44px;
-      height: 44px;
-      border-radius: 9px;
+      width: 40px;
+      height: 40px;
+    }
+
+    .v-icon .icon-mask {
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-size: 100% 100%;
     }
 
     .v-body {
@@ -916,35 +932,39 @@ if (sizePoints.length >= 3) {
     }
 
     .v-title {
-      font-size: 16px;
-      line-height: 20px;
+      font-size: 12px;
+      line-height: 17px;
+      color: #474747;
+    }
+
+    .v-title strong {
+      color: #474747;
     }
 
     .v-build {
-      color: #666;
+      color: #898989;
       font-weight: normal;
-      font-size: 13px;
+      font-size: 11px;
     }
 
     /* One stacked compatibility fact per line, tight. */
     .v-fact {
-      color: #8e8e93;
-      font-size: 13px;
-      line-height: 16px;
+      color: #898989;
+      font-size: 11px;
+      line-height: 15px;
     }
 
-    /* Extra copies, listed under the lockup when "Show everything" is on.
-       Indented past the icon and boxed off so each copy reads as its own row. */
+    /* Extra copies, listed under the lockup when "Show everything" is on. */
     .v-copies {
-      margin: 8px 0 0 54px;
-      border-top: 1px solid #ededed;
+      margin: 6px 0 0 52px;
+      border-top: 1px solid #e3edf5;
     }
 
     .file-row {
       display: flex;
       align-items: center;
-      padding: 8px 0;
-      border-bottom: 1px solid #ededed;
+      padding: 6px 0;
+      border-bottom: 1px solid #e3edf5;
     }
 
     .file-row:last-child {
@@ -956,7 +976,7 @@ if (sizePoints.length >= 3) {
       min-width: 0;
     }
 
-    /* Right column of the lockup: buttons on top, size + Encrypted badge under. */
+    /* Right column of the lockup: buttons on top, size + badge under. */
     .file-actions {
       margin-left: 10px;
       flex-shrink: 0;
@@ -967,19 +987,18 @@ if (sizePoints.length >= 3) {
       white-space: nowrap;
     }
 
-    .file-actions .navbtn {
+    .file-actions .wsfbtn {
       margin-left: 6px;
     }
 
     .file-stat {
       display: block;
-      margin-top: 5px;
-      color: #666;
-      font-size: 12px;
-      line-height: 15px;
+      margin-top: 4px;
+      color: #898989;
+      font-size: 10px;
+      line-height: 14px;
     }
 
-    /* Size on one line, Encrypted badge on its own line underneath. */
     .file-stat .file-stat-size {
       display: block;
     }
@@ -988,50 +1007,39 @@ if (sizePoints.length >= 3) {
       margin-top: 3px;
     }
 
-    /* Disabled action (no available file): looks like a button, does nothing. */
-    .navbtn-disabled {
-      opacity: 0.4;
-      pointer-events: none;
-    }
-
-    /* Universal ("fat binary") apps: Apple's + badge, rendered as a pseudo-
-       element (no markup) pinned to the button's top-left corner. Nudged -1px
-       over the border; the button's overflow:hidden clips it to the corner
-       radius. Retina 28px source shown at 14px. */
+    /* Universal ("fat binary") apps: Apple's + badge on the button corner. */
     .nav-universal::before {
       content: '';
       position: absolute;
-      top: -1px;
-      left: -1px;
-      width: 14px;
-      height: 14px;
-      background: url('/fat-binary-badge.png') 0 0 no-repeat;
-      background-size: 14px 14px;
+      top: 2px;
+      left: 3px;
+      width: 10px;
+      height: 11px;
+      background: url('/wsf/images/fat-binary-badge.png') 0 0 no-repeat;
     }
 
     .file-name {
       display: block;
       overflow: hidden;
-      color: #8e8e93;
-      font-size: 12px;
+      color: #898989;
+      font-size: 11px;
       line-height: 15px;
       padding-top: 2px;
       word-break: break-all;
     }
 
-    /* Encrypted badge sits on its own line below the file name in a copy row. */
     .file-chip {
       display: block;
       margin-top: 3px;
     }
 
     .copies-link {
-      color: #385487;
+      color: #298cda;
       font-weight: bold;
     }
 
     .v-nofile {
-      color: #8e8e93;
+      color: #a9b4bc;
     }
 
     /* Extra breathing room between the versions list and the chart. Global
@@ -1042,14 +1050,11 @@ if (sizePoints.length >= 3) {
     }
 
     .size-chart {
-      padding: 10px;
+      padding: 12px 16px;
     }
 
     /* --- Progressive-enhancement hooks (each defaults to the no-JS state) --- */
 
-    /* "Show everything" reveals extra copies AND versions hidden by default
-       (unavailable, or encrypted-only). Toggled by the JS class, or the ?all=1
-       server class on the no-JS path. */
     .v-extra,
     .v-hidden-default {
       display: none;
@@ -1072,17 +1077,17 @@ if (sizePoints.length >= 3) {
     /* Install vs Download visibility lives in the is:global block below —
        the .is-ios/.is-desktop class is on <html>, outside these scoped styles. */
 
-    /* Wayback history sections (iOS grouped-table style, same as .versions) */
+    /* Wayback history sections — blue panels like the track lists */
     .history-card {
-      border: 1px solid #e1e1e1;
-      border-radius: 8px;
-      background: #fff;
-      overflow: hidden;
+      background: #F3F9FD;
+      border-radius: 4px;
+      padding: 8px 16px;
+      margin-bottom: 8px;
     }
 
     .history-row {
-      border-bottom: 1px solid #e1e1e1;
-      padding: 10px;
+      border-bottom: 1px solid #e3edf5;
+      padding: 8px 0;
     }
 
     .history-row:last-child {
@@ -1090,24 +1095,25 @@ if (sizePoints.length >= 3) {
     }
 
     .history-title {
-      font-size: 15px;
+      font-size: 12px;
       overflow: hidden;
+    }
+
+    .history-title strong {
+      color: #474747;
     }
 
     .history-link {
       float: right;
-      color: #385487;
-      font-size: 13px;
+      font-size: 11px;
       font-weight: bold;
     }
 
     .tm-more {
-      color: #385487;
       font-weight: bold;
     }
 
-    /* Chart-trajectory sparkline: plain divs so it renders on iOS 3+. Bars
-       sit on a shared baseline; taller = higher chart position. */
+    /* Chart-trajectory sparkline: plain divs so it renders on iOS 3+. */
     .spark {
       margin-top: 6px;
       height: 30px;
@@ -1121,27 +1127,29 @@ if (sizePoints.length >= 3) {
       vertical-align: bottom;
       width: 3px;
       margin-right: 1px;
-      background: #6d84a2;
+      background: #77a7e2;
     }
 
+    /* Ratings-over-time table, in the era track-list idiom */
     .ratings-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 13px;
+      font-size: 11px;
     }
 
     .ratings-table th {
       text-align: left;
-      color: #8e8e93;
-      font-size: 11px;
-      text-transform: uppercase;
-      padding: 6px 8px;
-      border-bottom: 1px solid #e1e1e1;
+      color: #898989;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 4px 8px 4px 0;
+      border-bottom: 1px solid #e3edf5;
     }
 
     .ratings-table td {
-      padding: 6px 8px;
-      border-bottom: 1px solid #eee;
+      padding: 4px 8px 4px 0;
+      border-bottom: 1px solid #e3edf5;
+      color: #898989;
     }
 
     .ratings-table tr:last-child td {
@@ -1152,9 +1160,11 @@ if (sizePoints.length >= 3) {
       text-align: right;
     }
 
+    /* Archived reviews — the original .customer-review pattern (title + star
+       row + "by author"), with stars drawn by the global rating rules. */
     .review {
-      border-bottom: 1px solid #e1e1e1;
-      padding: 10px;
+      border-bottom: 1px solid #e3edf5;
+      padding: 8px 0 2px;
     }
 
     .review:last-child {
@@ -1162,62 +1172,36 @@ if (sizePoints.length >= 3) {
     }
 
     .review-head {
-      font-size: 14px;
-      line-height: 18px;
+      font-size: 12px;
+      line-height: 17px;
+      color: #898989;
     }
 
-    .review-stars {
-      color: #e8901a;
-      letter-spacing: 1px;
-      margin-right: 4px;
+    .review-head .rating {
+      display: inline-block;
+      vertical-align: -1px;
+      margin-left: 6px;
     }
 
     .review-title {
-      font-size: 15px;
+      font-size: 12px;
+      color: #898989;
+      margin-right: 4px;
     }
 
     .review-body {
-      margin: 6px 0 0 0;
-      font-size: 14px;
-      line-height: 19px;
-      color: #333;
+      margin: 4px 0 10px;
+      font-size: 12px;
+      line-height: 17px;
+      color: #898989;
       word-wrap: break-word;
     }
 
     .history-note {
-      margin: 6px 4px 0 4px;
-      color: #8e8e93;
-      font-size: 11px;
+      margin: 4px 0 18px;
+      color: #a9b4bc;
+      font-size: 10px;
       line-height: 15px;
-    }
-
-    /* iOS-style glossy button, drawn with a CSS gradient rather than image
-       slices — no seams, and autoprefixer emits the old -webkit-gradient so it
-       renders on iOS 4-6. Steel-blue like the nav-bar button it replaces. */
-    .navbtn {
-      display: inline-block;
-      position: relative;
-      overflow: hidden;
-      height: 29px;
-      line-height: 29px;
-      padding: 0 15px;
-      vertical-align: middle;
-      border: 1px solid #2f4c80;
-      border-radius: 5px;
-      background: linear-gradient(#7d97c4, #3f5f96);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
-    }
-
-    .navbtn:active {
-      background: linear-gradient(#3f5f96, #7d97c4);
-    }
-
-    .navbtn-label {
-      color: #fff;
-      font-weight: bold;
-      font-size: 14px;
-      font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif;
-      text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.45);
     }
   </style>
 

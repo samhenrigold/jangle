@@ -148,7 +148,7 @@ if (dbError) setDegraded(Astro.response);
                   );
                 })}
               </ul>
-              <a class="hero-cta" href={heroHref}>See the full chart<span class="hero-cta-chevron">&#8250;</span></a>
+              <a class="hero-cta" href={heroHref}>See the full chart</a>
             </div>
           </>
         )}
@@ -160,55 +160,58 @@ if (dbError) setDegraded(Astro.response);
   </div>
 
   <style>
+    /* "This week, years ago" hero — a blue swoosh panel in the era idiom */
     .hero-card {
-      border: 1px solid #c8d0dc;
-      border-radius: 8px;
-      background: #eef1f6;
+      background: #F3F9FD;
+      border-radius: 4px;
+      padding: 0 16px 8px 16px;
       overflow: hidden;
     }
 
     .hero-head {
-      padding: 8px 10px;
-      color: #4c566c;
-      font-size: 12px;
+      padding: 12px 0 6px 0;
+      color: #898989;
+      font-size: 11px;
       line-height: 16px;
-      border-bottom: 1px solid #d5dbe4;
+      border-bottom: 1px solid #e3edf5;
     }
 
     .hero-chart {
       font-weight: bold;
+      color: #474747;
+      font-size: 13px;
     }
 
     .hero-list {
       list-style: none;
       margin: 0;
       padding: 0;
-      background: #fff;
     }
 
     .hero-row {
-      border-bottom: 1px solid #e1e1e1;
+      border-bottom: 1px solid #e3edf5;
     }
 
     .hero-row-link {
       display: block;
-      padding: 6px 10px;
+      padding: 6px 2px;
       overflow: hidden;
     }
 
-    a.hero-row-link:active {
-      background-color: #e8ebef;
+    a.hero-row-link:hover {
+      text-decoration: none;
+      background-color: #eaf3f8;
     }
 
     .hero-rank {
       float: left;
       width: 20px;
-      margin-right: 6px;
+      margin-right: 8px;
       line-height: 29px;
-      text-align: center;
-      font-size: 14px;
+      text-align: right;
+      font-size: 11px;
       font-weight: bold;
-      color: #8e8e93;
+      color: #898989;
     }
 
     .hero-icon {
@@ -229,12 +232,19 @@ if (dbError) setDegraded(Astro.response);
       height: 29px;
     }
 
+    .hero-icon .icon-mask {
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-size: 100% 100%;
+    }
+
     .hero-price {
       float: right;
       margin-left: 8px;
       line-height: 29px;
-      color: #385487;
-      font-size: 13px;
+      color: #898989;
+      font-size: 11px;
       font-weight: bold;
     }
 
@@ -242,31 +252,29 @@ if (dbError) setDegraded(Astro.response);
       display: block;
       overflow: hidden;
       line-height: 29px;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: bold;
+      color: #298cda;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
     .hero-cta {
       display: block;
-      padding: 9px 10px;
-      background: #f7f7f8;
-      border-top: 1px solid #d5dbe4;
-      color: #385487;
-      font-size: 14px;
+      padding: 8px 2px;
+      border-top: 1px solid #e3edf5;
+      color: #298cda;
+      font-size: 12px;
       font-weight: bold;
     }
 
-    .hero-cta:active {
-      background-color: #e8ebef;
-    }
-
-    .hero-cta-chevron {
-      float: right;
-      color: #c7c7cc;
-      font-size: 18px;
-      line-height: 18px;
+    .hero-cta:after {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 7px;
+      margin-left: 6px;
+      background: url('/wsf/images/more.gif') 0 0 no-repeat;
     }
   </style>
 </Layout>

@@ -315,6 +315,24 @@ export const prerender = true;
       </li>
       <li>The <strong>open-source ecosystem</strong> the whole thing is built on.</li>
     </ul>
+    <h2 class="col-h2">About this design</h2>
+    <p>
+      The site is dressed as the <strong>iTunes Preview</strong> website as it appeared in
+      November 2010 — the pages iTunes generated when you followed an App Store link in
+      a browser. The layout, palette, and imagery are rebuilt from Apple's original
+      <code>web-storefront</code> stylesheets (htmlResources revision 5B73) and the page's
+      image assets, all recovered byte-for-byte from the Wayback Machine's captures of
+      2010‑11‑04. The star ratings, the glossy icon masks, the blue listing panels, and
+      the footer chrome are the original PNGs; the dark Charts room is rebuilt from the
+      same era's apple.com/itunes/charts stylesheet, and the wordmark was re-set in
+      Myriad Pro to the same metrics and gradient as the iTunes Preview logo.
+    </p>
+    <p>
+      One liberty was taken: the 2010 site was a fixed 980-pixel desktop layout, and
+      this one is responsive — the same chrome collapses for iPad and iPhone widths.
+      Apple never shipped that; consider it a what-if.
+    </p>
+
     <p class="col-outro">
       The project's codename, if you were wondering, is <strong>Jangle</strong> — Apple's codename
       for the iTunes Store was "Jingle," and alliteration is fun.
@@ -331,13 +349,12 @@ export const prerender = true;
       margin: 14px 0 2px 0;
       font-size: 26px;
       line-height: 30px;
-      color: #4c566c;
-      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+      color: #474747;
     }
 
     .col-lede {
       margin: 0 0 12px 0;
-      color: #8e8e93;
+      color: #898989;
       font-size: 15px;
       font-style: italic;
     }
@@ -346,15 +363,15 @@ export const prerender = true;
       margin: 26px 0 8px 0;
       font-size: 18px;
       line-height: 22px;
-      color: #4c566c;
-      border-top: 1px solid #e1e1e1;
+      color: #474747;
+      border-top: 1px solid #ececec;
       padding-top: 18px;
     }
 
     .colophon p {
       margin: 0 0 12px 0;
-      font-size: 15px;
-      line-height: 22px;
+      font-size: 12px;
+      line-height: 18px;
       color: #333;
     }
 
@@ -365,8 +382,8 @@ export const prerender = true;
 
     .colophon li {
       margin: 0 0 8px 0;
-      font-size: 15px;
-      line-height: 22px;
+      font-size: 12px;
+      line-height: 18px;
       color: #333;
     }
 
@@ -380,13 +397,13 @@ export const prerender = true;
     }
 
     .col-link {
-      color: #385487;
+      color: #298cda;
       font-weight: bold;
     }
 
     .col-outro {
       margin-top: 18px;
-      color: #666;
+      color: #767676;
     }
   </style>
 </Layout>

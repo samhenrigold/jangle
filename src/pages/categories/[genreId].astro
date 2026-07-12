@@ -167,16 +167,17 @@ const genreName = genre?.genre_name || 'Category';
   </div>
 
   <style>
+    /* Archived genre charts — blue panel, plain blue year links (era paginate) */
     .genre-charts {
-      border: 1px solid #e1e1e1;
-      border-radius: 8px;
-      background: #fff;
+      background: #F3F9FD;
+      border-radius: 4px;
+      padding: 8px 16px;
       overflow: hidden;
     }
 
     .genre-chart-row {
-      border-bottom: 1px solid #e1e1e1;
-      padding: 8px 10px;
+      border-bottom: 1px solid #e3edf5;
+      padding: 8px 2px;
       overflow: hidden;
     }
 
@@ -187,9 +188,10 @@ const genreName = genre?.genre_name || 'Category';
     .genre-chart-name {
       float: left;
       width: 110px;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: bold;
-      line-height: 22px;
+      color: #474747;
+      line-height: 20px;
     }
 
     .genre-chart-years {
@@ -199,24 +201,17 @@ const genreName = genre?.genre_name || 'Category';
 
     .genre-chart-year {
       display: inline-block;
-      padding: 2px 7px;
-      margin: 1px 2px 1px 0;
-      color: #385487;
-      font-size: 13px;
+      margin: 0 12px 2px 0;
+      color: #298cda;
+      font-size: 12px;
       font-weight: bold;
-      border: 1px solid #c8d0dc;
-      border-radius: 6px;
-      background: #f7f7f8;
-    }
-
-    .genre-chart-year:active {
-      background: #e8ebef;
+      line-height: 20px;
     }
 
     .genre-chart-note {
-      margin: 6px 4px 0 4px;
-      color: #8e8e93;
-      font-size: 11px;
+      margin: 6px 0 0 0;
+      color: #a9b4bc;
+      font-size: 10px;
       line-height: 15px;
     }
   </style>

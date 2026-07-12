@@ -187,30 +187,37 @@ const pageTitle = snapshot
 <Layout
   title={pageTitle}
   activeTab="charts"
+  bodyClass="charts-landing"
   description={`What did the App Store look like${snapshotDateLabel ? ` on ${snapshotDateLabel}` : ''}? Real historical Top Charts recovered from Apple's RSS feeds via the Wayback Machine.`}
 >
-  <div class="content">
     {dbError ? (
       <DbError />
     ) : (
       <>
-        <div class="tm-controls">
-          <div class="tm-typerow">
-            {(chartTypes || []).map((t) => (
-              <a
-                href={qs({ type: t.slug, genre: 'all', date: dateParam ? snapshot?.snapshot_date : null })}
-                class={t.id === chartType?.id ? 'tm-type active' : 'tm-type'}
-              >{t.name}</a>
-            ))}
-          </div>
+        {/* Title + intro, per the era's apple.com/itunes/charts/ landing */}
+        <h1 class="charts-title"><img src="/wsf/charts/title_charts.png" srcset="/wsf/charts/title_charts@2x.png 2x" width="211" height="29" alt="App Store Charts" /></h1>
+        <p class="charts-intro">
+          The real App Store Top Charts, resurrected from Apple's chart feeds as
+          the Wayback Machine saw them. Pick a chart and a day, and browse the
+          store the way it was.
+        </p>
 
+        {/* Pill subnav: chart types (and device, where iPad feeds exist) */}
+        <ul class="subnav">
+          {(chartTypes || []).map((t) => (
+            <li class={t.id === chartType?.id ? 'selected' : undefined}>
+              <a href={qs({ type: t.slug, genre: 'all', date: dateParam ? snapshot?.snapshot_date : null })}>{t.name}</a>
+            </li>
+          ))}
           {devicesAvailable.size > 1 && (
-            <div class="tm-devicerow">
-              <a href={qs({ device: 'iphone', genre: 'all' })} class={device === 'iphone' ? 'tm-type active' : 'tm-type'}>iPhone</a>
-              <a href={qs({ device: 'ipad', genre: 'all' })} class={device === 'ipad' ? 'tm-type active' : 'tm-type'}>iPad</a>
-            </div>
+            <>
+              <li class={device === 'iphone' ? 'selected' : undefined}><a href={qs({ device: 'iphone', genre: 'all' })}>iPhone</a></li>
+              <li class={device === 'ipad' ? 'selected' : undefined}><a href={qs({ device: 'ipad', genre: 'all' })}>iPad</a></li>
+            </>
           )}
+        </ul>
 
+        <div class="tm-dark-controls">
           <form method="get" action="/charts" class="tm-form filters">
             {chartType && chartType.slug !== 'top-free' && <input type="hidden" name="type" value={chartType.slug} />}
             {device !== 'iphone' && <input type="hidden" name="device" value={device} />}
@@ -251,32 +258,23 @@ const pageTitle = snapshot
                 : <>Snapshot from {snapshotDateLabel}</>}
             </SectionHeader>
 
-            <ul class="applist">
+            <ul class="chart-grid">
               {positions.map((p: any) => {
-                // Period artwork from the capture itself is closest to the
-                // moment; fall back to the app's current library icon.
                 const oldSha = p.apps?.id && chartIconShas ? chartIconShas.get(Number(p.apps.id)) : null;
                 const icon = iconSrc(p.artwork_url) || (oldSha ? `/icon/${oldSha}` : '') || iconSrc(p.apps?.icon_url);
                 const price = formatPrice(p.price_amount, p.price_currency);
                 const inLibrary = !!p.apps;
                 const href = inLibrary ? `/app/${p.apps.app_store_id || p.apps.id}` : null;
-                const inner = (
-                  <>
-                    <span class="rank">{p.position}</span>
-                    <span class="icon">{icon && <img src={icon} alt="" width="57" height="57" loading="lazy" />}<span class="icon-mask"></span></span>
-                    {inLibrary && <span class="chevron">&#8250;</span>}
-                    {price && <span class="count">{price}{inLibrary && <span class="count-label">in the archive</span>}</span>}
-                    <span class="info">
-                      <span class="name">{p.display_name}</span>
-                      <span class="meta">{p.developer_name}</span>
-                    </span>
-                  </>
-                );
                 return (
-                  <li class="app">
+                  <li>
+                    <strong>{p.position}.</strong>
                     {href
-                      ? <a class="app-link" href={href}>{inner}</a>
-                      : <span class="app-link tm-unlinked">{inner}</span>}
+                      ? <a class="grid-art" href={href}>{icon && <img src={icon} alt="" width="100" height="100" loading="lazy" />}</a>
+                      : <span class="grid-art">{icon && <img src={icon} alt="" width="100" height="100" loading="lazy" />}</span>}
+                    <h3>{href ? <a href={href}>{p.display_name}</a> : p.display_name}</h3>
+                    <h4>{p.developer_name}</h4>
+                    {price && <span class="price">{price}</span>}
+                    {href && <a href={href} class="more">View in the archive</a>}
                   </li>
                 );
               })}
@@ -300,131 +298,32 @@ const pageTitle = snapshot
         )}
       </>
     )}
-  </div>
 
   <style>
     .tm-link {
-      color: #385487;
-      font-weight: bold;
-    }
-
-    .tm-controls {
-      margin: 0 0 4px 0;
-      padding: 8px;
-      border: 1px solid #e1e1e1;
-      border-radius: 8px;
-      background: #f7f7f8;
-    }
-
-    .tm-typerow, .tm-devicerow {
-      margin-bottom: 6px;
-    }
-
-    .tm-type {
-      display: inline-block;
-      padding: 4px 8px;
-      margin: 0 2px 2px 0;
-      color: #385487;
-      font-size: 13px;
-      border-radius: 6px;
-    }
-
-    .tm-type.active {
-      background: #6d84a2;
-      color: #fff;
+      color: #5cc3f6 !important;
       font-weight: bold;
     }
 
     .tm-form {
+      display: inline;
       margin: 0;
     }
 
     .tm-form select {
-      max-width: 100%;
+      max-width: 45%;
       -webkit-box-sizing: border-box;
       box-sizing: border-box;
     }
 
     .tm-go {
-      padding: 6px 12px;
-    }
-
-    /* One scrolling strip — never wraps (momentum scrolling exists since iOS 5) */
-    .tm-years {
-      margin-top: 6px;
-      white-space: nowrap;
-      overflow-x: auto;
-      overflow-y: hidden;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .tm-year {
-      display: inline-block;
-      padding: 3px 6px;
-      margin: 0 1px 2px 0;
-      color: #385487;
-      font-size: 12px;
-      font-weight: bold;
-      border-radius: 5px;
-    }
-
-    .tm-year.active {
-      background: #6d84a2;
-      color: #fff;
-    }
-
-    .tm-random {
-      border: 1px solid #c8d0dc;
-      background: #fff;
-    }
-
-    /* Chart entries not in our library aren't tappable; dim the chevron slot */
-    .tm-unlinked {
-      cursor: default;
-    }
-
-    /* iOS grouped-table row linking the old Top 25 tab's content */
-    .tm-top25 {
-      display: block;
-      margin: 12px 0 0 0;
-      padding: 10px;
-      border: 1px solid #e1e1e1;
-      border-radius: 8px;
-      background: #fff;
-      overflow: hidden;
-    }
-
-    .tm-top25:active {
-      background-color: #e8ebef;
-    }
-
-    .tm-top25-chevron {
-      float: right;
-      margin: 8px 0 0 6px;
-      color: #c7c7cc;
-      font-size: 24px;
-      line-height: 26px;
-      font-weight: bold;
-      font-family: Helvetica, "Helvetica Neue", system-ui, sans-serif;
-    }
-
-    .tm-top25-title {
-      display: block;
-      font-size: 16px;
-      font-weight: bold;
-      line-height: 20px;
-    }
-
-    .tm-top25-sub {
-      display: block;
-      color: #666;
-      font-size: 13px;
-      line-height: 17px;
+      padding: 3px 10px;
     }
 
     .tm-empty {
       display: block;
       list-style: none;
+      color: #808080;
     }
   </style>
 </Layout>
