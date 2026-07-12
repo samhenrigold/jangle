@@ -277,16 +277,20 @@ em { font-style: italic; }
 }
 .wsfbtn-primary { } /* alias kept for markup symmetry; one button style fits all */
 
-/* Universal ("fat binary") apps — the PurchasePlusButton nine-slice with the
-   "+" baked into its top-left corner. The corner slice is kept large (18px)
-   to hold the whole "+"; the layout border stays a symmetric 3px so the label
-   is still centred, while the image widths let the top-left extend to hold the
-   badge. */
-.wsfbtn.nav-universal {
-  border-image: url(/wsf/buttons/purchase-plus@2x.png) 18 6 6 18 fill / 12px 3px 3px 12px stretch;
-}
-.wsfbtn.nav-universal:active {
-  border-image-source: url(/wsf/buttons/purchase-plus-pressed@2x.png);
+/* Universal ("fat binary") apps — the same pill as everything else, with the
+   App Store "+" badge (extracted from PurchasePlusButton) overlaid crisply in
+   the top-left corner. (Nine-slicing the baked-in "+" smeared it — a fixed
+   overlay is pixel-clean and stays put while the pill stretches.) */
+.wsfbtn.nav-universal { padding-left: 16px; }
+.wsfbtn.nav-universal::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  width: 9px;
+  height: 9px;
+  background: url(/wsf/buttons/plus-badge@2x.png) center no-repeat;
+  background-size: 9px 9px;
 }
 
 .wsfbtn-disabled {
