@@ -496,7 +496,6 @@ body.charts-landing .chart-grid li strong { position: absolute; top: 4px; left: 
 body.charts-landing .chart-grid h3, body.charts-landing .chart-grid h4, body.charts-landing .chart-grid .price { display: block; width: 100px; margin: 0; font-size: 11px; line-height: 1.35em; font-weight: normal; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #b1b3b6; }
 body.charts-landing .chart-grid h3 a { color: #fff; }
 body.charts-landing .chart-grid a:hover { text-decoration: underline; color: #fff; }
-body.charts-landing .chart-grid a.more, body.charts-landing .chart-grid a.more:hover { display: inline-block; margin-top: 2px; font-size: 11px; color: #5cc3f6; padding-right: 10px; background: url(/wsf/charts/morearrow20090107.gif) no-repeat 100% 50%; }
 /* Icon tiles: a plain rounded well clipped to a 20px radius. The icon is clipped
    by overflow; missing-icon tiles fall back to the black-20% placeholder. */
 body.charts-landing .chart-grid .grid-art { display: block; position: relative; width: 100px; height: 100px; margin: 0 0 6px 0; overflow: hidden; background: rgba(0, 0, 0, 0.2); border-radius: 20px; -webkit-border-radius: 20px; }
