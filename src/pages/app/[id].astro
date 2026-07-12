@@ -15,7 +15,6 @@ import {
   deviceOf, starString, sampleEvenly, formatMonthYear, formatPrice, formatApproxMonthYear,
 } from '../../lib/timemachine';
 import { pickOldestIcon, getOldestIcons } from '../../lib/appicons';
-import AppList from '../../components/AppList.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
 import { osRequirementLabel, osShortLabel } from '../../lib/devices';
 import { lineChartSVG } from '../../lib/charts';
@@ -655,7 +654,7 @@ if (sizePoints.length >= 3) {
               {appIcon ? <><img src={appIcon} width="175" height="175" class="artwork" alt={appTitle} /><span class="mask"></span></> : null}
             </div>
             {isUniversalApp && (
-              <div class="fat-binary-blurb"><span class="fat-binary-badge">+</span><span>This app is designed for both iPhone and iPad</span></div>
+              <div class="fat-binary-blurb"><span class="fat-binary-badge">&nbsp;</span><span>This app is designed for both iPhone and iPad</span></div>
             )}
             <ul class="list">
               {lockupPrice && <li><div class="price">{lockupPrice}</div></li>}
@@ -691,7 +690,7 @@ if (sizePoints.length >= 3) {
 
         <div class="center-stack">
         <div class="filter-bar">
-          <a class="filter-chip" href={sortToggleHref()}>Sort by Date {currentDir === 'asc' ? '↑' : '↓'}</a>
+          <a class="filter-chip" href={sortToggleHref()}>Sort by Date <span class="sort-tri">{currentDir === 'asc' ? '▴' : '▾'}</span></a>
           {iosMajors.length > 1 && (
             <form class="filter-runs" method="get" action={pathname}>
               {currentDir === 'asc' && <input type="hidden" name="dir" value="asc" />}
@@ -755,6 +754,10 @@ if (sizePoints.length >= 3) {
                     <span class="file-buttons"><span class="wsfbtn wsfbtn-disabled" aria-disabled="true">Download</span></span>
                   </span>
                 )}
+                {/* Disclosure triangle for rows with extra copies — a real
+                    flex item at the far right, vertically centered (JS on only;
+                    rotates open on per-row click or global "Show everything"). */}
+                <span class="v-expand" aria-hidden="true"></span>
               </div>
               {row.extras.length > 0 && (
                 <div class="v-copies">
@@ -912,7 +915,23 @@ if (sizePoints.length >= 3) {
             <SectionHeader title={`More from ${developerName}`}>
               <a class="tm-more see-all" href={`/developer/${appData.developer_id}`}>All apps</a>
             </SectionHeader>
-            <AppList list={moreFromDev} iconShas={moreFromIcons} />
+            {/* "Customers Also Bought"-style row: small masked lockups on the
+                blue swoosh panel (icon + name + version count). */}
+            <div class="more-grid">
+              {moreFromDev.map((a: any) => {
+                const sha = moreFromIcons && a.id != null ? moreFromIcons.get(Number(a.id)) : null;
+                const mIcon = sha ? `/icon/${sha}` : iconSrc(a.icon_url);
+                const mHref = `/app/${a.app_store_id ? a.app_store_id : a.id}`;
+                const mvc = a.version_count == null ? null : Number(a.version_count);
+                return (
+                  <a class="mg-cell" href={mHref}>
+                    <span class="mg-art">{mIcon ? <><img src={mIcon} width="100" height="100" alt="" loading="lazy" decoding="async" /><span class="mg-mask"></span></> : null}</span>
+                    <span class="mg-name">{appTitleOf(a)}</span>
+                    {mvc != null && mvc > 0 && <span class="mg-sub">{mvc} {mvc === 1 ? 'version' : 'versions'}</span>}
+                  </a>
+                );
+              })}
+            </div>
           </>
         )}
         </div>
@@ -941,6 +960,12 @@ if (sizePoints.length >= 3) {
     .filter-chip {
       color: #298cda;
       font-weight: bold;
+    }
+
+    .sort-tri {
+      font-size: 9px;
+      vertical-align: 1px;
+      margin-left: 1px;
     }
 
     .filter-label {
@@ -1141,19 +1166,27 @@ if (sizePoints.length >= 3) {
     }
 
     /* With JS on, a version row that has extra copies is clickable to expand
-       them inline (no visible button — the row itself is the target). A faint
-       chevron on the lockup hints it, rotating when open. */
+       them inline (the row itself is the target). A disclosure triangle sits
+       at the far right of the lockup, vertically centered, and rotates open —
+       on per-row click OR when the global "Show everything" reveals them. */
+    .v-expand { display: none; }
     .js-copies .version[data-copies] { cursor: pointer; }
-    .js-copies .version[data-copies] .v-lockup::after {
-      content: '\25be';
-      position: absolute;
-      right: 10px;
-      bottom: 8px;
-      color: #bbb;
-      font-size: 12px;
+    .js-copies .version[data-copies] .v-expand {
+      display: block;
+      flex-shrink: 0;
+      width: 12px;
+      margin-left: 10px;
+      text-align: center;
+      color: #bcbcc0;
+    }
+    .js-copies .version[data-copies] .v-expand::before {
+      content: '\25b8';
+      font-size: 11px;
+      display: inline-block;
       transition: transform 0.15s;
     }
-    .js-copies .version[data-copies].expanded .v-lockup::after { transform: rotate(180deg); }
+    .js-copies .version[data-copies].expanded .v-expand::before,
+    .js-copies.show-everything .version[data-copies] .v-expand::before { transform: rotate(90deg); }
 
     .show-everything .v-hidden-default {
       display: block;
@@ -1200,6 +1233,58 @@ if (sizePoints.length >= 3) {
 
     .tm-more {
       font-weight: bold;
+    }
+
+    /* "Customers Also Bought"-style lockup row (More from developer): small
+       masked icons on the blue swoosh panel, wrapping. */
+    .more-grid {
+      background: #F3F9FD;
+      border-radius: 4px;
+      padding: 14px 16px 8px;
+      font-size: 0;
+      overflow: hidden;
+    }
+
+    .more-grid .mg-cell {
+      display: inline-block;
+      vertical-align: top;
+      width: 112px;
+      margin: 0 6px 14px 6px;
+      text-align: center;
+    }
+
+    .more-grid .mg-art {
+      position: relative;
+      display: block;
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 6px;
+      background: transparent url('/icon-placeholder.png') no-repeat;
+      background-size: 100px 100px;
+    }
+
+    .more-grid .mg-art img { display: block; width: 100px; height: 100px; }
+    /* Blue-cornered mask (the panel is blue). */
+    .more-grid .mg-mask { position: absolute; top: 0; left: -1px; width: 102px; height: 103px; background: url('/wsf/images/mask100blue.png') no-repeat; }
+
+    .more-grid .mg-name {
+      display: block;
+      font-size: 11px;
+      font-weight: bold;
+      color: #298cda;
+      line-height: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .more-grid .mg-cell:hover .mg-name { text-decoration: underline; }
+
+    .more-grid .mg-sub {
+      display: block;
+      font-size: 10px;
+      color: #898989;
+      line-height: 13px;
     }
 
     /* Chart-trajectory sparkline: plain divs so it renders on iOS 3+. */
