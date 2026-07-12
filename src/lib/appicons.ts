@@ -61,69 +61,21 @@ export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise
 
   const empty = new Map<number, string>();
   try {
-    const { data: vers, error: vErr } = await supabase
-      .from('app_versions')
-      .select('id, app_id, version_string, minimum_os_version')
-      .in('app_id', ids)
-      .limit(8000);
-    if (vErr || !vers?.length) return empty;
-
-    const versionById = new Map<number, any>();
-    for (const v of vers) versionById.set(Number(v.id), v);
-
-    const { data: files, error: fErr } = await supabase
-      .from('ipa_files')
-      .select('app_version_id, binary_sha1')
-      .in('app_version_id', Array.from(versionById.keys()))
-      .not('binary_sha1', 'is', null)
-      .limit(20000);
-    if (fErr || !files?.length) return empty;
-
-    const shas = Array.from(new Set(files.map((f: any) => f.binary_sha1).filter(Boolean)));
-    const binBySha = new Map<string, any>();
-    const CHUNK = 150;
-    for (let i = 0; i < shas.length; i += CHUNK) {
-      const { data: bins, error: bErr } = await supabase
-        .from('binaries')
-        .select('sha1, icon_sha256, bundle_icon_sha256, install_status, architectures, has_extensions')
-        .in('sha1', shas.slice(i, i + CHUNK))
-        // Candidacy is "has ANY extracted icon". The old filter gated on
-        // icon_sha256 only, but the candidate below prefers bundle_icon_sha256 —
-        // so a binary carrying only the newer bundle icon (icon_sha256 NULL) was
-        // silently dropped, leaving apps like Snapchat iconless in every list even
-        // though their own page (which doesn't filter) showed the icon fine.
-        .or('icon_sha256.not.is.null,bundle_icon_sha256.not.is.null');
-      if (bErr) return empty;
-      for (const b of bins || []) binBySha.set(b.sha1, b);
-    }
-    if (!binBySha.size) return empty;
-
-    // Gather icon candidates per app, then pick the oldest.
-    const candidatesByApp = new Map<number, IconCandidate[]>();
-    for (const f of files) {
-      const bin = binBySha.get(f.binary_sha1);
-      if (!bin) continue;
-      const v = versionById.get(Number(f.app_version_id));
-      if (!v) continue;
-      const appId = Number(v.app_id);
-      const arr = candidatesByApp.get(appId) || [];
-      arr.push({
-        version_string: v.version_string,
-        minimum_os_version: v.minimum_os_version,
-        // Prefer the build-time bundle icon (period-accurate); fall back to the
-        // legacy icon_sha256 (iTunesArtwork-derived, download-date-stamped).
-        icon_sha256: bin.bundle_icon_sha256 || bin.icon_sha256,
-        install_status: bin.install_status,
-        architectures: bin.architectures,
-        has_extensions: bin.has_extensions,
-      });
-      candidatesByApp.set(appId, arr);
-    }
-
+    // Read the precomputed apps.oldest_icon_sha256 (maintained by the
+    // refresh_oldest_icons() pg_cron job — the SQL port of pickOldestIcon below).
+    // This replaced a per-request 3-query fan-out (versions → files → binaries)
+    // that also had to page past PostgREST's 1000-row cap; now it's one indexed
+    // column read, chunked only to bound the .in() list length.
     const out = new Map<number, string>();
-    for (const [appId, cands] of candidatesByApp) {
-      const sha = pickOldestIcon(cands);
-      if (sha) out.set(appId, sha);
+    const CHUNK = 300;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const { data, error } = await supabase
+        .from('apps')
+        .select('id, oldest_icon_sha256')
+        .in('id', ids.slice(i, i + CHUNK))
+        .not('oldest_icon_sha256', 'is', null);
+      if (error) return empty;
+      for (const a of data || []) out.set(Number(a.id), a.oldest_icon_sha256);
     }
     cacheSet(cacheKey, out, 10 * 60 * 1000);
     return out;
