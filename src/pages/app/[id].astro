@@ -401,9 +401,31 @@ const anyMultiCopy = (versions || []).some(
 // import artifact — hide it.
 const dateCounts = new Map<string, number>();
 for (const v of versions || []) {
-  if (v?.release_date) dateCounts.set(v.release_date, (dateCounts.get(v.release_date) || 0) + 1);
+  // Key on the calendar day, not the full timestamp — a bulk-imported date
+  // reused across versions is the artifact we want to catch even when the times
+  // differ slightly.
+  const d = v?.release_date ? String(v.release_date).slice(0, 10) : null;
+  if (d) dateCounts.set(d, (dateCounts.get(d) || 0) + 1);
 }
-const isTrustworthyDate = (d: any) => !!d && (dateCounts.get(d) || 0) < 3;
+const isTrustworthyDate = (d: any) => !!d && (dateCounts.get(String(d).slice(0, 10)) || 0) < 3;
+
+// A date can't precede the iOS release its binary requires: iMovie 1.2.2 (stored
+// as "122") needs iOS 5.0 yet carried a bulk-artifact release_date of Jun 2010 —
+// two years before iOS 5 existed. Reject any displayed date earlier than the
+// min-OS's release year (year floor is conservative, so it only rejects the
+// clearly-impossible, never a plausibly-early one).
+const OS_RELEASE_YEAR: Record<number, number> = {
+  2: 2008, 3: 2009, 4: 2010, 5: 2011, 6: 2012, 7: 2013, 8: 2014, 9: 2015,
+  10: 2016, 11: 2017, 12: 2018, 13: 2019, 14: 2020, 15: 2021, 16: 2022, 17: 2023, 18: 2024,
+};
+function datePlausible(dateStr: any, v: any): boolean {
+  if (!dateStr) return false;
+  const yr = parseInt(String(dateStr).slice(0, 4), 10);
+  if (!Number.isFinite(yr)) return false;
+  const major = parseInt(String(v?.minimum_os_version || '').split('.')[0], 10);
+  const floor = Number.isFinite(major) ? OS_RELEASE_YEAR[major] : undefined;
+  return !floor || yr >= floor;
+}
 
 const requestUrl = new URL(Astro.request.url);
 const pathname = requestUrl.pathname;
@@ -456,9 +478,9 @@ const filtered = iosFilter == null
 // Chronological key source: the estimated date, else a trustworthy release_date
 // (day precision). Undated versions get placed by ext id / version number.
 const chronoDateOf = (v: any) =>
-  v?.estimated_release_date
+  (v?.estimated_release_date && datePlausible(v.estimated_release_date, v))
     ? String(v.estimated_release_date).slice(0, 10)
-    : (isTrustworthyDate(v?.release_date) ? String(v.release_date).slice(0, 10) : null);
+    : (isTrustworthyDate(v?.release_date) && datePlausible(v.release_date, v) ? String(v.release_date).slice(0, 10) : null);
 const sortedVersions = sortVersions(filtered, currentDir, chronoDateOf);
 
 // Flip the sort direction, preserving the other params.
@@ -524,8 +546,8 @@ const versionRows = (sortedVersions || []).map((v: any) => {
   const metaLines: { text: string; title?: string }[] = [];
   const osReq = osRequirementLabel(v.minimum_os_version) || osRequirementLabel(machoMinOs);
   if (osReq) metaLines.push({ text: osReq });
-  if (v.estimated_release_date) metaLines.push({ text: formatDate(v.estimated_release_date), title: 'Estimated release date' });
-  else if (isTrustworthyDate(v.release_date)) metaLines.push({ text: `Released ${formatDate(v.release_date)}` });
+  if (v.estimated_release_date && datePlausible(v.estimated_release_date, v)) metaLines.push({ text: formatDate(v.estimated_release_date), title: 'Estimated release date' });
+  else if (isTrustworthyDate(v.release_date) && datePlausible(v.release_date, v)) metaLines.push({ text: `Released ${formatDate(v.release_date)}` });
   const minosMajor = minOsMajor(v) ?? (machoMinOs ? parseInt(String(machoMinOs).split('.')[0], 10) : null);
   // Universal (iPhone + iPad) → the App Store's "fat binary" + badge.
   const df = (v.device_family || []).map((x: any) => String(x));
@@ -549,7 +571,8 @@ const sizePoints = (versions || [])
     // Encrypted copies are excluded — they're not a real installable size.
     const files = (filesByVersionId.get(v.id) || []).filter((f: any) => binaryOf(f)?.install_status !== 'encrypted');
     const bytes = files.reduce((mx: number, f: any) => Math.max(mx, Number(f.file_size) || 0), 0);
-    const dateStr = v.estimated_release_date || (isTrustworthyDate(v.release_date) ? v.release_date : null);
+    const dateStr = (v.estimated_release_date && datePlausible(v.estimated_release_date, v)) ? v.estimated_release_date
+      : (isTrustworthyDate(v.release_date) && datePlausible(v.release_date, v) ? v.release_date : null);
     const t = dateStr ? Date.parse(dateStr) : NaN;
     return { t, y: bytes, dateStr };
   })
@@ -643,11 +666,6 @@ if (sizePoints.length >= 3) {
                     <div class="v-fact" title={l.title}>{l.text}</div>
                   ))}
                   {row.nofileText && <div class="v-fact v-nofile">{row.nofileText}</div>}
-                  {row.extras.length > 0 && (
-                    <button type="button" class="v-copies-toggle" aria-expanded="false">
-                      <span class="v-copies-count">{row.extras.length + 1} copies</span>
-                    </button>
-                  )}
                 </div>
                 {row.primary ? (
                   <span class="file-actions">
@@ -952,6 +970,7 @@ if (sizePoints.length >= 3) {
     .v-lockup {
       display: flex;
       align-items: center;
+      position: relative;
     }
 
     /* Period-accurate icon for this version, from its build-time bundle icon.
@@ -1124,22 +1143,20 @@ if (sizePoints.length >= 3) {
       display: flex;
     }
 
-    /* Per-row "N copies" toggle: reveals just this version's extra copies.
-       Hidden entirely when JS is off (the global "Show everything" covers that
-       path); shown as an inline affordance once the enhancer marks the row. */
-    .v-copies-toggle {
-      display: none;
-      margin-top: 3px;
-      padding: 0;
-      border: 0;
-      background: none;
-      font: inherit;
-      color: #397fd6;
-      cursor: pointer;
+    /* With JS on, a version row that has extra copies is clickable to expand
+       them inline (no visible button — the row itself is the target). A faint
+       chevron on the lockup hints it, rotating when open. */
+    .js-copies .version[data-copies] { cursor: pointer; }
+    .js-copies .version[data-copies] .v-lockup::after {
+      content: '\25be';
+      position: absolute;
+      right: 10px;
+      bottom: 8px;
+      color: #bbb;
+      font-size: 12px;
+      transition: transform 0.15s;
     }
-    .js-copies .v-copies-toggle { display: inline-block; }
-    .v-copies-count::before { content: '\25b8 '; font-size: 0.85em; }
-    .version.expanded .v-copies-count::before { content: '\25be '; }
+    .js-copies .version[data-copies].expanded .v-lockup::after { transform: rotate(180deg); }
 
     .show-everything .v-hidden-default {
       display: block;
@@ -1365,24 +1382,25 @@ if (sizePoints.length >= 3) {
           })(everythingToggles[i]);
         }
 
-        // 1b) Per-row "N copies" expand — reveal just that version's extra
-        //     copies inline, independent of the global toggle. Enable the
-        //     affordance (CSS shows it only under .js-copies) and wire clicks.
-        if (versionsRoot) addClass(versionsRoot, 'js-copies');
-        var copyToggles = document.querySelectorAll('.v-copies-toggle');
-        for (i = 0; i < copyToggles.length; i++) {
-          (function (btn) {
-            btn.onclick = function (e) {
-              var row = btn;
-              while (row && !hasClass(row, 'version')) row = row.parentNode;
-              if (row) {
-                if (hasClass(row, 'expanded')) { removeClass(row, 'expanded'); btn.setAttribute('aria-expanded', 'false'); }
-                else { addClass(row, 'expanded'); btn.setAttribute('aria-expanded', 'true'); }
+        // 1b) Per-row expand — clicking a version row that has extra copies
+        //     reveals just that row's copies inline (no button; the row is the
+        //     target). Delegated off the container. Clicks on the Install /
+        //     Download links pass through untouched.
+        if (versionsRoot) {
+          addClass(versionsRoot, 'js-copies');
+          versionsRoot.onclick = function (e) {
+            var t = e.target || e.srcElement;
+            while (t && t !== versionsRoot) {
+              if (t.tagName === 'A' || t.tagName === 'BUTTON') return true; // let links/buttons work
+              if (t.getAttribute && t.getAttribute('data-copies') && hasClass(t, 'version')) {
+                if (hasClass(t, 'expanded')) removeClass(t, 'expanded'); else addClass(t, 'expanded');
+                if (e && e.preventDefault) e.preventDefault();
+                return false;
               }
-              if (e && e.preventDefault) e.preventDefault();
-              return false;
-            };
-          })(copyToggles[i]);
+              t = t.parentNode;
+            }
+            return true;
+          };
         }
 
         // 2) "Runs on" filter: hide versions whose minimum OS is newer than the
