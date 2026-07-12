@@ -118,7 +118,7 @@ export async function getSnapshotPositions(supabase: any, snapshotId: number): P
   if (cached) return cached;
   const { data, error } = await supabase
     .from('chart_positions')
-    .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, icon_url)')
+    .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, app_store_name, icon_url)')
     .eq('chart_snapshot_id', snapshotId)
     .order('position', { ascending: true })
     .limit(300);
@@ -126,7 +126,20 @@ export async function getSnapshotPositions(supabase: any, snapshotId: number): P
     console.error('chart_positions query failed:', error.message);
     return null;
   }
-  const rows = data || [];
+  // The leaked-marketing chart source reconstructed names from URL slugs and
+  // .title()-cased them ("infinity-blade-ii" -> "Infinity Blade Ii"), mangling
+  // roman numerals and lowercase-initial brands (iPhoto -> Iphoto). Those rows are
+  // identifiable by a null developer_name; real chart-feed rows carry a developer
+  // and a period-accurate name. So ONLY for the slug-derived rows, and only when
+  // the entry links to a known app, swap in that app's authoritative iTunes name.
+  // Real-feed names are left untouched (period-accurate; avoids showing a later
+  // rename on an old chart). Only the display string changes — app_store_id drives
+  // all chart logic (fingerprints, prev/next), so this is display-only.
+  const rows = (data || []).map((r: any) =>
+    !r.developer_name && r.apps?.app_store_name
+      ? { ...r, display_name: r.apps.app_store_name }
+      : r
+  );
   cacheSet(key, rows, 10 * 60 * 1000);
   return rows;
 }
