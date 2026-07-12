@@ -29,3 +29,11 @@ pnpm-debug.log*
 
 # local design-reference assets (extracted iOS 6 artwork)
 /ios6-icon-assets
+
+# internal verdict review UI
+/src/pages/review.astro
+/src/pages/api/verdict.ts
+
+# Agent working notes (local only)
+CLAUDE.md
+TODO.md
