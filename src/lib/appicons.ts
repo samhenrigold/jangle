@@ -51,6 +51,24 @@ export function pickOldestIcon(candidates: IconCandidate[]): string | null {
   return withIcon[0].icon_sha256 || null;
 }
 
+// Fetch every row of a query, paging past PostgREST's 1000-row response cap.
+// `build(from, to)` must apply a stable .order() and the given .range(); we loop
+// until a short page. Returns null on any error (caller treats as "give up").
+const PAGE = 1000;
+async function fetchAllPaged(
+  _supabase: any,
+  build: (from: number, to: number) => any
+): Promise<any[] | null> {
+  const out: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build(from, from + PAGE - 1);
+    if (error) return null;
+    const rows = data || [];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
 // Map<internal app id → oldest icon sha256> for a set of apps.
 export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise<Map<number, string>> {
   const ids = Array.from(new Set(appDbIds.filter((n) => Number.isFinite(n) && n > 0)));
@@ -61,23 +79,36 @@ export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise
 
   const empty = new Map<number, string>();
   try {
-    const { data: vers, error: vErr } = await supabase
-      .from('app_versions')
-      .select('id, app_id, version_string, minimum_os_version')
-      .in('app_id', ids)
-      .limit(8000);
-    if (vErr || !vers?.length) return empty;
+    // PostgREST caps EVERY response at 1000 rows regardless of .limit(), and
+    // these results have no meaningful order — so a single query silently
+    // returns an arbitrary 1000-row slice. A page's apps can exceed 1000 total
+    // versions (high-version apps) and easily exceed 1000 total files, so both
+    // fetches must page through the full set with a stable order; otherwise apps
+    // whose rows fall outside the arbitrary slice render iconless (this is why
+    // Boomerang and Flickr — few files each — lost to Snapchat on a shared page).
+    const vers = await fetchAllPaged(supabase, (from, to) =>
+      supabase.from('app_versions')
+        .select('id, app_id, version_string, minimum_os_version')
+        .in('app_id', ids).order('id', { ascending: true }).range(from, to));
+    if (!vers?.length) return empty;
 
     const versionById = new Map<number, any>();
     for (const v of vers) versionById.set(Number(v.id), v);
 
-    const { data: files, error: fErr } = await supabase
-      .from('ipa_files')
-      .select('app_version_id, binary_sha1')
-      .in('app_version_id', Array.from(versionById.keys()))
-      .not('binary_sha1', 'is', null)
-      .limit(20000);
-    if (fErr || !files?.length) return empty;
+    const versionIds = Array.from(versionById.keys());
+    const files: any[] = [];
+    const VCHUNK = 500;   // bound the .in() URL length; each chunk still pages internally
+    for (let i = 0; i < versionIds.length; i += VCHUNK) {
+      const slice = versionIds.slice(i, i + VCHUNK);
+      const part = await fetchAllPaged(supabase, (from, to) =>
+        supabase.from('ipa_files')
+          .select('app_version_id, binary_sha1')
+          .in('app_version_id', slice).not('binary_sha1', 'is', null)
+          .order('app_version_id', { ascending: true }).range(from, to));
+      if (part === null) return empty;
+      files.push(...part);
+    }
+    if (!files.length) return empty;
 
     const shas = Array.from(new Set(files.map((f: any) => f.binary_sha1).filter(Boolean)));
     const binBySha = new Map<string, any>();
