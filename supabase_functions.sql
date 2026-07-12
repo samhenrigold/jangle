@@ -266,14 +266,16 @@ WITH av AS (
     count(*) FILTER (WHERE price > 0) AS p_paid
   FROM app_versions
 ),
--- Quarantined binaries (tamper_status resigned/injected/wrapper — modded
--- repackages, see the Colophon's "What belongs in the archive") are
--- editorially suppressed: stats must not count them or their file copies.
--- NULL tamper_status (not yet classified) counts as clean.
+-- Quarantined binaries (binaries.hidden — a generated column over
+-- tamper_status, the single definition of the quarantine set; see the
+-- Colophon's "What belongs in the archive") are editorially suppressed:
+-- stats must not count them or their file copies. Unclassified binaries
+-- (hidden=false) count as clean; `IS NOT TRUE` also passes copies whose
+-- binary row is missing (LEFT JOIN).
 bins AS (
   SELECT sha1, install_status, architectures, icon_sha256, bundle_icon_sha256, has_watch_app
   FROM binaries
-  WHERE tamper_status IS NULL OR tamper_status NOT IN ('resigned','injected','wrapper','suspect')
+  WHERE hidden IS NOT TRUE
 ),
 ipf AS (
   SELECT count(*) AS copies,
@@ -281,14 +283,14 @@ ipf AS (
          sum(f.file_size) AS total_bytes
   FROM ipa_files f
   LEFT JOIN binaries b ON b.sha1 = f.binary_sha1
-  WHERE b.tamper_status IS NULL OR b.tamper_status NOT IN ('resigned','injected','wrapper','suspect')
+  WHERE b.hidden IS NOT TRUE
 )
 SELECT jsonb_build_object(
   'apps',              (SELECT count(*) FROM apps),
   'developers',        (SELECT count(*) FROM developers),
   'versions',          (SELECT count(*) FROM app_versions),
   'binaries',          (SELECT count(*) FROM bins),
-  'quarantined',       (SELECT count(*) FROM binaries WHERE tamper_status IN ('resigned','injected','wrapper','suspect')),
+  'quarantined',       (SELECT count(*) FROM binaries WHERE hidden),
   'copies',            ipf.copies,
   'copies_available',  ipf.copies_available,
   'archive_items',     (SELECT count(*) FROM archive_items),
@@ -668,7 +670,7 @@ BEGIN
     JOIN ipa_files f ON f.app_version_id = av.id
     JOIN binaries b ON b.sha1 = f.binary_sha1
     WHERE (b.bundle_icon_sha256 IS NOT NULL OR b.icon_sha256 IS NOT NULL)
-      AND (b.tamper_status IS NULL OR b.tamper_status NOT IN ('resigned','injected','wrapper','suspect'))
+      AND b.hidden IS NOT TRUE
       AND (p_app_ids IS NULL OR av.app_id = ANY(p_app_ids))
     ORDER BY av.id,
       CASE WHEN NULLIF(split_part(coalesce(av.minimum_os_version,''), '.', 1), '')::int BETWEEN 1 AND 6
@@ -698,7 +700,7 @@ BEGIN
       JOIN binaries b ON b.sha1 = f.binary_sha1
       WHERE av.app_id = a.id
         AND (b.bundle_icon_sha256 IS NOT NULL OR b.icon_sha256 IS NOT NULL)
-        AND (b.tamper_status IS NULL OR b.tamper_status NOT IN ('resigned','injected','wrapper','suspect')));
+        AND b.hidden IS NOT TRUE);
   RETURN n;
 END $$;
 REVOKE EXECUTE ON FUNCTION public.refresh_oldest_icons(bigint[]) FROM PUBLIC, anon, authenticated;

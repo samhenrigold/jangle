@@ -44,7 +44,8 @@ const loadFeatured = async () => {
     const { data, error } = await supabase
       .from('apps')
       .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
-      .in('app_store_id', FEATURED_APP_STORE_IDS);
+      .in('app_store_id', FEATURED_APP_STORE_IDS)
+      .not('excluded', 'is', true);
     if (error) {
       console.error('featured query failed:', error.message);
       featuredApps = [];

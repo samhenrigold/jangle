@@ -43,6 +43,7 @@ export async function resolveApp(
       .from('apps')
       .select(APP_COLS)
       .eq(col, value)
+      .not('excluded', 'is', true)
       .order('id', { ascending: true })
       .limit(1)
       .maybeSingle();
