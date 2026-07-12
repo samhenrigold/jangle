@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { isProxyableIconHost } from '../lib/icons';
 import { blankGif } from '../lib/http';
+import { supabaseFor } from '../lib/supabase';
 
 // Pin the negative result at the edge too (s-maxage), not just the browser.
 // The miss path does up to N upstream fetches; without an edge-cached blank,
@@ -61,6 +62,31 @@ export const GET: APIRoute = async (ctx) => {
   if ((target.protocol !== 'http:' && target.protocol !== 'https:') || !isProxyableIconHost(target.hostname)) {
     return blank(400);
   }
+
+  // 0) Durable copy first: if rehost_cdn.py has content-addressed this URL into
+  //    our R2 (cdn_assets), redirect to /icon/<sha> and skip Apple entirely — so
+  //    a phobos/mzstatic takedown can't break it. Best-effort: any lookup failure
+  //    just falls through to the live proxy below.
+  try {
+    const supabase = supabaseFor(ctx);
+    const { data } = await supabase
+      .from('cdn_assets')
+      .select('sha256')
+      .eq('url', raw)
+      .eq('status', 'ok')
+      .not('sha256', 'is', null)
+      .maybeSingle();
+    if (data?.sha256) {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: `/icon/${data.sha256}`,
+          // Redirect is safe to cache hard: cdn_assets rows are immutable once ok.
+          'Cache-Control': 'public, max-age=604800, s-maxage=2592000',
+        },
+      });
+    }
+  } catch { /* fall through to live proxy */ }
 
   // 1) Try the URL as given (swapping to https on the mzstatic host it maps to).
   const direct = await fetchImage(target.toString());
