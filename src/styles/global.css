@@ -261,11 +261,11 @@ em { font-style: italic; }
   vertical-align: middle;
   -webkit-box-sizing: border-box;
   box-sizing: border-box;
-  border: 0 solid transparent;
-  border-image: url(/wsf/buttons/blue@2x.png) 0 3 0 10 fill / 0 1.5px 0 5px stretch;
-  /* Fallback for browsers without border-image fill (very old WebKit). */
-  background-color: #4966a0;
-  border-radius: 4px;
+  /* No bg / radius of our own — the sliced asset carries every pixel. Slices
+     are in @2x source px: 6 left cap, a thin 2px stretch column, 6 right cap
+     (rendered at 3 CSS px caps for a crisp 2:1). Height isn't sliced. */
+  border: 0;
+  border-image: url(/wsf/buttons/blue@2x.png) 0 6 0 6 fill / 0 3px 0 3px stretch;
   color: #fff !important;
   font-size: 12px;
   font-weight: bold;
@@ -278,13 +278,12 @@ em { font-style: italic; }
 }
 .wsfbtn-primary { } /* alias kept for markup symmetry; one button style fits all */
 
-/* Universal ("fat binary") apps — BluePlus with the "+" baked into the left
-   cap. A 16px left cap fully contains the "+" so it renders 1:1 (no stretch,
-   no smear) while only the middle stretches. */
+/* Universal apps — BluePlus, whose "+" lives in a wide (20px @2x) left cap that
+   renders 1:1 with no stretch, so the badge stays crisp while only the thin
+   2px middle stretches. */
 .wsfbtn.nav-universal {
-  padding-left: 18px;
-  border-image: url(/wsf/buttons/blue-plus@2x.png) 0 3 0 16 fill / 0 1.5px 0 8px stretch;
-  background-color: #4966a0;
+  padding-left: 15px;
+  border-image: url(/wsf/buttons/blue-plus@2x.png) 0 6 0 20 fill / 0 3px 0 10px stretch;
 }
 .wsfbtn.nav-universal:active {
   border-image-source: url(/wsf/buttons/blue-plus-pressed@2x.png);
@@ -292,8 +291,7 @@ em { font-style: italic; }
 
 .wsfbtn-disabled {
   pointer-events: none;
-  border-image: url(/wsf/buttons/purchased@2x.png) 0 3 0 10 fill / 0 1.5px 0 5px stretch;
-  background-color: #dcdcdc;
+  border-image: url(/wsf/buttons/purchased@2x.png) 0 6 0 6 fill / 0 3px 0 3px stretch;
   color: #9a9a9a !important;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
