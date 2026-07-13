@@ -255,11 +255,17 @@ const loadMoreFromDev = async () => {
 // then. The earliest set shows by default; a picker (JS) browses the history.
 // get_app_screenshots does the exact + near-duplicate dedup and iPhone-prefer
 // server-side (the snapshot_screenshots view is too slow filtered by one app).
-type ShotSet = { date: string; label: string; version: string | null; shots: { src: string }[] };
+// Strip height is fixed (SHOT_H); each shot's box width is derived from its
+// master's aspect ratio so the flex slot reserves the right space BEFORE the
+// image loads — otherwise width:auto collapses to ~0 and the strip jumps as
+// images arrive. Portrait iPhone default when a master lacks dimensions.
+const SHOT_H = 260;
+type Shot = { src: string; w: number };
+type ShotSet = { date: string; label: string; version: string | null; shots: Shot[] };
 let screenshotSets: ShotSet[] = [];
 const loadScreenshots = async () => {
   if (!appStoreId) return;
-  const key = `shotsets:${appStoreId}`;
+  const key = `shotsets:v2:${appStoreId}`;   // v2: shots carry box width
   const cached = cacheGet<ShotSet[]>(key);
   if (cached) { screenshotSets = cached; return; }
   const { data, error } = await supabase.rpc('get_app_screenshots', {
@@ -273,8 +279,13 @@ const loadScreenshots = async () => {
       label: formatMonthYear(row.captured_at),
       version: row.version_string || null,
       shots: (row.shots || [])
-        .map((s: any) => (s && s.sha ? { src: `/screen/${s.sha}` } : null))
-        .filter(Boolean) as { src: string }[],
+        .map((s: any) => {
+          if (!s || !s.sha) return null;
+          const w = Number(s.w), h = Number(s.h);
+          const boxW = w > 0 && h > 0 ? Math.round(SHOT_H * w / h) : Math.round(SHOT_H * 0.5625);
+          return { src: `/screen/${s.sha}`, w: boxW };
+        })
+        .filter(Boolean) as Shot[],
     }))
     .filter((s: ShotSet) => s.shots.length > 0);
   cacheSet(key, screenshotSets, 30 * 60 * 1000);
@@ -868,8 +879,8 @@ if (sizePoints.length >= 3) {
               <div class={i === 0 ? 'shot-set is-active' : 'shot-set'} data-shot-set={String(i)}>
                 <div class="shots-strip">
                   {s.shots.map((sh) => (
-                    <a class="shot" href={sh.src} target="_blank" rel="noopener">
-                      <img src={sh.src} loading="lazy" alt="Screenshot" />
+                    <a class="shot" href={sh.src} target="_blank" rel="noopener" style={`width:${sh.w}px`}>
+                      <img src={sh.src} width={sh.w} height={SHOT_H} loading="lazy" alt="Screenshot" />
                     </a>
                   ))}
                 </div>
