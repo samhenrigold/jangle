@@ -7,7 +7,7 @@ import { cacheGet, cacheSet } from '../../lib/cache';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getOldestIcons } from '../../lib/appicons';
-import { iconSrc } from '../../lib/icons';
+import { iconSrc, appIconSrc } from '../../lib/icons';
 import { appTitleOf } from '../../lib/apps';
 
 const { id } = Astro.params;
@@ -44,7 +44,7 @@ let list = cacheGet<any[]>(listCacheKey);
 if (!dbError && !list) {
   const { data, error } = await supabase
     .from('apps')
-    .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url, version_count')
+    .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url:live_icon_url, version_count')
     .eq('developer_id', id)
     .not('excluded', 'is', true)
     .order('version_count', { ascending: false })
@@ -91,7 +91,7 @@ const appNoun = appCount === 1 ? 'app' : 'apps';
           <ul class="app-grid">
             {(list || []).map((a: any) => {
               const sha = iconShas && a.id != null ? iconShas.get(Number(a.id)) : null;
-              const icon = sha ? `/icon/${sha}` : iconSrc(a.icon_url);
+              const icon = appIconSrc(sha, a.icon_url);
               const href = `/app/${a.app_store_id ? a.app_store_id : a.id}`;
               const vc = a.version_count == null ? null : Number(a.version_count);
               return (

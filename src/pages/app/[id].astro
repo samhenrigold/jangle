@@ -5,7 +5,7 @@ import DbError from '../../components/DbError.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { sortVersions, coerceDir } from '../../lib/sorting';
 import { generateIpaDownloadUrl } from '../../lib/urls';
-import { iconSrc } from '../../lib/icons';
+import { iconSrc, appIconSrc } from '../../lib/icons';
 import { formatDate, formatFileSize, formatNumber } from '../../lib/format';
 import { dedupeFilesByHash, fileLabel, sortGroupsByPreference } from '../../lib/files';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
@@ -236,7 +236,7 @@ const loadMoreFromDev = async () => {
   } else {
     const { data } = await supabase
       .from('apps')
-      .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url, version_count')
+      .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url:live_icon_url, version_count')
       .eq('developer_id', appData.developer_id)
       .neq('id', appData.id)
       .not('excluded', 'is', true)

@@ -118,7 +118,7 @@ export async function getSnapshotPositions(supabase: any, snapshotId: number): P
   if (cached) return cached;
   const { data, error } = await supabase
     .from('chart_positions')
-    .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, app_store_name, icon_url, oldest_icon_sha256, excluded)')
+    .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, app_store_name, icon_url:live_icon_url, oldest_icon_sha256, excluded)')
     .eq('chart_snapshot_id', snapshotId)
     .order('position', { ascending: true })
     .limit(300);

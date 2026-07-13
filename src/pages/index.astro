@@ -7,7 +7,7 @@ import SectionHeader from '../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { setCacheHeaders, setDegraded } from '../lib/http';
 import { FEATURED_APP_STORE_IDS } from '../lib/featured';
-import { iconSrc } from '../lib/icons';
+import { iconSrc, appIconSrc } from '../lib/icons';
 import { formatDate } from '../lib/format';
 import { getOldestIcons } from '../lib/appicons';
 import {
@@ -43,7 +43,7 @@ const loadFeatured = async () => {
   if (!featuredApps) {
     const { data, error } = await supabase
       .from('apps')
-      .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
+      .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
       .in('app_store_id', FEATURED_APP_STORE_IDS)
       .not('excluded', 'is', true);
     if (error) {
@@ -135,8 +135,7 @@ if (dbError) setDegraded(Astro.response);
                   // then the archive's own oldest extracted icon; the app's LIVE
                   // listing icon (modern, era-wrong) only as a last resort.
                   const icon = iconSrc(p.artwork_url)
-                    || (p.apps?.oldest_icon_sha256 ? `/icon/${p.apps.oldest_icon_sha256}` : '')
-                    || iconSrc(p.apps?.icon_url);
+                    || appIconSrc(p.apps?.oldest_icon_sha256, p.apps?.icon_url);
                   const price = formatPrice(p.price_amount, p.price_currency);
                   const href = p.apps ? `/app/${p.apps.app_store_id || p.apps.id}` : null;
                   const inner = (

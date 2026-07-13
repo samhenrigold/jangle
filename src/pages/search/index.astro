@@ -98,7 +98,7 @@ if (q || genreId || dev) {
       let listQ = applyFilters(
         supabase
           .from('apps')
-          .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
+          .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
       );
       if (sort === 'name') listQ = listQ.order('display_name', { ascending: true });
       else if (sort === 'first_date') listQ = listQ.order('first_version_date', { ascending: true, nullsFirst: false });
@@ -152,7 +152,7 @@ if (q || genreId || dev) {
       } else if (sort === 'name') {
         let query = supabase
           .from('apps')
-          .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url, display_name, developers!apps_developer_id_fkey(artist_name)')
+          .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, developers!apps_developer_id_fkey(artist_name)')
           .not('excluded', 'is', true)
           .order('display_name', { ascending: true })
           .range(offset, offset + pageSize - 1);

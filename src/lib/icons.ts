@@ -24,6 +24,17 @@ export function iconSrc(rawUrl: string | null | undefined): string {
   return u.protocol === 'https:' ? rawUrl : '';
 }
 
+// THE app-icon selection chain, one place: the archive's own content-addressed
+// icon when we have one, else the app's live listing icon (era-wrong, last
+// resort) via iconSrc. Every list/grid surface uses this — inlining the chain
+// per-page is how surfaces drifted apart (see plans/017).
+export function appIconSrc(
+  sha: string | null | undefined,
+  liveUrl: string | null | undefined
+): string {
+  return sha ? `/icon/${sha}` : iconSrc(liveUrl);
+}
+
 // Absolute variant for contexts fetched off-page (e.g. the itms install
 // manifest's display-image, which the device loads directly).
 export function absoluteIconSrc(rawUrl: string | null | undefined, origin: string): string | null {

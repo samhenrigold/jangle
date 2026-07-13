@@ -5,7 +5,7 @@ import DbError from '../../components/DbError.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
-import { iconSrc } from '../../lib/icons';
+import { iconSrc, appIconSrc } from '../../lib/icons';
 import { formatDate, formatNumber } from '../../lib/format';
 import {
   getChartTypes,
@@ -273,7 +273,7 @@ const pageTitle = snapshot
             <ul class="chart-grid">
               {positions.map((p: any) => {
                 const oldSha = p.apps?.id && chartIconShas ? chartIconShas.get(Number(p.apps.id)) : null;
-                const icon = iconSrc(p.artwork_url) || (oldSha ? `/icon/${oldSha}` : '') || iconSrc(p.apps?.icon_url);
+                const icon = iconSrc(p.artwork_url) || appIconSrc(oldSha, p.apps?.icon_url);
                 const price = formatPrice(p.price_amount, p.price_currency);
                 const inLibrary = !!p.apps;
                 const href = inLibrary ? `/app/${p.apps.app_store_id || p.apps.id}` : null;

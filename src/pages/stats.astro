@@ -3,7 +3,7 @@ import Layout from '../components/Layout.astro';
 import { supabaseFor } from '../lib/supabase';
 import { setCacheHeaders, setDegraded } from '../lib/http';
 import { formatNumber, formatDate, formatFileSize } from '../lib/format';
-import { iconSrc } from '../lib/icons';
+import { iconSrc, appIconSrc } from '../lib/icons';
 import { osShortLabel } from '../lib/devices';
 import { barChartSVG, type BarDatum } from '../lib/charts';
 
@@ -160,7 +160,7 @@ if (stats) {
       text: String(a.name),
       detail: detailOf(a),
       href: a.id ? `/app/${a.id}` : undefined,
-      icon: a.icon_sha ? `/icon/${a.icon_sha}` : iconSrc(a.icon),
+      icon: appIconSrc(a.icon_sha, a.icon),
     }));
 
   records = [

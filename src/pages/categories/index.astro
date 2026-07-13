@@ -5,7 +5,7 @@ import DbError from '../../components/DbError.astro';
 import { sortGenres, fetchGenresWithCounts, isGameSubgenre } from '../../lib/genres';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
-import { iconSrc } from '../../lib/icons';
+import { iconSrc, appIconSrc } from '../../lib/icons';
 import { getOldestIcons } from '../../lib/appicons';
 
 setCacheHeaders(Astro.response, 86400);
@@ -23,7 +23,7 @@ const loadGenreIcons = async () => {
   const iconShas = await getOldestIcons(supabase, tops.map((t: any) => Number(t.app_id)));
   for (const t of tops) {
     const sha = iconShas?.get(Number(t.app_id));
-    const src = sha ? `/icon/${sha}` : iconSrc(t.icon_url);
+    const src = appIconSrc(sha, t.icon_url);
     if (src) genreIcon.set(Number(t.genre_id), src);
   }
 };

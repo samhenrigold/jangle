@@ -1,5 +1,5 @@
 ---
-import { iconSrc } from '../lib/icons';
+import { appIconSrc } from '../lib/icons';
 import { appTitleOf } from '../lib/apps';
 
 // startRank: when set, rows are numbered from it (charts / category "top" lists).
@@ -13,7 +13,7 @@ const { list = [], startRank, peakLines, iconShas } = Astro.props;
 <ul class="applist">
   {list.map((a: any, i: number) => {
     const oldSha = iconShas && a.id != null ? iconShas.get(Number(a.id)) : null;
-    const icon = oldSha ? `/icon/${oldSha}` : iconSrc(a.icon_url);
+    const icon = appIconSrc(oldSha, a.icon_url);
     const count = a.version_count == null ? null : Number(a.version_count);
     const peak = peakLines && a.app_store_id ? peakLines.get(Number(a.app_store_id)) : null;
     return (
