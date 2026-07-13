@@ -86,7 +86,12 @@ const loadCore = async () => {
       .select('id, version_string, build_number, minimum_os_version, release_date, estimated_release_date, external_identifier, device_family')
       .eq('app_id', appData.id)
       .order('release_date', { ascending: false })
-      .limit(200);
+      // 200 silently dropped the TAIL of the order — the oldest-dated versions
+      // — for the 30+ apps with more (Instagram: 210, so 1.8.7 with the
+      // original Polaroid icon vanished from the page while the sidebar,
+      // computed DB-side over ALL versions, still showed it). Corpus max is
+      // ~307; 1000 is PostgREST's hard cap anyway.
+      .limit(1000);
     versions = data || [];
     if (error) {
       console.error('versions query failed:', error.message);
