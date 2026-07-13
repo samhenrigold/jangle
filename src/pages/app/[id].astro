@@ -556,7 +556,19 @@ function sortToggleHref(): string {
 }
 
 const appTitle = appData ? appTitleOf(appData) : 'App';
-const appIcon = oldestIconSha ? `/icon/${oldestIconSha}` : (appData ? iconSrc(appData.icon_url) : '');
+// The header is a STORE-LISTING surface: the period store showed the 512px
+// artwork there, never a blown-up 57px bundle icon. large_icon_sha256 is the
+// highest-res member of the oldest icon's perceptual cluster (cluster
+// membership = same-design proof) or a verified icon_upgrades master; ?exact
+// stops /icon from bouncing a non-canonical member back to the small
+// canonical. Version rows keep strict bundle-origin shas.
+const largeIconSha = appData?.large_icon_sha256;
+const appIcon = largeIconSha ? `/icon/${largeIconSha}?exact`
+  : oldestIconSha ? `/icon/${oldestIconSha}`
+  : (appData ? iconSrc(appData.icon_url) : '');
+// A small source blown up to 175px smears; at ≥2× integer-ish scale, honest
+// pixels read as deliberately retro instead. 90px ≈ the 2× cutoff.
+const appIconPixelated = !!appIcon && (appData?.large_icon_px ?? 175) <= 90;
 const developerName = appData?.developers?.artist_name;
 const versionNoun = versions.length === 1 ? 'archived version' : 'archived versions';
 
@@ -796,7 +808,7 @@ if (sizePoints.length >= 3) {
         <div id="left-stack">
           <div class="lockup product application">
             <div class="artwork">
-              {appIcon ? <><img src={appIcon} width="175" height="175" class="artwork" alt={appTitle} /><span class="mask"></span></> : null}
+              {appIcon ? <><img src={appIcon} width="175" height="175" class={appIconPixelated ? 'artwork artwork-pixelated' : 'artwork'} alt={appTitle} /><span class="mask"></span></> : null}
             </div>
             {isUniversalApp && (
               <div class="fat-binary-blurb"><span class="fat-binary-badge">&nbsp;</span><span>This app is designed for both iPhone and iPad</span></div>

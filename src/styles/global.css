@@ -163,6 +163,8 @@ em { font-style: italic; }
 /* App icons: no CSS shadow — the gloss/rounding comes from Apple's mask PNGs */
 #main #content div.lockup.application div.artwork > img.artwork { position: relative; z-index: 0; -webkit-box-shadow: none; box-shadow: none; border: none; display: block; }
 #main #content div.lockup.application div.artwork > span.mask { display: block; position: absolute; top: 0; left: -1px; z-index: 1; width: 177px; height: 179px; background: url(/wsf/images/mask175.png) 0 0 no-repeat; }
+/* No large source exists (≤90px blown up to 175): honest pixels over smear. */
+#main #content div.lockup.application div.artwork > img.artwork-pixelated { image-rendering: -webkit-optimize-contrast; image-rendering: pixelated; }
 
 /* ------------------------------------------------------- product lockup -- */
 /* Left-rail lockup on app pages: artwork, price, metadata list, rating. */

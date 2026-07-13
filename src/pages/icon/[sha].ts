@@ -28,25 +28,32 @@ export const GET: APIRoute = async (ctx) => {
   // iTunesArtwork is a separate, sometimes hand-differed artifact (esp. the
   // early 57px era); it's kept as archival data but never substituted for a
   // version's own icon. (plans/014 upgrade overlay retired 2026-07-13.)
-  try {
-    const { data: alias } = await supabaseFor(ctx)
-      .from('icon_aliases')
-      .select('canonical_sha256')
-      .eq('sha256', sha)
-      .maybeSingle();
-    if (alias?.canonical_sha256 && alias.canonical_sha256 !== sha) {
-      return new Response(null, {
-        status: 301,
-        headers: {
-          Location: `/icon/${alias.canonical_sha256}`,
-          // icon_aliases is fully REPLACED by each dedup run and a cluster's
-          // canonical can flip, so a long-cached redirect goes stale (seen
-          // live: month-old 301s pointing at prior canonicals). A day bounds it.
-          'Cache-Control': 'public, max-age=86400, s-maxage=86400',
-        },
-      });
-    }
-  } catch { /* serve directly */ }
+  // ?exact serves the requested sha as-is, skipping alias canonicalization.
+  // Used by listing surfaces (app-page header) that deliberately pick a
+  // NON-canonical cluster member — e.g. the 512px artwork twin of a 57px
+  // bundle icon (apps.large_icon_sha256). Without it the 301 would bounce
+  // the hi-res member straight back to the small bundle-origin canonical.
+  if (!ctx.url.searchParams.has('exact')) {
+    try {
+      const { data: alias } = await supabaseFor(ctx)
+        .from('icon_aliases')
+        .select('canonical_sha256')
+        .eq('sha256', sha)
+        .maybeSingle();
+      if (alias?.canonical_sha256 && alias.canonical_sha256 !== sha) {
+        return new Response(null, {
+          status: 301,
+          headers: {
+            Location: `/icon/${alias.canonical_sha256}`,
+            // icon_aliases is fully REPLACED by each dedup run and a cluster's
+            // canonical can flip, so a long-cached redirect goes stale (seen
+            // live: month-old 301s pointing at prior canonicals). A day bounds it.
+            'Cache-Control': 'public, max-age=86400, s-maxage=86400',
+          },
+        });
+      }
+    } catch { /* serve directly */ }
+  }
 
   for (const ext of ['jpg', 'png']) {
     try {
