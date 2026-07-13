@@ -39,9 +39,17 @@ export const GET: APIRoute = async (ctx) => {
       return new Response('Not found', { status: 404 });
     }
 
-    let ipaUrl: string;
+    const origin = new URL(ctx.request.url).origin;
+
+    // Validate that a real archive.org source exists (else 404 the manifest),
+    // but point itunesstored at our own redirector instead of the raw URL. The
+    // redirector steers vintage iOS clients to a data node whose TLS they can
+    // handshake — archive.org's newer dn### nodes are ECDSA/AES-GCM-only, which
+    // iOS 6 can't negotiate, so a direct /download/ URL fails whenever the
+    // round-robin lands there. It 302s straight back to archive.org (not a
+    // proxy — bytes never transit us). See src/pages/ipa/[id].ts.
     try {
-      ipaUrl = generateIpaDownloadUrl({
+      generateIpaDownloadUrl({
         id: ipa.id,
         filename: ipa.filename,
         info_plist_path: ipa.info_plist_path,
@@ -50,6 +58,7 @@ export const GET: APIRoute = async (ctx) => {
     } catch {
       return new Response('Not found', { status: 404 });
     }
+    const ipaUrl = `${origin}/ipa/${ipa.id}`;
 
     // Icons from this copy's own binary, served same-origin and content-
     // addressed: the native bundle icon as the download placeholder
@@ -78,7 +87,6 @@ export const GET: APIRoute = async (ctx) => {
       largeIconSha = bin?.icon_sha256 || null;
     }
 
-    const origin = new URL(ctx.request.url).origin;
     const versionString = (version as any).version_string || '';
     const fileSize = Number((ipa as any).file_size);
     // Integrity check with data we already have: with the chunk size set to
