@@ -566,6 +566,11 @@ const versionRows = (sortedVersions || []).map((v: any) => {
   // only copies are FairPlay-encrypted (install but won't launch).
   const hasInstallable = groups.some((g: any) => binaryOf(g.file)?.install_status === 'installable');
   const hideByDefault = !hasInstallable;
+  // A version whose only archived copies are FairPlay-encrypted (they install
+  // but won't launch) — no usable install exists. Its icon is dimmed to signal
+  // that. Distinct from "no file at all" (groups.length === 0).
+  const encryptedOnly = groups.length > 0
+    && groups.every((g: any) => binaryOf(g.file)?.install_status === 'encrypted');
   const versionLabel = v.version_string || v.build_number || 'Unknown version';
   const showBuild = v.build_number && v.build_number !== versionLabel;
   // Consensus across this version's copies (all of them, not just the deduped
@@ -576,7 +581,7 @@ const versionRows = (sortedVersions || []).map((v: any) => {
   const machoMinOs = bin0?.macho_min_os;
   // Each compatibility fact gets its own stacked line (OS requirement + date;
   // the CPU-architecture line was cut — the iOS requirement is enough).
-  const metaLines: { text: string; title?: string }[] = [];
+  const metaLines: { text: string; title?: string; retina?: boolean }[] = [];
   const osReq = osRequirementLabel(v.minimum_os_version) || osRequirementLabel(machoMinOs);
   if (osReq) metaLines.push({ text: osReq });
   // Universal (iPhone + iPad) → the App Store's "fat binary" + badge.
@@ -587,7 +592,7 @@ const versionRows = (sortedVersions || []).map((v: any) => {
   // so prefer it, falling back to the version's when absent.
   const binFam = (bin0?.device_family_macho || []).map((x: any) => String(x));
   const retina = retinaLabel(bin0, binFam.length ? binFam : df);
-  if (retina) metaLines.push(retina);
+  if (retina) metaLines.push({ ...retina, retina: true });
   if (v.estimated_release_date && datePlausible(v.estimated_release_date, v)) metaLines.push({ text: formatDate(v.estimated_release_date), title: 'Estimated release date' });
   else if (isTrustworthyDate(v.release_date) && datePlausible(v.release_date, v)) metaLines.push({ text: `Released ${formatDate(v.release_date)}` });
   const minosMajor = minOsMajor(v) ?? (machoMinOs ? parseInt(String(machoMinOs).split('.')[0], 10) : null);
@@ -600,8 +605,21 @@ const versionRows = (sortedVersions || []).map((v: any) => {
         ? 'This version is no longer available on archive.org'
         : 'No file in the archive for this version')
     : null;
-  return { v, versionLabel, showBuild, vIconSha, metaLines, minosMajor, isUniversal, hideByDefault, primary, extras, nofileText };
+  return { v, versionLabel, showBuild, vIconSha, metaLines, minosMajor, isUniversal, hideByDefault, encryptedOnly, primary, extras, nofileText };
 });
+
+// The Retina/Non-Retina marker only earns its place as a contrast. If every
+// version reads as full "Retina" (no non-Retina and no idiom-asymmetric build),
+// the badge is redundant on each row — drop it app-wide. Any variation
+// (Non-Retina, or Retina on one idiom only) keeps all the markers so the
+// distinction stays legible.
+const anyNonFullRetina = versionRows.some((r: any) =>
+  r.metaLines.some((l: any) => l.retina && l.text !== 'Retina')
+);
+if (!anyNonFullRetina) {
+  for (const r of versionRows) r.metaLines = r.metaLines.filter((l: any) => !l.retina);
+}
+
 const shownByDefaultCount = versionRows.filter((r: any) => !r.hideByDefault).length;
 
 // Bundle size over time — the largest copy per dated version, chronological.
@@ -758,7 +776,7 @@ if (sizePoints.length >= 3) {
                   copy's action button opposite, with size + badge stacked under
                   it. Universal apps get the fat-binary "+" on the button. */}
               <div class="v-lockup">
-                <span class="v-icon">{row.vIconSha ? <><img src={`/icon/${row.vIconSha}`} alt="" loading="lazy" /><span class="icon-mask"></span></> : null}</span>
+                <span class={row.encryptedOnly ? 'v-icon v-dim' : 'v-icon'}>{row.vIconSha ? <><img src={`/icon/${row.vIconSha}`} alt="" loading="lazy" /><span class="icon-mask"></span></> : null}</span>
                 <div class="v-body">
                   <div class="v-title">
                     <strong>{row.versionLabel}</strong>
@@ -1062,6 +1080,11 @@ if (sizePoints.length >= 3) {
       display: block;
       width: 40px;
       height: 40px;
+    }
+
+    /* Encrypted-only version: no usable install, so its icon is dimmed. */
+    .v-icon.v-dim {
+      opacity: 0.5;
     }
 
     /* Blue-panel surface: Apple's blue-cornered gloss mask */

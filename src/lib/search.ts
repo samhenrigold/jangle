@@ -3,7 +3,10 @@
 export function buildPrefixTsquery(q: string): string | null {
   const tokens = (q || '')
     .split(/\s+/)
-    .map((t) => t.replace(/[^\p{L}\p{N}]+/gu, ''))
+    // Fold diacritics (é -> e) so "pokemon" matches the unaccented search_vector
+    // lexeme for "Pokémon"; NFD splits the base char from its combining mark,
+    // which \p{M} then strips. Must mirror the DB-side f_unaccent().
+    .map((t) => t.normalize('NFD').replace(/\p{M}+/gu, '').replace(/[^\p{L}\p{N}]+/gu, ''))
     .filter((t) => t.length > 0)
     .slice(0, 8); // defensive cap on term count
   if (tokens.length === 0) return null;
