@@ -248,44 +248,38 @@ const loadMoreFromDev = async () => {
   if (moreFromDev.length) moreFromIcons = await getOldestIcons(supabase, moreFromDev.map((a: any) => Number(a.id)));
 };
 
-// E. Period-authentic screenshots: the EARLIEST archived listing capture that
-// carried screenshots, in ORIGINAL page order (devs composed panorama sets, so
-// order is load-bearing). Each url resolves to its recovered hi-res master
-// (/screen/<sha>) when rehost_screens got it, else live-proxied (/img). Prefer
-// the iPhone set; fall back to whatever the capture had.
-let screenshots: { src: string }[] = [];
+// E. Period-authentic screenshots: the distinct screenshot SETS across the
+// listing's archived life. Each set is fully recovered (every shot durable in
+// R2 → /screen/<sha>), in original page order (devs composed panorama sets, so
+// order is load-bearing), labeled with its capture date and the version live
+// then. The earliest set shows by default; a picker (JS) browses the history.
+// get_app_screenshots does the exact + near-duplicate dedup and iPhone-prefer
+// server-side (the snapshot_screenshots view is too slow filtered by one app).
+type ShotSet = { date: string; label: string; version: string | null; shots: { src: string }[] };
+let screenshotSets: ShotSet[] = [];
 const loadScreenshots = async () => {
   if (!appStoreId) return;
-  const key = `shots:${appStoreId}`;
-  const cached = cacheGet<{ src: string }[]>(key);
-  if (cached) { screenshots = cached; return; }
-  const { data: snaps } = await supabase
-    .from('app_listing_snapshots')
-    .select('screenshot_urls')
-    .eq('app_store_id', appStoreId)
-    .not('screenshot_urls', 'is', null)
-    .order('captured_at', { ascending: true })
-    .limit(1);
-  const raw = (snaps?.[0] as any)?.screenshot_urls as any[] | undefined;
-  if (!raw?.length) { cacheSet(key, [], 30 * 60 * 1000); return; }
-  const urlOf = (e: any) => (e && typeof e === 'object' ? e.url : e);
-  const devOf = (e: any) => (e && typeof e === 'object' ? e.device : null);
-  const iphone = raw.filter((e) => devOf(e) && devOf(e) !== 'ipad');
-  const list = (iphone.length ? iphone : raw).map(urlOf).filter(Boolean);
-  if (!list.length) { cacheSet(key, [], 30 * 60 * 1000); return; }
-  const bySrc = new Map<string, string>();          // original url → best src
-  const { data: masters } = await supabase
-    .from('screenshot_masters')
-    .select('url, sha256')
-    .eq('status', 'ok')
-    .in('url', list.slice(0, 20));
-  for (const m of masters || []) if ((m as any).sha256) bySrc.set((m as any).url, `/screen/${(m as any).sha256}`);
-  screenshots = list
-    .slice(0, 12)
-    .map((u: string) => ({ src: bySrc.get(u) || iconSrc(u) }))
-    .filter((s) => s.src);
-  cacheSet(key, screenshots, 30 * 60 * 1000);
+  const key = `shotsets:${appStoreId}`;
+  const cached = cacheGet<ShotSet[]>(key);
+  if (cached) { screenshotSets = cached; return; }
+  const { data, error } = await supabase.rpc('get_app_screenshots', {
+    p_app_store_id: appStoreId,
+    p_max_sets: 40,
+  });
+  if (error) { console.error('screenshots rpc failed:', error.message); return; }
+  screenshotSets = (data || [])
+    .map((row: any) => ({
+      date: row.captured_at,
+      label: formatMonthYear(row.captured_at),
+      version: row.version_string || null,
+      shots: (row.shots || [])
+        .map((s: any) => (s && s.sha ? { src: `/screen/${s.sha}` } : null))
+        .filter(Boolean) as { src: string }[],
+    }))
+    .filter((s: ShotSet) => s.shots.length > 0);
+  cacheSet(key, screenshotSets, 30 * 60 * 1000);
 };
+const setLabel = (s: ShotSet) => s.label + (s.version ? ` · v${s.version}` : '');
 
 if (appData) {
   await Promise.all([loadCore(), loadHistory(), loadSubgenre(), loadMoreFromDev(), loadScreenshots()]);
@@ -851,15 +845,36 @@ if (sizePoints.length >= 3) {
         </div>
 
         <div class="center-stack">
-        {screenshots.length > 0 && (
+        {screenshotSets.length > 0 && (
           <div class="screenshots" aria-label="Screenshots">
-            <div class="shots-strip">
-              {screenshots.map((s) => (
-                <a class="shot" href={s.src} target="_blank" rel="noopener">
-                  <img src={s.src} loading="lazy" alt="Screenshot" />
-                </a>
-              ))}
+            <div class="shots-head">
+              {screenshotSets.length > 1 ? (
+                <label class="shots-pick-wrap">
+                  <span class="shots-pick-label">Listing from</span>
+                  {/* The <select> is itself the date/version label. Disabled
+                      until JS enables it, so no-JS users see the (accurate)
+                      caption for the one set they can see, not a dead control. */}
+                  <select class="shots-picker js-shots-picker" disabled>
+                    {screenshotSets.map((s, i) => (
+                      <option value={String(i)}>{setLabel(s)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <span class="shots-caption">{setLabel(screenshotSets[0])}</span>
+              )}
             </div>
+            {screenshotSets.map((s, i) => (
+              <div class={i === 0 ? 'shot-set is-active' : 'shot-set'} data-shot-set={String(i)}>
+                <div class="shots-strip">
+                  {s.shots.map((sh) => (
+                    <a class="shot" href={sh.src} target="_blank" rel="noopener">
+                      <img src={sh.src} loading="lazy" alt="Screenshot" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
         <div class="filter-bar">
@@ -1123,6 +1138,20 @@ if (sizePoints.length >= 3) {
 
     /* One-row filter/sort bar above the version list */
     .screenshots { margin: 0 0 16px 0; }
+    .shots-head {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin: 0 2px 6px;
+      font-size: 11px;
+      color: #898989;
+    }
+    .shots-pick-label { margin-right: 2px; }
+    .shots-picker { font-size: 11px; vertical-align: baseline; max-width: 220px; }
+    .shots-caption { font-weight: bold; color: #6d6d6d; }
+    /* Only the selected capture's strip is shown; JS swaps .is-active. */
+    .shot-set { display: none; }
+    .shot-set.is-active { display: block; }
     .shots-strip {
       display: flex;
       gap: 10px;
@@ -1738,6 +1767,22 @@ if (sizePoints.length >= 3) {
         if (iosSelect) {
           iosSelect.onchange = function () {
             applyIos(iosSelect.value ? parseInt(iosSelect.value, 10) : null);
+          };
+        }
+
+        // 4) Screenshot-set picker — switch which archived listing capture's
+        //    strip is visible. Enabled here so no-JS users get an inert (not
+        //    misleading) control showing the one set they can actually see.
+        var shotsPicker = document.querySelector('select.js-shots-picker');
+        if (shotsPicker) {
+          var shotSets = document.querySelectorAll('.shot-set');
+          shotsPicker.disabled = false;
+          shotsPicker.onchange = function () {
+            var sel = shotsPicker.value;
+            for (var s = 0; s < shotSets.length; s++) {
+              if (shotSets[s].getAttribute('data-shot-set') === sel) addClass(shotSets[s], 'is-active');
+              else removeClass(shotSets[s], 'is-active');
+            }
           };
         }
       });
