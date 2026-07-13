@@ -2,7 +2,8 @@ import type { APIRoute } from 'astro';
 import { blankGif } from '../../lib/http';
 import { supabaseFor } from '../../lib/supabase';
 
-// binaries.icon_sha256 → content-addressed icon in the public R2 bucket. The
+// Content-addressed icon serving from the public R2 bucket (shas come from
+// binaries.bundle_icon_sha256 / itunes_artwork_sha256 and the alias layer). The
 // object extension varies (.jpg or .png, not recorded in the DB), so this
 // route probes both and streams the first hit. Same-origin also spares old
 // iOS the cross-host TLS handshake.

@@ -70,7 +70,7 @@ export const GET: APIRoute = async (ctx) => {
     if ((ipa as any).binary_sha1) {
       const { data: bin } = await supabase
         .from('binaries')
-        .select('icon_sha256, bundle_icon_sha256, hidden')
+        .select('itunes_artwork_sha256, bundle_icon_sha256, hidden')
         .eq('sha1', (ipa as any).binary_sha1)
         .maybeSingle();
       // Quarantined repackage (binaries.hidden — the DB-generated column is the
@@ -83,8 +83,8 @@ export const GET: APIRoute = async (ctx) => {
       if (bin?.hidden) {
         return new Response('Not found', { status: 404 });
       }
-      displayIconSha = bin?.bundle_icon_sha256 || bin?.icon_sha256 || null;
-      largeIconSha = bin?.icon_sha256 || null;
+      displayIconSha = bin?.bundle_icon_sha256 || bin?.itunes_artwork_sha256 || null;
+      largeIconSha = bin?.itunes_artwork_sha256 || null;
     }
 
     const versionString = (version as any).version_string || '';

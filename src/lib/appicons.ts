@@ -14,7 +14,7 @@ import { compareVersionLike } from './sorting';
 export type IconCandidate = {
   version_string: string | null;
   minimum_os_version: string | null;
-  icon_sha256: string | null;
+  bundle_icon_sha256: string | null;   // build-time bundle icon only, never store artwork
   install_status?: string | null;
   architectures?: string[] | null;
   has_extensions?: boolean | null;
@@ -39,7 +39,7 @@ const statusRank = (s: unknown) => STATUS_RANK[String(s ?? 'unknown')] ?? 1;
 // The oldest version that carries an icon, and within it the least
 // anachronistic, most store-shaped copy.
 export function pickOldestIcon(candidates: IconCandidate[]): string | null {
-  const withIcon = candidates.filter((c) => c.icon_sha256);
+  const withIcon = candidates.filter((c) => c.bundle_icon_sha256);
   if (!withIcon.length) return null;
   withIcon.sort((a, b) => {
     const ver = compareVersionLike(a.version_string, b.version_string); // oldest first
@@ -48,7 +48,7 @@ export function pickOldestIcon(candidates: IconCandidate[]): string | null {
     if (anach) return anach;
     return statusRank(a.install_status) - statusRank(b.install_status);
   });
-  return withIcon[0].icon_sha256 || null;
+  return withIcon[0].bundle_icon_sha256 || null;
 }
 
 // Map<internal app id → oldest icon sha256> for a set of apps.

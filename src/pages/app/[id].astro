@@ -140,7 +140,7 @@ const loadCore = async () => {
     for (let i = 0; i < shas.length; i += CHUNK) {
       const { data, error } = await supabase
         .from('binaries')
-        .select('sha1, install_status, architectures, macho_min_os, icon_sha256, bundle_icon_sha256, has_watch_app, has_extensions, hidden, retina_iphone, retina_ipad, retina_iphone_plus, device_family_macho')
+        .select('sha1, install_status, architectures, macho_min_os, itunes_artwork_sha256, bundle_icon_sha256, has_watch_app, has_extensions, hidden, retina_iphone, retina_ipad, retina_iphone_plus, device_family_macho')
         .in('sha1', shas.slice(i, i + CHUNK));
       if (error) {
         console.error('binaries query failed:', error.message);
@@ -156,7 +156,7 @@ const loadCore = async () => {
   // Canonical cluster per icon (for per-version consensus). Best-effort: on any
   // failure, consensus falls back to the plain best-copy pick.
   const iconShas = Array.from(new Set((bins || [])
-    .flatMap((b: any) => [b.bundle_icon_sha256, b.icon_sha256]).filter(Boolean)));
+    .flatMap((b: any) => [b.bundle_icon_sha256, b.itunes_artwork_sha256]).filter(Boolean)));
   for (let i = 0; i < iconShas.length; i += 150) {
     const { data: al } = await supabase
       .from('icon_aliases')
@@ -385,7 +385,7 @@ for (const f of ipaFiles) {
 const binaryOf = (f: any) => (f?.binary_sha1 ? binariesBySha1.get(f.binary_sha1) : undefined);
 
 // A version's icon is the build-time bundle icon it declared (period-accurate,
-// on-device truth). We deliberately do NOT fall back to icon_sha256 (iTunesArtwork
+// on-device truth). We deliberately do NOT fall back to itunes_artwork_sha256 (iTunesArtwork
 // = the App Store LISTING icon, a separate and sometimes hand-differed artifact);
 // a version with no loose bundle icon (iOS7+ Assets.car) falls back to a SIBLING
 // version's bundle icon instead — see vIconSha. Content-addressed at /icon/<sha>.
@@ -431,7 +431,7 @@ const oldestIconSha = appData?.oldest_icon_sha256 || pickOldestIcon(
       return {
         version_string: v.version_string,
         minimum_os_version: v.minimum_os_version,
-        icon_sha256: bin?.bundle_icon_sha256 || null,   // bundle icon only (sibling-fallback source)
+        bundle_icon_sha256: bin?.bundle_icon_sha256 || null,
         install_status: bin?.install_status,
         architectures: bin?.architectures,
         has_extensions: bin?.has_extensions,
