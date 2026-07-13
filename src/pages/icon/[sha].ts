@@ -22,30 +22,24 @@ export const GET: APIRoute = async (ctx) => {
   // maps each variant to its cluster's best member; redirecting means the edge
   // cache converges on ONE object per real icon.
   //
-  // icon_upgrades (plans/014): verified same-REVISION hi-res master for a small
-  // icon (pixel test + margin + independent era proof; policy: serve the flat
-  // master as-is). Alias wins if both exist — upgrades are keyed on canonical
-  // shas, so the upgrade fires on the post-redirect request.
-  //
-  // Both looked up in parallel; best-effort — a failure just serves the sha.
+  // NB: deliberately does NOT consult icon_upgrades. A version's icon is the
+  // largest app icon that BUILD declared in its own Info.plist (bundle_icon,
+  // extracted per-binary) — the on-device truth. The App Store's larger
+  // iTunesArtwork is a separate, sometimes hand-differed artifact (esp. the
+  // early 57px era); it's kept as archival data but never substituted for a
+  // version's own icon. (plans/014 upgrade overlay retired 2026-07-13.)
   try {
-    const supabase = supabaseFor(ctx);
-    const [{ data: alias }, { data: upgrade }] = await Promise.all([
-      supabase.from('icon_aliases').select('canonical_sha256').eq('sha256', sha).maybeSingle(),
-      supabase.from('icon_upgrades').select('hires_sha256').eq('sha256', sha).maybeSingle(),
-    ]);
-    const dest =
-      alias?.canonical_sha256 && alias.canonical_sha256 !== sha
-        ? alias.canonical_sha256
-        : upgrade?.hires_sha256 && upgrade.hires_sha256 !== sha
-          ? upgrade.hires_sha256
-          : null;
-    if (dest) {
+    const { data: alias } = await supabaseFor(ctx)
+      .from('icon_aliases')
+      .select('canonical_sha256')
+      .eq('sha256', sha)
+      .maybeSingle();
+    if (alias?.canonical_sha256 && alias.canonical_sha256 !== sha) {
       return new Response(null, {
         status: 301,
         headers: {
-          Location: `/icon/${dest}`,
-          // Aliases/upgrades are stable (recomputed only by explicit re-runs); cache hard.
+          Location: `/icon/${alias.canonical_sha256}`,
+          // Aliases are stable (recomputed only by explicit re-runs); cache hard.
           'Cache-Control': 'public, max-age=604800, s-maxage=2592000',
         },
       });
