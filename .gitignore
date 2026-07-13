@@ -37,3 +37,7 @@ pnpm-debug.log*
 # Agent working notes (local only)
 CLAUDE.md
 TODO.md
+
+# internal icon-upgrade review UI
+/src/pages/icon-review.astro
+/src/pages/api/icon-verdict.ts

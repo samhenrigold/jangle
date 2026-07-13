@@ -243,8 +243,47 @@ const loadMoreFromDev = async () => {
   if (moreFromDev.length) moreFromIcons = await getOldestIcons(supabase, moreFromDev.map((a: any) => Number(a.id)));
 };
 
+// E. Period-authentic screenshots: the EARLIEST archived listing capture that
+// carried screenshots, in ORIGINAL page order (devs composed panorama sets, so
+// order is load-bearing). Each url resolves to its recovered hi-res master
+// (/screen/<sha>) when rehost_screens got it, else live-proxied (/img). Prefer
+// the iPhone set; fall back to whatever the capture had.
+let screenshots: { src: string }[] = [];
+const loadScreenshots = async () => {
+  if (!appStoreId) return;
+  const key = `shots:${appStoreId}`;
+  const cached = cacheGet<{ src: string }[]>(key);
+  if (cached) { screenshots = cached; return; }
+  const { data: snaps } = await supabase
+    .from('app_listing_snapshots')
+    .select('screenshot_urls')
+    .eq('app_store_id', appStoreId)
+    .not('screenshot_urls', 'is', null)
+    .order('captured_at', { ascending: true })
+    .limit(1);
+  const raw = (snaps?.[0] as any)?.screenshot_urls as any[] | undefined;
+  if (!raw?.length) { cacheSet(key, [], 30 * 60 * 1000); return; }
+  const urlOf = (e: any) => (e && typeof e === 'object' ? e.url : e);
+  const devOf = (e: any) => (e && typeof e === 'object' ? e.device : null);
+  const iphone = raw.filter((e) => devOf(e) && devOf(e) !== 'ipad');
+  const list = (iphone.length ? iphone : raw).map(urlOf).filter(Boolean);
+  if (!list.length) { cacheSet(key, [], 30 * 60 * 1000); return; }
+  const bySrc = new Map<string, string>();          // original url → best src
+  const { data: masters } = await supabase
+    .from('screenshot_masters')
+    .select('url, sha256')
+    .eq('status', 'ok')
+    .in('url', list.slice(0, 20));
+  for (const m of masters || []) if ((m as any).sha256) bySrc.set((m as any).url, `/screen/${(m as any).sha256}`);
+  screenshots = list
+    .slice(0, 12)
+    .map((u: string) => ({ src: bySrc.get(u) || iconSrc(u) }))
+    .filter((s) => s.src);
+  cacheSet(key, screenshots, 30 * 60 * 1000);
+};
+
 if (appData) {
-  await Promise.all([loadCore(), loadHistory(), loadSubgenre(), loadMoreFromDev()]);
+  await Promise.all([loadCore(), loadHistory(), loadSubgenre(), loadMoreFromDev(), loadScreenshots()]);
 }
 
 // Fold raw chart rows into one group per (chart type, device, genre): peak,
@@ -692,6 +731,11 @@ if (sizePoints.length >= 3) {
           })();
         </script>
 
+        {/* iOS-only jailbreak notice — shown exactly when the Install button is
+            (i.e. everywhere the Download button ISN'T), so it mirrors the
+            .navbtn-install visibility rule in the is:global block below. */}
+        <div class="jb-notice">To install apps directly onto this device, it must be jailbroken with AppSync installed.</div>
+
         {/* Title lockup — h1 + "By developer", as on the original preview page */}
         <div id="title" class="intro">
           <h1>{appTitle}</h1>
@@ -748,6 +792,17 @@ if (sizePoints.length >= 3) {
         </div>
 
         <div class="center-stack">
+        {screenshots.length > 0 && (
+          <div class="screenshots" aria-label="Screenshots">
+            <div class="shots-strip">
+              {screenshots.map((s) => (
+                <a class="shot" href={s.src} target="_blank" rel="noopener">
+                  <img src={s.src} loading="lazy" alt="Screenshot" />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
         <div class="filter-bar">
           <a class="filter-chip" href={sortToggleHref()}>Sort by Date <span class="sort-tri">{currentDir === 'asc' ? '▴' : '▾'}</span></a>
           {iosMajors.length > 1 && (
@@ -1008,6 +1063,30 @@ if (sizePoints.length >= 3) {
        history sections). */
 
     /* One-row filter/sort bar above the version list */
+    .screenshots { margin: 0 0 16px 0; }
+    .shots-strip {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding: 2px 2px 10px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+    .shot {
+      flex: 0 0 auto;
+      scroll-snap-align: start;
+      border-radius: 9px;
+      overflow: hidden;
+      border: 1px solid #cfcfcf;
+      background: #000;
+      line-height: 0;
+    }
+    .shot img {
+      display: block;
+      height: 260px;
+      width: auto;
+      max-width: none;
+    }
     .filter-bar {
       margin: 0 0 12px 2px;
       font-size: 11px;
@@ -1456,6 +1535,17 @@ if (sizePoints.length >= 3) {
       font-size: 10px;
       line-height: 15px;
     }
+
+    .jb-notice {
+      margin: 0 0 14px;
+      padding: 8px 12px;
+      border: 1px solid #e0c98a;
+      border-radius: 6px;
+      background: #fdf6e3;
+      color: #7a5c1e;
+      font-size: 12px;
+      line-height: 16px;
+    }
   </style>
 
   <!-- Install (over-the-air) vs Download (raw .ipa): both render by default so a
@@ -1468,6 +1558,10 @@ if (sizePoints.length >= 3) {
     }
 
     html.is-desktop .navbtn-install {
+      display: none;
+    }
+
+    html.is-desktop .jb-notice {
       display: none;
     }
   </style>
