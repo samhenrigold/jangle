@@ -3,7 +3,7 @@ import { cacheGet, cacheSet } from './cache';
 // Everything the app page needs from an apps row, with the developer/genre
 // names embedded.
 const APP_COLS =
-  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)';
+  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url, oldest_icon_sha256, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)';
 
 // app_store_name is the iTunes listing name ("Angry Birds HD Free") and
 // disambiguates the many apps whose bundle display_name is identical.

@@ -95,6 +95,18 @@ function interpolate(anchors: { x: number; e: number }[], x: number): number {
   return last.e;
 }
 
+// The epochs of the anchors immediately surrounding x (for clamping another
+// estimate into that segment). Ends clamp; returned lo/hi are normalized so an
+// inverted pair (dirty dates on neighboring anchors) still yields a range.
+function bracketOf(anchors: { x: number; e: number }[], x: number): { lo: number; hi: number } {
+  let below = anchors[0].e, above = anchors[anchors.length - 1].e;
+  for (let i = 0; i < anchors.length; i++) {
+    if (anchors[i].x <= x) below = anchors[i].e;
+    if (anchors[i].x >= x) { above = anchors[i].e; break; }
+  }
+  return { lo: Math.min(below, above), hi: Math.max(below, above) };
+}
+
 // Chronological ordering key per version. A version's known date (via dateOf —
 // estimated_release_date, or a trustworthy release_date supplied by the caller)
 // anchors it directly. Versions missing a date are placed by interpolating
@@ -124,8 +136,24 @@ export function buildChronoKeys<T extends Record<string, any>>(
   for (const v of list || []) {
     if (keys.has(v)) continue;
     const x = v?.external_identifier == null ? null : Number(v.external_identifier);
-    if (x != null && Number.isFinite(x) && extAnchors.length) { keys.set(v, interpolate(extAnchors, x)); continue; }
     const vs = versionScalar(v?.version_string);
+    if (x != null && Number.isFinite(x) && extAnchors.length) {
+      let e = interpolate(extAnchors, x);
+      // Apple's external-id allocation ACCELERATED over the store's life, so a
+      // linear estimate across a wide anchor gap can land far off — Twitter
+      // 5.10 (ext 16.3M, no date) interpolated between 5.2 (12.6M, Dec 2012)
+      // and 5.11.1 (58.8M, Sep 2013) to "Jan 2013", sorting it between 5.2 and
+      // 5.3.3. Users read version order as the invariant, so clamp the ext
+      // estimate into the date bracket of the nearest DATED versions by
+      // version number (5.7 → 5.11 here). Ties at the bracket edge fall back
+      // to the version-number comparator below, which orders them correctly.
+      if (vs != null && verAnchors.length) {
+        const b = bracketOf(verAnchors, vs);
+        e = Math.min(Math.max(e, b.lo), b.hi);
+      }
+      keys.set(v, e);
+      continue;
+    }
     if (vs != null && verAnchors.length) { keys.set(v, interpolate(verAnchors, vs)); continue; }
     // Last resort: place by the release era its minimum iOS implies, so a
     // versionless ancient build ("3410", min-OS 3.0) sorts old, not newest.

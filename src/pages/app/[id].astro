@@ -366,10 +366,14 @@ function consensusIconSha(files: any[]): string | null {
 
 // The app header shows the OLDEST archived icon (period-authentic) extracted
 // from the app's own binaries, before falling back to the iTunes CDN icon_url.
-// pickOldestIcon takes the earliest version carrying an icon and its least
-// anachronistic copy. (Time-scoped surfaces — version rows, Time Machine —
+// Prefer the precomputed apps.oldest_icon_sha256: unlike the local raw-earliest
+// pick below, the SQL job behind it favors an icon CLUSTER that recurs across
+// versions — so a single counterfeit copy planted at the app's earliest version
+// (the "Talking Tom diva" case) can't hijack the hero icon — and it re-checks
+// binaries.hidden hourly. The local pick remains as the fallback for apps the
+// cron hasn't stamped yet. (Time-scoped surfaces — version rows, Time Machine —
 // instead show the icon closest to that moment.)
-const oldestIconSha = pickOldestIcon(
+const oldestIconSha = appData?.oldest_icon_sha256 || pickOldestIcon(
   (versions || []).flatMap((v: any) =>
     (filesByVersionId.get(v.id) || []).map((f: any) => {
       const bin = binaryOf(f);
