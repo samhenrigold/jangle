@@ -39,8 +39,10 @@ export const GET: APIRoute = async (ctx) => {
         status: 301,
         headers: {
           Location: `/icon/${alias.canonical_sha256}`,
-          // Aliases are stable (recomputed only by explicit re-runs); cache hard.
-          'Cache-Control': 'public, max-age=604800, s-maxage=2592000',
+          // icon_aliases is fully REPLACED by each dedup run and a cluster's
+          // canonical can flip, so a long-cached redirect goes stale (seen
+          // live: month-old 301s pointing at prior canonicals). A day bounds it.
+          'Cache-Control': 'public, max-age=86400, s-maxage=86400',
         },
       });
     }

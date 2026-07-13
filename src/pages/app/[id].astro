@@ -637,13 +637,11 @@ const versionRows = (sortedVersions || []).map((v: any) => {
   const showBuild = v.build_number && v.build_number !== versionLabel;
   // Consensus across this version's copies (all of them, not just the deduped
   // display groups), so a lone mis-extracted icon can't win by sorting first.
-  // If this version shipped no loose bundle icon (Assets.car), fall back to a
-  // SIBLING version's bundle icon (the app's oldest) — a real bundle icon from
-  // the same app, never the store artwork. Only apps that NEVER shipped a loose
-  // icon go without (→ header's app-level icon_url).
+  // Null here (Assets.car version, no loose bundle icon) is filled from the
+  // NEAREST icon-bearing sibling version in the timeline pass below.
   const vIconSha = consensusIconSha(filesByVersionId.get(v.id) || [])
     || groups.map((g: any) => iconShaOf(g.file)).find(Boolean)
-    || oldestIconSha;
+    || null;
   const bin0 = groups.map((g: any) => binaryOf(g.file)).find(Boolean);
   const machoMinOs = bin0?.macho_min_os;
   // Each compatibility fact gets its own stacked line (OS requirement + date;
@@ -674,6 +672,26 @@ const versionRows = (sortedVersions || []).map((v: any) => {
     : null;
   return { v, versionLabel, showBuild, vIconSha, metaLines, minosMajor, isUniversal, hideByDefault, encryptedOnly, primary, extras, nofileText };
 });
+
+// Assets.car versions (no loose bundle icon of their own) borrow the NEAREST
+// sibling's bundle icon along the timeline: the latest earlier icon-bearing
+// version, else the earliest later one. Nearest beats app-oldest — a 2017
+// version must not wear the 2010 icon — and it's always a real bundle icon
+// from this app, never the store artwork. Only apps that never shipped a
+// loose icon at all go without (→ header's app-level icon_url).
+{
+  const rowById = new Map(versionRows.map((r: any) => [r.v.id, r]));
+  const chronoRows = sortVersions(filtered, 'asc', chronoDateOf)
+    .map((v: any) => rowById.get(v.id))
+    .filter(Boolean);
+  let carry: string | null = null;
+  for (const r of chronoRows) { if (r.vIconSha) carry = r.vIconSha; else r.vIconSha = carry; }
+  carry = null;
+  for (let i = chronoRows.length - 1; i >= 0; i--) {
+    const r = chronoRows[i];
+    if (r.vIconSha) carry = r.vIconSha; else r.vIconSha = carry;
+  }
+}
 
 // The Retina/Non-Retina marker only earns its place as a contrast. If every
 // version reads as full "Retina" (no non-Retina and no idiom-asymmetric build),

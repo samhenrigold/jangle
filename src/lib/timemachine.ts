@@ -118,7 +118,7 @@ export async function getSnapshotPositions(supabase: any, snapshotId: number): P
   if (cached) return cached;
   const { data, error } = await supabase
     .from('chart_positions')
-    .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, app_store_name, icon_url)')
+    .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, app_store_name, icon_url, oldest_icon_sha256, excluded)')
     .eq('chart_snapshot_id', snapshotId)
     .order('position', { ascending: true })
     .limit(300);
@@ -126,20 +126,37 @@ export async function getSnapshotPositions(supabase: any, snapshotId: number): P
     console.error('chart_positions query failed:', error.message);
     return null;
   }
+  // A chart entry's identity is its app_store_id — the authoritative App Store id
+  // from the feed. chart_positions.app_id, by contrast, was resolved by a NAME
+  // match at ingest, which can bind a charted title to the wrong app in our
+  // catalog: a real "Facebook" chart row (app_store_id 284882215) got linked to a
+  // counterfeit "Facebook" (com.manh.Facebook2, no app_store_id). Surfacing a
+  // counterfeit on a genuine historical chart is exactly what we must not do. So
+  // only trust the linked app when it's the AUTHORITATIVE match — for rows that
+  // carry an app_store_id, the linked app's must equal it; for the slug-derived
+  // rows that have none, require the app not be excluded. Otherwise drop the link
+  // (apps -> null): the row still shows with the feed's own name, just unlinked.
+  const trustApp = (r: any): boolean => {
+    const a = r?.apps;
+    if (!a) return false;
+    if (r.app_store_id != null) return Number(a.app_store_id) === Number(r.app_store_id);
+    return !a.excluded;
+  };
   // The leaked-marketing chart source reconstructed names from URL slugs and
   // .title()-cased them ("infinity-blade-ii" -> "Infinity Blade Ii"), mangling
   // roman numerals and lowercase-initial brands (iPhoto -> Iphoto). Those rows are
   // identifiable by a null developer_name; real chart-feed rows carry a developer
   // and a period-accurate name. So ONLY for the slug-derived rows, and only when
-  // the entry links to a known app, swap in that app's authoritative iTunes name.
-  // Real-feed names are left untouched (period-accurate; avoids showing a later
-  // rename on an old chart). Only the display string changes — app_store_id drives
-  // all chart logic (fingerprints, prev/next), so this is display-only.
-  const rows = (data || []).map((r: any) =>
-    !r.developer_name && r.apps?.app_store_name
-      ? { ...r, display_name: r.apps.app_store_name }
-      : r
-  );
+  // the entry links to a *trusted* app, swap in that app's authoritative iTunes
+  // name. Real-feed names are left untouched (period-accurate; avoids showing a
+  // later rename on an old chart). Display-only — app_store_id drives all chart
+  // logic (fingerprints, prev/next).
+  const rows = (data || []).map((r: any) => {
+    const app = trustApp(r) ? r.apps : null;
+    const display_name =
+      !r.developer_name && app?.app_store_name ? app.app_store_name : r.display_name;
+    return { ...r, apps: app, display_name };
+  });
   cacheSet(key, rows, 10 * 60 * 1000);
   return rows;
 }
