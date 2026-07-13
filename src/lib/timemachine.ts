@@ -138,9 +138,9 @@ export async function getSnapshotPositions(supabase: any, snapshotId: number): P
   // (apps -> null): the row still shows with the feed's own name, just unlinked.
   const trustApp = (r: any): boolean => {
     const a = r?.apps;
-    if (!a) return false;
+    if (!a || a.excluded) return false;
     if (r.app_store_id != null) return Number(a.app_store_id) === Number(r.app_store_id);
-    return !a.excluded;
+    return true;
   };
   // The leaked-marketing chart source reconstructed names from URL slugs and
   // .title()-cased them ("infinity-blade-ii" -> "Infinity Blade Ii"), mangling
