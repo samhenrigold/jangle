@@ -58,7 +58,7 @@ export const prerender = true;
     </p>
 
     <h2 class="col-h2">Where the data comes from</h2>
-    <p>Four public sources, used politely:</p>
+    <p>Five public sources, used politely:</p>
     <ul>
       <li>
         <strong>The Internet Archive</strong> — the home of the binaries themselves, and, through
@@ -83,6 +83,13 @@ export const prerender = true;
         It fills period-authentic descriptions, developers, and genres on apps we already
         held, and supplied the bundle identifiers that let us record a number of apps that
         had delisted before we could reach them.
+      </li>
+      <li>
+        A <strong>2021 App Store crawl</strong> — gauthamp10's open
+        <a class="col-link" href="https://github.com/gauthamp10/apple-appstore-apps" rel="noopener">Apple AppStore Apps</a>
+        dataset (~1.2M apps, October 2021). Its bundle-to-App-Store-id map let us recover
+        identifiers for thousands of apps we held only by bundle, and fill their categories
+        and developers.
       </li>
     </ul>
     <p>
@@ -347,6 +354,10 @@ export const prerender = true;
         ePirat's <strong><a class="col-link" href="https://github.com/ePirat/TwitAppCheck" rel="noopener">TwitAppCheck</a></strong>,
         whose 2014 metadata snapshot filled gaps and recovered app identities the live
         endpoints no longer return.
+      </li>
+      <li>
+        <strong><a class="col-link" href="https://github.com/gauthamp10/apple-appstore-apps" rel="noopener">gauthamp10's Apple AppStore Apps dataset</a></strong>,
+        a 2021 crawl that helped reconnect thousands of apps to their App Store identities.
       </li>
       <li>The <strong>open-source ecosystem</strong> the whole thing is built on.</li>
     </ul>
