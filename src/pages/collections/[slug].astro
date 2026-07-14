@@ -63,6 +63,29 @@ if (collection) {
   }
 }
 
+// Ghost members (curator listed the app, but we hold no linked archive row)
+// still carry an App Store ID in their metadata. Resolve those against `apps`
+// to recover the bundle id — often a catalog-seed stub that IS excluded, so this
+// lookup deliberately does NOT filter `excluded`. Fills a bundle_id → storeId map
+// used only to stamp data-attributes on the ghost card (no linking, no un-hiding).
+const ghostStoreIds = Array.from(new Set(
+  (members || [])
+    .filter((m: any) => !m.apps && m.metadata?.kind !== 'media' && m.metadata?.app_store_id != null)
+    .map((m: any) => Number(m.metadata.app_store_id))
+    .filter((n: number) => Number.isFinite(n))
+));
+const ghostBundleByStoreId = new Map<number, string>();
+if (ghostStoreIds.length) {
+  const { data: stubRows, error: stubErr } = await supabase
+    .from('apps')
+    .select('app_store_id, bundle_id')
+    .in('app_store_id', ghostStoreIds);
+  if (stubErr) console.error('ghost bundle-id lookup failed:', stubErr.message);
+  else for (const r of stubRows || []) {
+    if (r.bundle_id) ghostBundleByStoreId.set(Number(r.app_store_id), r.bundle_id);
+  }
+}
+
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -79,6 +102,7 @@ const items: Item[] = members.map((m: any) => {
   const group = m.group_label || null;
   if (!m.apps) {
     if (m.metadata?.kind === 'media') return { media: m.blurb || '', group };
+    const storeId = m.metadata?.app_store_id != null ? Number(m.metadata.app_store_id) : null;
     return {
       group,
       row: {
@@ -86,6 +110,8 @@ const items: Item[] = members.map((m: any) => {
         display_name: m.label,
         developer_artist_name: m.metadata?.developer || null,
         note: m.blurb || undefined,
+        app_store_id: storeId ?? undefined,
+        bundle_id: (storeId != null && ghostBundleByStoreId.get(storeId)) || undefined,
       },
     };
   }

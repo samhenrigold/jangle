@@ -41,14 +41,14 @@ const { list = [], startRank, peakLines, iconShas } = Astro.props;
         <span class="info">
           <span class="name">{appTitleOf(a)}</span>
           {a.developer_artist_name && <span class="meta">{a.developer_artist_name}</span>}
-          {a.bundle_id && <span class="meta meta-bundle">{a.bundle_id}</span>}
+          {!ghost && a.bundle_id && <span class="meta meta-bundle">{a.bundle_id}</span>}
           {peak && <span class="peak">{peak}</span>}
           {a.note && <span class="app-note" set:html={a.note} />}
         </span>
       </>
     );
     return (
-    <li class={ghost ? 'app app-ghost' : 'app'} data-app-store-id={(!ghost && a.app_store_id) || undefined} data-bundle-id={(!ghost && a.bundle_id) || undefined}>
+    <li class={ghost ? 'app app-ghost' : 'app'} data-app-store-id={a.app_store_id || undefined} data-bundle-id={a.bundle_id || undefined}>
       {ghost
         ? <span class="app-link">{inner}</span>
         : <a class="app-link" href={`/app/${a.app_store_id ? a.app_store_id : a.id}`}>{inner}</a>}

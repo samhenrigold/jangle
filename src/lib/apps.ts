@@ -38,22 +38,40 @@ export async function resolveApp(
     attempts.push({ col: 'bundle_id', value: rawParam });
   }
 
-  for (const { col, value } of attempts) {
-    // Break ties by lowest id so duplicate app_store_ids / bundle_ids route
-    // deterministically (and maybeSingle never trips on multiple rows).
-    const { data, error } = await supabase
-      .from('apps')
-      .select(APP_COLS)
-      .eq(col, value)
-      .not('excluded', 'is', true)
-      .order('id', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (error) return { app: null, dbError: true };
-    if (data) {
-      cacheSet(cacheKey, data, 10 * 60 * 1000);
-      return { app: data, dbError: false };
+  // Run the attempts under a restriction (which rows are eligible). Break ties by
+  // lowest id so duplicate app_store_ids / bundle_ids route deterministically
+  // (and maybeSingle never trips on multiple rows). Returns {found} so the caller
+  // can distinguish "no eligible row" from "DB error".
+  const tryAttempts = async (
+    restrict: (q: any) => any
+  ): Promise<{ app: any | null; dbError: boolean; found: boolean }> => {
+    for (const { col, value } of attempts) {
+      const { data, error } = await restrict(
+        supabase.from('apps').select(APP_COLS).eq(col, value)
+      )
+        .order('id', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) return { app: null, dbError: true, found: false };
+      if (data) return { app: data, dbError: false, found: true };
     }
+    return { app: null, dbError: false, found: false };
+  };
+
+  // Primary: live, non-excluded apps (unchanged hot path — junk stays hidden).
+  let res = await tryAttempts((q) => q.not('excluded', 'is', true));
+  if (res.dbError) return { app: null, dbError: true };
+  // Fallback: catalog-seed stubs (excluded, but legit store listings we recorded
+  // with no archived binary — twitappcheck-2014 etc.). Their page renders as a
+  // thin catalog record. Only reached when no live app matched, so a real app
+  // always wins over a seed of the same id.
+  if (!res.found) {
+    res = await tryAttempts((q) => q.like('excluded_reason', 'catalog-seed:%'));
+    if (res.dbError) return { app: null, dbError: true };
+  }
+  if (res.app) {
+    cacheSet(cacheKey, res.app, 10 * 60 * 1000);
+    return { app: res.app, dbError: false };
   }
   return { app: null, dbError: false };
 }

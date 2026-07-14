@@ -39,6 +39,39 @@ const offset = (page - 1) * pageSize;
 const supabase = supabaseFor(Astro);
 let dbError = false;
 
+// Identifier search. search_vector tokenization mangles reverse-DNS bundle ids
+// (buildPrefixTsquery strips the dots) and never indexes the numeric App Store
+// ID, so neither is findable through the keyword path. Detect an id-shaped
+// query and handle it directly:
+//   • an exact bundle_id or App Store ID jumps straight to the app;
+//   • a partial reverse-DNS query (e.g. "com.rovio") does a substring bundle_id
+//     search, rendered like any other result list.
+// A pure number is only treated as an App Store ID when it's long enough to
+// plausibly be one (>=6 digits) AND actually matches a row — otherwise it falls
+// through to normal search, so a numeric app name like "2048" still works.
+const looksLikeBundle = !!q && /^[A-Za-z0-9][\w.\-]*\.[\w.\-]+$/.test(q) && /[A-Za-z]/.test(q);
+const looksLikeStoreId = !!q && /^\d{6,10}$/.test(q) && q !== '0';
+
+// Exact-match jump: only when the search is a bare identifier (no developer or
+// genre filter layered on), where the intent is unambiguous.
+if ((looksLikeBundle || looksLikeStoreId) && !dev && !genreId) {
+  const col = looksLikeBundle ? 'bundle_id' : 'app_store_id';
+  const { data, error } = await supabase
+    .from('apps')
+    .select('id, app_store_id')
+    .eq(col, q)
+    .not('excluded', 'is', true)
+    .order('id', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  // On a DB error, fall through to normal search (which surfaces dbError itself)
+  // rather than swallowing it here.
+  if (!error && data) {
+    const slug = data.app_store_id && Number(data.app_store_id) !== 0 ? data.app_store_id : data.id;
+    return Astro.redirect(`/app/${slug}`);
+  }
+}
+
 // Genres for the filter bar — independent of the search queries below, so it
 // starts now and is awaited alongside them.
 const genresPromise = fetchGenresWithCounts(supabase);
@@ -116,6 +149,40 @@ if (q || genreId || dev) {
       if (lErr) { console.error('dev list failed:', lErr.message); dbError = true; }
       else searchResults = (data || []).map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
     }
+    totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
+  } else if (looksLikeBundle) {
+    // Bundle-id branch: an exact match already redirected above, so this is a
+    // partial/substring lookup ("com.rovio" → every Rovio bundle). The keyword
+    // search_vector can't do this (dots are stripped), so match bundle_id
+    // directly with ilike. Escape LIKE wildcards so a literal % or _ is matched
+    // as itself. Includes catalog-only apps (version_count 0) — no separate
+    // supplement needed, they're in the same list.
+    const bundleLike = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const applyBundle = (query: any) => {
+      let out = query.not('excluded', 'is', true).ilike('bundle_id', `%${bundleLike}%`);
+      if (genreId) out = out.eq('genre_id', Number(genreId));
+      return out;
+    };
+    const { count, error: cErr } = await applyBundle(
+      supabase.from('apps').select('id', { count: 'exact', head: true })
+    );
+    if (cErr) { console.error('bundle count failed:', cErr.message); dbError = true; }
+    else total = count || 0;
+
+    let listQ = applyBundle(
+      supabase
+        .from('apps')
+        .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
+    );
+    if (sort === 'name') listQ = listQ.order('display_name', { ascending: true });
+    else if (sort === 'first_date') listQ = listQ.order('first_version_date', { ascending: true, nullsFirst: false });
+    else if (sort === 'newest') listQ = listQ.order('first_version_date', { ascending: false, nullsFirst: false });
+    else listQ = listQ.order('version_count', { ascending: false, nullsFirst: false });
+    // Tie-break on bundle_id so pages are stable when version_count ties.
+    listQ = listQ.order('bundle_id', { ascending: true });
+    const { data, error: lErr } = await listQ.range(offset, offset + pageSize - 1);
+    if (lErr) { console.error('bundle list failed:', lErr.message); dbError = true; }
+    else searchResults = (data || []).map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   } else {
     const pGenreId = genreId ? Number(genreId) : null;
@@ -196,7 +263,9 @@ if (q || genreId || dev) {
   // main search; the dev branch scopes it to the matched developers. Skipped
   // when the query sanitized to nothing. Best-effort: a failure here leaves the
   // section empty and never taints the real results or sets dbError.
-  if (page === 1 && !(q && !tsquery)) {
+  // Skipped for the bundle-id branch: it matches on bundle_id (not the tsquery
+  // built below, which strips dots) and already includes catalog-only apps.
+  if (page === 1 && !(q && !tsquery) && !looksLikeBundle) {
     let cq: any = supabase
       .from('apps')
       .select('id, app_store_id, bundle_id, app_store_name, display_name, developer_id, genre_id, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)', { count: 'exact' })
@@ -214,6 +283,37 @@ if (q || genreId || dev) {
       else {
         catalogOnly = (data || []).map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
         catalogTotal = count || 0;
+      }
+    }
+  }
+
+  // Catalog-seed listings — apps we recorded from a store snapshot (e.g.
+  // twitappcheck-2014) but have never archived a binary for. They're
+  // apps.excluded=true, so every other branch (and resolveApp) hides them and
+  // their /app page is intentionally a 404. Surface them in the same catalog
+  // section as NON-CLICKABLE ghosts so they're at least discoverable. Matched
+  // by the same shape the main query used (store id / bundle substring / keyword)
+  // so all three identifier forms find them. Page 1 only; best-effort.
+  if (page === 1 && !(q && !tsquery)) {
+    let sq: any = supabase
+      .from('apps')
+      .select('id, app_store_id, bundle_id, app_store_name, display_name, developer_id, genre_id, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)', { count: 'exact' })
+      .like('excluded_reason', 'catalog-seed:%')
+      .order('app_store_name', { ascending: true, nullsFirst: false })
+      .limit(30);
+    if (looksLikeStoreId) sq = sq.eq('app_store_id', q);
+    else if (looksLikeBundle) sq = sq.ilike('bundle_id', `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
+    else if (tsquery) sq = sq.textSearch('search_vector', tsquery);
+    if (genreId) sq = sq.eq('genre_id', Number(genreId));
+    // Developer-name branch: only seeds by the matched developers (none → empty).
+    if (dev) sq = (devIds && devIds.length) ? sq.in('developer_id', devIds) : null;
+    if (sq) {
+      const { data, count, error } = await sq;
+      if (error) console.error('catalog-seed lookup failed:', error.message);
+      else {
+        const seeds = (data || []).map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
+        catalogOnly = catalogOnly.concat(seeds);
+        catalogTotal += count || 0;
       }
     }
   }
