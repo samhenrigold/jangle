@@ -51,6 +51,42 @@ export function pickOldestIcon(candidates: IconCandidate[]): string | null {
   return withIcon[0].bundle_icon_sha256 || null;
 }
 
+// Map<internal app id → icon sha256 nearest a target date> (charts: a 2015
+// chart should show 2015 icons, not each app's oldest). Backed by the
+// get_icons_near_date RPC, which picks the icon of the version dated closest
+// to the chart date (ties prefer released-on-or-before) and routes it through
+// the alias registry to the largest same-design copy. Apps with no datable
+// icon-bearing version are absent — callers fall back to the oldest icon.
+export async function getIconsNearDate(
+  supabase: any,
+  appDbIds: number[],
+  isoDate: string
+): Promise<Map<number, string>> {
+  const ids = Array.from(new Set(appDbIds.filter((n) => Number.isFinite(n) && n > 0)));
+  const empty = new Map<number, string>();
+  if (!ids.length || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return empty;
+  const cacheKey = `icons:near:${isoDate}:${[...ids].sort((a, b) => a - b).join(',')}`;
+  const cached = cacheGet<Map<number, string>>(cacheKey);
+  if (cached) return cached;
+  try {
+    const { data, error } = await supabase.rpc('get_icons_near_date', {
+      p_app_ids: ids,
+      p_target: isoDate,
+    });
+    if (error) {
+      console.error('get_icons_near_date failed:', error.message);
+      return empty;
+    }
+    const out = new Map<number, string>();
+    for (const r of data || []) if (r.icon_sha256) out.set(Number(r.app_id), r.icon_sha256);
+    cacheSet(cacheKey, out, 10 * 60 * 1000);
+    return out;
+  } catch (err) {
+    console.error('getIconsNearDate failed:', (err as any)?.message);
+    return empty;
+  }
+}
+
 // Map<internal app id → oldest icon sha256> for a set of apps.
 export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise<Map<number, string>> {
   const ids = Array.from(new Set(appDbIds.filter((n) => Number.isFinite(n) && n > 0)));

@@ -18,6 +18,7 @@ import {
   deviceOf,
   formatPrice,
 } from '../lib/timemachine';
+import { getIconsNearDate } from '../lib/appicons';
 
 setCacheHeaders(Astro.response, 3600);
 
@@ -30,6 +31,7 @@ let peakLines: Map<number, string> | undefined;
 let heroSnapshot: any = null;
 let heroType: any = null;
 let heroEntries: any[] = [];
+let heroIconShas: Map<number, string> | undefined;
 let heroYearsAgo = 0;
 
 // Featured: the 'featured' editorial collection (collections table) — the
@@ -95,8 +97,13 @@ const loadHero = async () => {
   if (heroSnapshot) {
     const positions = await getSnapshotPositions(supabase, heroSnapshot.id);
     // null = enrichment query failed; drop the hero, keep the page.
-    if (positions) heroEntries = positions.slice(0, 5);
-    else heroSnapshot = null;
+    if (positions) {
+      heroEntries = positions.slice(0, 5);
+      // Icons dated nearest the snapshot, not each app's oldest (decorative —
+      // an empty map just leaves the oldest-icon fallback in place).
+      const ids = heroEntries.map((p: any) => Number(p.apps?.id)).filter(Boolean);
+      if (ids.length) heroIconShas = await getIconsNearDate(supabase, ids, heroSnapshot.snapshot_date);
+    } else heroSnapshot = null;
   }
 };
 
@@ -182,10 +189,13 @@ if (dbError) setDegraded(Astro.response);
               <ul class="hero-list">
                 {heroEntries.map((p: any) => {
                   // Chart-date artwork first (period-correct, /img-resurrected),
-                  // then the archive's own oldest extracted icon; the app's LIVE
-                  // listing icon (modern, era-wrong) only as a last resort.
+                  // then the archive's own icon nearest the snapshot date, then
+                  // its oldest extracted icon; the app's LIVE listing icon
+                  // (modern, era-wrong) only as a last resort.
                   const icon = iconSrc(p.artwork_url)
-                    || appIconSrc(p.apps?.oldest_icon_sha256, p.apps?.icon_url);
+                    || appIconSrc(
+                      heroIconShas?.get(Number(p.apps?.id)) || p.apps?.oldest_icon_sha256,
+                      p.apps?.icon_url);
                   const price = formatPrice(p.price_amount, p.price_currency);
                   const href = p.apps ? `/app/${p.apps.app_store_id || p.apps.id}` : null;
                   const inner = (
