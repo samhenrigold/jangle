@@ -62,6 +62,45 @@ export const prerender = true;
       <a class="col-link" href="https://github.com/samhenrigold/jangle" rel="noopener">GitHub</a>.
     </p>
 
+    <h2 class="col-h2">Dumping and decrypting apps</h2>
+    <p>
+      There's a catch that shapes the whole archive: apps bought from the App Store are
+      wrapped in Apple's FairPlay DRM, and an encrypted binary only launches on the
+      Apple ID and device it was bought with. That's why so many copies here install but
+      won't run — they were preserved still encrypted. The copy actually worth keeping is
+      a <strong>decrypted</strong> dump, which runs anywhere. Producing one takes a
+      jailbroken device and a decryption tool matched to its iOS version:
+    </p>
+    <table class="tool-table">
+      <thead>
+        <tr><th scope="col">iOS version</th><th scope="col">Decryption tool</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>iPhoneOS 2</td><td>Crackulous 0.9</td></tr>
+        <tr><td>iPhoneOS 3</td><td>AppCrackr</td></tr>
+        <tr><td>iOS 4</td><td>Crackulous 1.0.0.5</td></tr>
+        <tr><td>iOS 5</td><td>Clutch 1.3</td></tr>
+        <tr><td>iOS 6–10</td><td>Clutch 2.0.4</td></tr>
+        <tr><td>iOS 11–15</td><td>bfdecrypt</td></tr>
+        <tr><td>iOS 16+</td><td>TrollDecrypt (TrollStore 2)</td></tr>
+      </tbody>
+    </table>
+    <p>
+      The shape is the same across eras: install the tool from Cydia (or TrollStore on
+      modern iOS), decrypt an installed app to a <code>.ipa</code>, then copy it off the
+      device with something like iFunBox or Filza. The LegacyJailbreak community's
+      <a class="col-link" href="https://www.reddit.com/r/LegacyJailbreak/wiki/guides/crackingapps" rel="noopener">step-by-step cracking guide</a>
+      walks through every iOS version in full, tool sources and all, and runs its own
+      ongoing archival effort you can submit to as well.
+    </p>
+    <p>
+      After a specific old <em>version</em> of an app you once bought?
+      <a class="col-link" href="https://github.com/majd/ipatool" rel="noopener">ipatool</a>
+      can list every version Apple still keeps by its external version ID and download
+      the one you name from your purchase history — though, being a straight App Store
+      download, it arrives encrypted and still needs decrypting to run anywhere else.
+    </p>
+
     <h2 class="col-h2">Installing an archived app</h2>
     <p>
       These are original App Store binaries, so getting one onto a device is its own
@@ -176,6 +215,26 @@ export const prerender = true;
       border-radius: 4px;
       padding: 1px 4px;
       word-break: break-word;
+    }
+
+    .tool-table {
+      margin: 0 0 14px 0;
+      border-collapse: collapse;
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .tool-table th,
+    .tool-table td {
+      text-align: left;
+      padding: 5px 24px 5px 0;
+      border-bottom: 1px solid #ececec;
+      color: #333;
+    }
+
+    .tool-table th {
+      color: #767676;
+      font-weight: bold;
     }
 
     .col-link {
