@@ -541,6 +541,8 @@ const requestUrl = new URL(Astro.request.url);
 const pathname = requestUrl.pathname;
 const searchParams = requestUrl.searchParams;
 const origin = requestUrl.origin;
+// Set after a /api/report round-trip: '1' = saved, '0' = nothing saved.
+const reportOutcome = searchParams.get('reported');
 
 // Versions are always sorted by date; only the direction toggles. The default
 // server representation — the one that edge-caches for everyone — is oldest
@@ -838,11 +840,6 @@ if (sizePoints.length >= 3) {
           })();
         </script>
 
-        {/* iOS-only jailbreak notice — shown exactly when the Install button is
-            (i.e. everywhere the Download button ISN'T), so it mirrors the
-            .navbtn-install visibility rule in the is:global block below. */}
-        <div class="jb-notice">To install apps directly onto this device, it must be jailbroken with AppSync installed.</div>
-
         {/* Title lockup — h1 + "By developer", as on the original preview page */}
         <div id="title" class="intro" data-app-store-id={appData.app_store_id || undefined} data-bundle-id={appData.bundle_id || undefined}>
           <h1>{appTitle}</h1>
@@ -911,6 +908,44 @@ if (sizePoints.length >= 3) {
               </ul>
             </div>
           )}
+
+          {/* Report an issue: a plain-form submission that works with no JS on
+              old WebKit. The dialog is opened purely with :target (no script),
+              so iOS 4–6 can use it. */}
+          <div class="extra-list report-box">
+            <h4>Something off?</h4>
+            {reportOutcome === '1' ? (
+              <p class="report-msg report-ok">Thanks — noted.</p>
+            ) : (
+              <>
+                {reportOutcome === '0' && <p class="report-msg report-bad">That didn't save. Give it another go?</p>}
+                <a class="report-open" href="#report-dialog">Report an issue</a>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Modal is position:fixed, so its spot in the DOM doesn't affect layout;
+            :target toggles it visible. A real <form> POST means it works even if
+            the overlay styling degrades on an ancient browser. */}
+        <div id="report-dialog" class="report-overlay">
+          <div class="report-panel">
+            <a class="report-x" href="#" aria-label="Close">&#215;</a>
+            <h3 class="report-heading">Report an issue</h3>
+            <p class="report-note">Noticed something wrong with <strong>{appTitle}</strong> or a download? Leave a note.</p>
+            <form class="report-form" method="post" action="/api/report">
+              <input type="hidden" name="app_store_id" value={appData.app_store_id ? String(appData.app_store_id) : ''} />
+              <input type="hidden" name="app_id" value={String(appData.id)} />
+              <input type="hidden" name="path" value={pathname} />
+              {/* Honeypot — hidden off-screen; humans leave it empty, bots don't. */}
+              <div class="report-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="website" tabindex="-1" autocomplete="off" /></label></div>
+              <textarea class="report-textarea" name="message" rows="5" maxlength="4000" placeholder="What's wrong, or what did you notice?" required></textarea>
+              <div class="report-buttons">
+                <a class="wsfbtn report-cancel" href="#">Cancel</a>
+                <button type="submit" class="wsfbtn wsfbtn-primary">Submit</button>
+              </div>
+            </form>
+          </div>
         </div>
 
         <div class="center-stack">
@@ -970,6 +1005,12 @@ if (sizePoints.length >= 3) {
             data-collapse="Show best only"
           >{showEverything ? 'Show best only' : 'Show everything'}</a>
         </div>
+
+        {/* iOS-only jailbreak notice — shown exactly when the Install button is
+            (i.e. everywhere the Download button ISN'T), so it mirrors the
+            .navbtn-install visibility rule in the is:global block below. Sits
+            right above the version list, where the Install buttons live. */}
+        <div class="jb-notice">To install apps directly onto this device, it must be jailbroken with AppSync installed.</div>
 
         <div class={showEverything ? 'versions show-everything' : 'versions'}>
           {versionRows.map((row: any) => (
@@ -1711,6 +1752,82 @@ if (sizePoints.length >= 3) {
       font-size: 12px;
       line-height: 16px;
     }
+
+    /* Report an issue — sidebar trigger */
+    .report-box .report-open {
+      display: block;
+      padding: 7px 10px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: bold;
+      color: #298cda;
+      border: 1px solid #cdd7df;
+      border-radius: 6px;
+      background: #f3f9fd;
+    }
+    .report-box .report-open:hover { text-decoration: none; background: #eaf3f8; }
+    .report-msg { margin: 2px 0 0; font-size: 12px; line-height: 16px; }
+    .report-ok { color: #3a7a3a; }
+    .report-bad { color: #a5401f; }
+
+    /* :target modal (no JS needed — works on iOS 4–6) */
+    .report-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 2000;
+      padding: 40px 12px;
+      background: rgba(0, 0, 0, 0.5);
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      text-align: center;
+    }
+    .report-overlay:target { display: block; }
+    .report-panel {
+      display: inline-block;
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      text-align: left;
+      padding: 18px;
+      background: #fff;
+      border-radius: 8px;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
+      box-shadow: 0 6px 30px rgba(0, 0, 0, 0.35);
+    }
+    .report-x {
+      position: absolute;
+      top: 8px; right: 12px;
+      font-size: 20px;
+      line-height: 1;
+      color: #999;
+    }
+    .report-x:hover { color: #555; text-decoration: none; }
+    .report-heading { margin: 0 0 4px; font-size: 16px; color: #474747; }
+    .report-note { margin: 0 0 10px; font-size: 12px; line-height: 16px; color: #767676; }
+    .report-textarea {
+      display: block;
+      width: 100%;
+      min-height: 96px;
+      padding: 8px;
+      font: inherit;
+      font-size: 13px;
+      line-height: 18px;
+      color: #333;
+      border: 1px solid #c9c9c9;
+      border-radius: 6px;
+      -webkit-appearance: none;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .report-buttons { margin-top: 10px; text-align: right; }
+    .report-buttons .wsfbtn { margin-left: 8px; }
+    /* .wsfbtn is authored for anchors; drop native chrome on the <button>. */
+    button.wsfbtn { -webkit-appearance: none; appearance: none; background: transparent; }
+    /* Honeypot: off-screen, never shown to humans. */
+    .report-hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
   </style>
 
   <!-- Install (over-the-air) vs Download (raw .ipa): both render by default so a
