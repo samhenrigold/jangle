@@ -20,7 +20,7 @@ export const GET: APIRoute = async (ctx) => {
         id, filename, info_plist_path, file_size, md5_hash, binary_sha1, available,
         app_version:app_versions!ipa_files_app_version_id_fkey(
           version_string,
-          app:apps!app_versions_app_id_fkey(bundle_id, app_store_name, display_name, icon_url)
+          app:apps!app_versions_app_id_fkey(bundle_id, app_store_name, display_name, icon_url:live_icon_url)
         ),
         archive_item:archive_items!ipa_files_archive_item_id_fkey(ia_item_id)
       `)
