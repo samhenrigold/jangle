@@ -44,6 +44,23 @@ if (!appData && !dbError) {
   return Astro.rewrite('/404');
 }
 
+// Alias → canonical: /app/<bundle_id> and /app/<internalId> 301 to the App
+// Store ID URL (the canonical slug — what every internal link and the sitemap
+// emit) so links consolidate on one URL. The canonical URL never redirects, so
+// there's no cost on the common path; the hop is cacheable. The query string
+// (dir/ios/all) rides along.
+if (appData) {
+  const canonicalSlug = String(
+    appData.app_store_id && Number(appData.app_store_id) !== 0 ? appData.app_store_id : appData.id
+  );
+  if (rawParam !== canonicalSlug) {
+    return new Response(null, {
+      status: 301,
+      headers: { Location: `/app/${canonicalSlug}${Astro.url.search}`, 'Cache-Control': 'public, max-age=3600, s-maxage=86400' },
+    });
+  }
+}
+
 // Wayback history is keyed by app_store_id — apps without one (delisted, no
 // iTunesMetadata) simply don't get those sections.
 const appStoreId = appData?.app_store_id ? Number(appData.app_store_id) : null;
@@ -248,6 +265,29 @@ const loadMoreFromDev = async () => {
   if (moreFromDev.length) moreFromIcons = await getOldestIcons(supabase, moreFromDev.map((a: any) => Number(a.id)));
 };
 
+// D2. Editorial collections featuring this app ("Appears in" line). RLS keeps
+// unpublished collections out. Decorative — a failure just drops the line.
+let inCollections: { slug: string; title: string }[] = [];
+const loadInCollections = async () => {
+  const key = `app_collections:${appData.id}`;
+  const cached = cacheGet<{ slug: string; title: string }[]>(key);
+  if (cached) {
+    inCollections = cached;
+    return;
+  }
+  const { data, error } = await supabase
+    .from('collection_members')
+    .select('collections!collection_members_collection_id_fkey(slug, title)')
+    .eq('app_id', appData.id);
+  if (error) return;
+  const seen = new Set<string>();
+  inCollections = (data || [])
+    .map((m: any) => m.collections)
+    .filter((c: any) => c && !seen.has(c.slug) && seen.add(c.slug))
+    .map((c: any) => ({ slug: c.slug, title: c.title }));
+  cacheSet(key, inCollections, 10 * 60 * 1000);
+};
+
 // E. Period-authentic screenshots: the distinct screenshot SETS across the
 // listing's archived life. Each set is fully recovered (every shot durable in
 // R2 → /screen/<sha>), in original page order (devs composed panorama sets, so
@@ -293,7 +333,7 @@ const loadScreenshots = async () => {
 const setLabel = (s: ShotSet) => s.label + (s.version ? ` · v${s.version}` : '');
 
 if (appData) {
-  await Promise.all([loadCore(), loadHistory(), loadSubgenre(), loadMoreFromDev(), loadScreenshots()]);
+  await Promise.all([loadCore(), loadHistory(), loadSubgenre(), loadMoreFromDev(), loadInCollections(), loadScreenshots()]);
 }
 
 // Fold raw chart rows into one group per (chart type, device, genre): peak,
@@ -580,6 +620,9 @@ const appIcon = largeIconSha ? `/icon/${largeIconSha}?exact`
 // pixels read as deliberately retro instead. 90px ≈ the 2× cutoff.
 const appIconPixelated = !!appIcon && (appData?.large_icon_px ?? 175) <= 90;
 const developerName = appData?.developers?.artist_name;
+// Link developers by Apple's artist_id (canonical) when we have it, else our
+// internal developer_id (which 301s to the artist_id URL anyway).
+const developerSlug = appData?.developers?.artist_id ?? appData?.developer_id;
 const versionNoun = versions.length === 1 ? 'archived version' : 'archived versions';
 
 // --- Left-rail product lockup (iTunes Preview style) -----------------------
@@ -805,11 +848,11 @@ if (sizePoints.length >= 3) {
           <h1>{appTitle}</h1>
           {developerName && (
             <h2>By {appData.developer_id
-              ? <a href={`/developer/${appData.developer_id}`}>{developerName}</a>
+              ? <a href={`/developer/${developerSlug}`}>{developerName}</a>
               : developerName}</h2>
           )}
           {appData.developer_id && (
-            <a class="view-more" href={`/developer/${appData.developer_id}`}>View More By This Developer</a>
+            <a class="view-more" href={`/developer/${developerSlug}`}>View More By This Developer</a>
           )}
         </div>
 
@@ -855,6 +898,17 @@ if (sizePoints.length >= 3) {
                   <span class="rating-count">{formatNumber(latestRating.rating_count)} Ratings</span>
                 )}
               </div>
+            </div>
+          )}
+
+          {inCollections.length > 0 && (
+            <div class="extra-list in-collections">
+              <h4>In Collections</h4>
+              <ul>
+                {inCollections.map((c) => (
+                  <li><a href={`/collections/${c.slug}`}>{c.title}</a></li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
@@ -1120,7 +1174,7 @@ if (sizePoints.length >= 3) {
         {moreFromDev.length > 0 && (
           <>
             <SectionHeader title={`More from ${developerName}`}>
-              <a class="tm-more see-all" href={`/developer/${appData.developer_id}`}>All apps</a>
+              <a class="tm-more see-all" href={`/developer/${developerSlug}`}>All apps</a>
             </SectionHeader>
             {/* "Customers Also Bought"-style row: small masked lockups on the
                 blue swoosh panel (icon + name + version count). */}
@@ -1141,6 +1195,7 @@ if (sizePoints.length >= 3) {
             </div>
           </>
         )}
+
         </div>
       </>
     )}
@@ -1150,6 +1205,13 @@ if (sizePoints.length >= 3) {
        ratings stars, and blue panels come from global.css; this block only
        styles what is unique to the app page (version rows, filter bar,
        history sections). */
+
+    /* Left-rail "In Collections" box — editorial cross-links */
+    .in-collections li {
+      font-size: 11px;
+      line-height: 16px;
+      margin-bottom: 3px;
+    }
 
     /* One-row filter/sort bar above the version list */
     .screenshots { margin: 0 0 16px 0; }

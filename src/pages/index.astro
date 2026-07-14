@@ -6,10 +6,8 @@ import AppList from '../components/AppList.astro';
 import SectionHeader from '../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { setCacheHeaders, setDegraded } from '../lib/http';
-import { FEATURED_APP_STORE_IDS } from '../lib/featured';
 import { iconSrc, appIconSrc } from '../lib/icons';
 import { formatDate } from '../lib/format';
-import { getOldestIcons } from '../lib/appicons';
 import {
   getChartTypes,
   getSnapshotIndex,
@@ -34,39 +32,42 @@ let heroType: any = null;
 let heroEntries: any[] = [];
 let heroYearsAgo = 0;
 
-// Featured: hand-picked greatest hits (src/lib/featured.ts) until the
-// editorial charts layer ships. The only chain allowed to set dbError; its
-// era icons chain onto it.
+// Featured: the 'featured' editorial collection (collections table) — the
+// hand-picked list that used to live in src/lib/featured.ts. The only chain
+// allowed to set dbError; peak badges chain onto it since they need the ids.
 const loadFeatured = async () => {
-  const featuredCacheKey = 'featured_apps_v2';
+  const featuredCacheKey = 'featured_apps_v3';
   featuredApps = cacheGet<any[]>(featuredCacheKey);
   if (!featuredApps) {
     const { data, error } = await supabase
-      .from('apps')
-      .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
-      .in('app_store_id', FEATURED_APP_STORE_IDS)
-      .not('excluded', 'is', true);
+      .from('collections')
+      .select('collection_members(position, apps!collection_members_app_id_fkey(id, app_store_id, bundle_id, app_store_name, display_name, version_count, oldest_icon_sha256, excluded, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)))')
+      .eq('slug', 'featured')
+      .maybeSingle();
     if (error) {
       console.error('featured query failed:', error.message);
       featuredApps = [];
       dbError = true;
       return;
     }
-    // Collapse duplicate app_store_id rows to the lowest internal id (matches
-    // /app/ routing), then lay out in curated order.
-    const byStoreId = new Map<number, any>();
-    for (const a of data || []) {
-      const cur = byStoreId.get(a.app_store_id);
-      if (!cur || a.id < cur.id) byStoreId.set(a.app_store_id, a);
-    }
-    featuredApps = FEATURED_APP_STORE_IDS
-      .map((id) => byStoreId.get(id))
-      .filter(Boolean)
+    // An unpublished/missing 'featured' collection is an empty section, not
+    // an outage.
+    featuredApps = (data?.collection_members || [])
+      .sort((x: any, y: any) => x.position - y.position)
+      .map((m: any) => m.apps)
+      .filter((a: any) => a && !a.excluded)
       .map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
     cacheSet(featuredCacheKey, featuredApps, 10 * 60 * 1000);
   }
-  // Period-authentic (oldest) icons — best-effort (empty = fallback icons).
-  if (featuredApps.length) iconShas = await getOldestIcons(supabase, featuredApps.map((a: any) => Number(a.id)));
+  // Period-authentic (oldest) icons ride the embed — no second query.
+  iconShas = new Map(
+    featuredApps
+      .filter((a: any) => a.oldest_icon_sha256)
+      .map((a: any) => [Number(a.id), a.oldest_icon_sha256] as [number, string])
+  );
+  // Peak-chart badges — best-effort decoration on top of the list.
+  const ids = featuredApps.map((a: any) => Number(a.app_store_id)).filter((n: number) => n > 0);
+  if (ids.length) peakLines = (await getPeakLines(supabase, ids, 'featured')) || undefined;
 };
 
 // "This week, years ago" module (plan 010 charts): deterministic per calendar
@@ -99,13 +100,39 @@ const loadHero = async () => {
   }
 };
 
-// Peak-chart badges for the curated list — keyed off the static id list, so
-// it doesn't need to wait for the featured query at all.
-const loadPeaks = async () => {
-  peakLines = (await getPeakLines(supabase, FEATURED_APP_STORE_IDS, 'featured')) || undefined;
+// Featured collections teaser: editorial collections flagged for the landing
+// page (featured_rank). Decorative — a failure drops the module, never 503s.
+type HomeCollection = { slug: string; title: string; subtitle: string | null; icons: string[] };
+let homeCollections: HomeCollection[] = [];
+const loadCollections = async () => {
+  const key = 'home_collections_v1';
+  const cached = cacheGet<HomeCollection[]>(key);
+  if (cached) {
+    homeCollections = cached;
+    return;
+  }
+  const { data, error } = await supabase
+    .from('collections')
+    .select('slug, title, subtitle, featured_rank, collection_members(position, apps!collection_members_app_id_fkey(oldest_icon_sha256, icon_url:live_icon_url, excluded))')
+    .not('featured_rank', 'is', null)
+    .order('featured_rank', { ascending: true })
+    .limit(3);
+  if (error || !data) return;
+  homeCollections = data.map((c: any) => ({
+    slug: c.slug,
+    title: c.title,
+    subtitle: c.subtitle,
+    icons: (c.collection_members || [])
+      .filter((m: any) => m.apps && !m.apps.excluded)
+      .sort((x: any, y: any) => x.position - y.position)
+      .map((m: any) => appIconSrc(m.apps.oldest_icon_sha256, m.apps.icon_url))
+      .filter(Boolean)
+      .slice(0, 4),
+  }));
+  cacheSet(key, homeCollections, 10 * 60 * 1000);
 };
 
-await Promise.all([loadFeatured(), loadHero(), loadPeaks()]);
+await Promise.all([loadFeatured(), loadHero(), loadCollections()]);
 
 const heroDateLabel = heroSnapshot ? formatDate(heroSnapshot.snapshot_date) : '';
 const heroHref = heroSnapshot && heroType
@@ -122,6 +149,29 @@ if (dbError) setDegraded(Astro.response);
       <DbError />
     ) : (
       <>
+        {homeCollections.length > 0 && (
+          <>
+            <SectionHeader title="Collections">
+              <a href="/collections">See all</a>
+            </SectionHeader>
+            {/* A row of cards; narrow screens swipe it sideways. inline-block +
+                overflow-x is the old-WebKit-safe way to get a card carousel. */}
+            <div class="colx-scroll">
+              {homeCollections.map((c) => (
+                <a class="colx-card" href={`/collections/${c.slug}`}>
+                  <span class="colx-icons">
+                    {c.icons.map((src) => (
+                      <span class="colx-icon"><img src={src} alt="" width="40" height="40" loading="lazy" /><span class="icon-mask"></span></span>
+                    ))}
+                  </span>
+                  <span class="colx-title">{c.title}</span>
+                  {c.subtitle && <span class="colx-sub">{c.subtitle}</span>}
+                </a>
+              ))}
+            </div>
+          </>
+        )}
+
         {heroSnapshot && heroEntries.length > 0 && (
           <>
             <SectionHeader title={`${heroYearsAgo} Years Ago This Week`} />
@@ -148,7 +198,9 @@ if (dbError) setDegraded(Astro.response);
                   );
                   return (
                     <li class="hero-row" data-app-store-id={p.app_store_id || undefined} data-bundle-id={p.apps?.bundle_id || undefined}>
-                      {href ? <a class="hero-row-link" href={href}>{inner}</a> : <span class="hero-row-link">{inner}</span>}
+                      {href
+                        ? <a class="hero-row-link" href={href}>{inner}</a>
+                        : <span class="hero-row-link hero-row-dead">{inner}</span>}
                     </li>
                   );
                 })}
@@ -165,6 +217,91 @@ if (dbError) setDegraded(Astro.response);
   </div>
 
   <style>
+    /* Featured collections — a card row that swipes sideways when narrow */
+    .colx-scroll {
+      margin: 0 0 6px 0;
+      white-space: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .colx-card {
+      display: inline-block;
+      vertical-align: top;
+      width: 31.5%;
+      min-width: 210px;
+      margin-right: 1.9%;
+      padding: 12px 14px;
+      background: #F3F9FD;
+      border-radius: 4px;
+      white-space: normal;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
+    }
+
+    .colx-card:last-child {
+      margin-right: 0;
+    }
+
+    a.colx-card:hover {
+      text-decoration: none;
+      background-color: #eaf3f8;
+    }
+
+    .colx-icons {
+      display: block;
+      height: 40px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    .colx-icon {
+      position: relative;
+      float: left;
+      width: 40px;
+      height: 40px;
+      margin-right: 6px;
+      background: transparent url('/icon-placeholder.png') no-repeat;
+      background-size: 100% 100%;
+    }
+
+    .colx-icon img {
+      display: block;
+      width: 40px;
+      height: 40px;
+    }
+
+    /* Blue-panel surface: use Apple's blue-cornered gloss mask */
+    .colx-icon .icon-mask {
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: url('/wsf/images/mask100blue.png');
+      background-size: 100% 100%;
+    }
+
+    .colx-title {
+      display: block;
+      font-size: 13px;
+      font-weight: bold;
+      line-height: 17px;
+      color: #298cda;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .colx-sub {
+      display: block;
+      color: #898989;
+      font-size: 11px;
+      line-height: 15px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     /* "This week, years ago" hero — a blue swoosh panel in the era idiom */
     .hero-card {
       background: #F3F9FD;
@@ -262,6 +399,12 @@ if (dbError) setDegraded(Astro.response);
       color: #298cda;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    /* A chart entry we couldn't match to an archived app isn't a link — don't
+       paint its title link-blue, or it reads as clickable. */
+    .hero-row-dead .hero-name {
+      color: #898989;
     }
 
     .hero-cta {

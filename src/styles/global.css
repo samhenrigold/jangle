@@ -84,6 +84,18 @@ em { font-style: italic; }
   box-sizing: border-box;
 }
 
+/* The sprite search pill suppresses the input's own outline (above), which
+   would otherwise draw a rectangle across the middle segment between the
+   rounded caps. Put the browser's default focus ring on the wrapper instead so
+   it hugs the pill. Matters now that "/" focuses the search — keyboard users
+   need to see where focus landed. */
+.ph-search .search-wrapper:focus-within,
+#phonesearch .search-wrapper:focus-within {
+  outline: auto;
+  outline-offset: 2px;
+  border-radius: 11px;
+}
+
 /* Phone-only search strip (our responsive addition; hidden on desktop) */
 #phonesearch { display: none; }
 
@@ -342,6 +354,18 @@ a.app-link:hover { text-decoration: none; background-color: #eaf3f8; }
 .info .meta { display: block; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .info .peak { display: block; color: #898989; font-size: 10px; line-height: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .applist-empty { padding: 24px 10px; text-align: center; color: #898989; }
+/* Editorial note in a row's info stack (collection blurbs) — trusted,
+   non-interactive HTML (it sits inside the row link) */
+.app-note { display: block; margin-top: 2px; color: #666; font-size: 11px; line-height: 16px; white-space: normal; }
+.app-note p { margin: 0 0 5px 0; }
+.app-note p:last-child { margin-bottom: 0; }
+.app-note img { max-width: 100%; }
+.app-note .app-note-version { display: block; color: #898989; font-size: 10px; }
+/* Ghost rows: apps the archive doesn't hold — greyed, not linked */
+.app-ghost .app-link:hover { background: none; }
+.app-ghost .name { color: #898989; }
+.app-ghost .icon { opacity: 0.7; }
+.ghost-tag { white-space: nowrap; }
 
 /* Install-status chip */
 /* Install-status label — flat coloured text, not a pill (rounded pills weren't

@@ -12,23 +12,41 @@ import { appTitleOf } from '../../lib/apps';
 
 const { id } = Astro.params;
 const supabase = supabaseFor(Astro);
+const rawParam = id as string;
 let dbError = false;
 
-// Developer details. maybeSingle separates "no such developer" (404) from a
-// transient DB failure (503, uncacheable).
-const devCacheKey = `developer:${id}`;
+// Resolve a /developer/<param> URL. The public, canonical id is Apple's
+// artist_id (the same number apps.apple.com/.../developer/idNNN uses); we prefer
+// it and fall back to our internal developers.id so old internal-id links keep
+// working. artist_id is int4, so an out-of-range param can't be one — skip it
+// rather than trip a bigint→int overflow. (A handful of low internal ids
+// coincide with some artist_id; artist_id-first is the canonical choice and
+// mirrors how /app resolves app_store_id before the internal id.)
+const devCacheKey = `developer:${rawParam}`;
 let developer = cacheGet<any>(devCacheKey);
 if (!developer) {
-  const { data, error } = await supabase
-    .from('developers')
-    .select('id, artist_name')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) {
-    console.error('developer fetch failed:', error.message);
-    dbError = true;
+  const attempts: { col: string; value: string }[] = [];
+  if (/^\d+$/.test(rawParam)) {
+    if (rawParam !== '0' && Number(rawParam) <= 2147483647) attempts.push({ col: 'artist_id', value: rawParam });
+    attempts.push({ col: 'id', value: rawParam });
   }
-  developer = data;
+  for (const { col, value } of attempts) {
+    // maybeSingle separates "no such developer" (404) from a transient DB
+    // failure (503, uncacheable). Break ties by lowest id for determinism.
+    const { data, error } = await supabase
+      .from('developers')
+      .select('id, artist_id, artist_name')
+      .eq(col, value)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.error('developer fetch failed:', error.message);
+      dbError = true;
+      break;
+    }
+    if (data) { developer = data; break; }
+  }
   if (developer) cacheSet(devCacheKey, developer, 30 * 60 * 1000);
 }
 
@@ -36,16 +54,30 @@ if (!developer && !dbError) {
   return Astro.rewrite('/404');
 }
 
+// Alias → canonical: a bundle-id/internal-id URL 301s to the artist_id URL so
+// links consolidate on the real Apple developer id. The canonical URL itself
+// never redirects. Cacheable so the edge serves the hop without re-resolving.
+if (developer?.artist_id != null) {
+  const canonical = String(developer.artist_id);
+  if (rawParam !== canonical) {
+    return new Response(null, {
+      status: 301,
+      headers: { Location: `/developer/${canonical}${Astro.url.search}`, 'Cache-Control': 'public, max-age=3600, s-maxage=86400' },
+    });
+  }
+}
+
 setCacheHeaders(Astro.response, 3600);
 
-// All apps by this developer, most-preserved first.
-const listCacheKey = `developer_apps:${id}`;
+// All apps by this developer, most-preserved first. Keyed by the internal id so
+// the artist_id and internal-id URLs share one cache entry.
+const listCacheKey = `developer_apps:${developer.id}`;
 let list = cacheGet<any[]>(listCacheKey);
 if (!dbError && !list) {
   const { data, error } = await supabase
     .from('apps')
     .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url:live_icon_url, version_count')
-    .eq('developer_id', id)
+    .eq('developer_id', developer.id)
     .not('excluded', 'is', true)
     .order('version_count', { ascending: false })
     .order('app_store_name', { ascending: true })

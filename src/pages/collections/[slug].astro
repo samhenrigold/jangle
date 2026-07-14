@@ -1,0 +1,243 @@
+---
+import { supabaseFor } from '../../lib/supabase';
+import Layout from '../../components/Layout.astro';
+import DbError from '../../components/DbError.astro';
+import AppList from '../../components/AppList.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
+import { cacheGet, cacheSet } from '../../lib/cache';
+import { formatDate } from '../../lib/format';
+import { setCacheHeaders, setDegraded, SITE_ORIGIN } from '../../lib/http';
+
+const { slug } = Astro.params;
+
+const supabase = supabaseFor(Astro);
+let dbError = false;
+
+// Resolve the collection. maybeSingle distinguishes "no such collection" —
+// which under RLS also covers unpublished drafts — (404) from a transient DB
+// failure (503, uncacheable): a blip must not become a cached 404.
+const colCacheKey = `collection:${slug}`;
+let collection = cacheGet<any>(colCacheKey);
+if (!collection) {
+  const { data, error } = await supabase
+    .from('collections')
+    .select('id, slug, title, subtitle, description')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (error) {
+    console.error('collection fetch failed:', error.message);
+    dbError = true;
+  }
+  collection = data;
+  if (collection) cacheSet(colCacheKey, collection, 10 * 60 * 1000);
+}
+
+if (!collection && !dbError) {
+  return Astro.rewrite('/404');
+}
+
+setCacheHeaders(Astro.response, 3600);
+
+// Members in curated order, with their app (and optional pinned version)
+// embedded — editorial-scale, one round trip. oldest_icon_sha256 rides along
+// so the period-authentic icons need no second query.
+let members: any[] = [];
+if (collection) {
+  const memCacheKey = `collection_members:v2:${collection.id}`;
+  const cached = cacheGet<any[]>(memCacheKey);
+  if (cached) {
+    members = cached;
+  } else {
+    const { data, error } = await supabase
+      .from('collection_members')
+      .select('position, group_label, label, blurb, metadata, app_versions!collection_members_app_version_id_fkey(version_string, release_date, estimated_release_date), apps!collection_members_app_id_fkey(id, app_store_id, bundle_id, app_store_name, display_name, version_count, oldest_icon_sha256, excluded, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name))')
+      .eq('collection_id', collection.id)
+      .order('position', { ascending: true });
+    if (error) {
+      console.error('collection members failed:', error.message);
+      dbError = true;
+    } else {
+      members = (data || []).filter((m: any) => !m.apps || !m.apps.excluded);
+      cacheSet(memCacheKey, members, 10 * 60 * 1000);
+    }
+  }
+}
+
+const esc = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// Each member becomes one of: a media block (ghost + metadata.kind='media' —
+// the blurb IS the content, embeds welcome), a ghost row (app not in the
+// archive), or a linked app row whose note (pinned-version line + blurb)
+// renders in the info stack. `label` overrides the app's modern listing name
+// when the ad/award-era name differed (Workflow → Shortcuts etc.).
+type Item =
+  | { media: string; group: string | null }
+  | { row: any; group: string | null };
+const iconShas = new Map<number, string>();
+const items: Item[] = members.map((m: any) => {
+  const group = m.group_label || null;
+  if (!m.apps) {
+    if (m.metadata?.kind === 'media') return { media: m.blurb || '', group };
+    return {
+      group,
+      row: {
+        ghost: true,
+        display_name: m.label,
+        developer_artist_name: m.metadata?.developer || null,
+        note: m.blurb || undefined,
+      },
+    };
+  }
+  const appId = Number(m.apps.id);
+  if (m.apps.oldest_icon_sha256) iconShas.set(appId, m.apps.oldest_icon_sha256);
+  let note = '';
+  const v = m.app_versions;
+  if (v?.version_string) {
+    const when = v.release_date || v.estimated_release_date;
+    note += `<span class="app-note-version">Version ${esc(v.version_string)}${when ? ` · ${esc(formatDate(when))}` : ''}</span>`;
+  }
+  if (m.blurb) note += m.blurb;
+  const row: any = { ...m.apps, developer_artist_name: m.apps.developers?.artist_name };
+  if (m.label) {
+    row.app_store_name = m.label;
+    row.display_name = m.label;
+  }
+  if (note) row.note = note;
+  return { row, group };
+});
+
+// Render plan: group subheads in first-seen order; inside a group, consecutive
+// app/ghost rows chunk into one AppList, media blocks flush between chunks.
+type Chunk = { media?: string; rows?: any[] };
+type Group = { label: string | null; chunks: Chunk[] };
+const groups: Group[] = [];
+for (const it of items) {
+  let g = groups[groups.length - 1];
+  if (!g || g.label !== it.group) {
+    g = { label: it.group, chunks: [] };
+    groups.push(g);
+  }
+  if ('media' in it) {
+    g.chunks.push({ media: it.media });
+  } else {
+    let last = g.chunks[g.chunks.length - 1];
+    if (!last || !last.rows) {
+      last = { rows: [] };
+      g.chunks.push(last);
+    }
+    last.rows!.push(it.row);
+  }
+}
+
+// A transient DB failure must not render as a cacheable empty page.
+if (dbError) setDegraded(Astro.response);
+
+const title = collection?.title || 'Collection';
+const metaDescription = collection?.subtitle
+  ? `${title} — ${collection.subtitle}. Archived versions of classic iPhone and iPad apps on Legacy Store.`
+  : `${title} — a curated collection of archived iPhone and iPad apps on Legacy Store.`;
+const ogImageSha = iconShas.size ? iconShas.values().next().value : null;
+const og = collection
+  ? {
+      type: 'website',
+      title,
+      description: metaDescription,
+      path: `/collections/${collection.slug}`,
+      image: ogImageSha ? `${SITE_ORIGIN}/icon/${ogImageSha}` : null,
+    }
+  : null;
+---
+
+<Layout title={`${title} — Legacy Store`} activeTab="collections" description={metaDescription} og={og}>
+  <div class="content">
+    {dbError ? (
+      <DbError />
+    ) : (
+      <>
+        <SectionHeader title={title} level={1} detail={collection.subtitle || undefined} />
+        {collection.description && <div class="col-desc" set:html={collection.description} />}
+
+        {groups.map((g) => (
+          <>
+            {g.label && <h3 class="group-label">{g.label}</h3>}
+            {g.chunks.map((chunk) =>
+              chunk.media != null
+                ? <div class="media-row" set:html={chunk.media} />
+                : <AppList list={chunk.rows} iconShas={iconShas} />
+            )}
+          </>
+        ))}
+
+        <p class="col-all"><a href="/collections">All collections</a></p>
+      </>
+    )}
+  </div>
+
+  <style>
+    /* Editorial intro — trusted curator HTML */
+    .col-desc {
+      margin: 4px 0 14px 0;
+      color: #555;
+      font-size: 12px;
+      line-height: 17px;
+      max-width: 620px;
+    }
+
+    .col-desc :global(p) {
+      margin: 0 0 8px 0;
+    }
+
+    .col-desc :global(img),
+    .col-desc :global(iframe),
+    .col-desc :global(video) {
+      max-width: 100%;
+    }
+
+    /* Standalone media blocks (the commercials themselves) */
+    .media-row {
+      margin: 2px 0 12px 0;
+    }
+
+    .media-row :global(iframe),
+    .media-row :global(video),
+    .media-row :global(img) {
+      display: block;
+      max-width: 100%;
+      border: none;
+      border-radius: 4px;
+      background: #000;
+    }
+
+    .media-row :global(.app-note-version) {
+      display: block;
+      margin-bottom: 4px;
+      color: #898989;
+      font-size: 10px;
+      line-height: 15px;
+    }
+
+    /* Group subheads (award years, individual ads) */
+    .group-label {
+      margin: 16px 0 4px 0;
+      font-size: 1.15em;
+      line-height: 18px;
+      color: #474747;
+    }
+
+    .col-all {
+      margin: 0 0 18px 0;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .col-all a:after {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 7px;
+      margin-left: 6px;
+      background: url('/wsf/images/more.gif') 0 0 no-repeat;
+    }
+  </style>
+</Layout>

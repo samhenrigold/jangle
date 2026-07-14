@@ -13,6 +13,9 @@ const {
   canonicalPath = '',
   // Extra class on <body> for page-specific chrome (e.g. 'charts-landing').
   bodyClass = '',
+  // Open Graph card for link sharing: { title?, description?, path, image?,
+  // type? }. Omit on pages that don't need a rich unfurl.
+  og = null,
 } = Astro.props;
 
 // The productheader row carries the real site navigation — the slot the
@@ -21,6 +24,7 @@ const NAV = [
   { key: 'featured', label: 'Featured', href: '/' },
   { key: 'charts', label: 'Charts', href: '/charts' },
   { key: 'categories', label: 'Categories', href: '/categories' },
+  { key: 'collections', label: 'Collections', href: '/collections' },
   { key: 'colophon', label: 'Colophon', href: '/colophon' },
   { key: 'search', label: 'Search', href: '/search' },
 ];
@@ -34,6 +38,17 @@ const NAV = [
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     {canonicalPath && <link rel="canonical" href={SITE_ORIGIN + canonicalPath} />}
+    {og && (
+      <>
+        <meta property="og:site_name" content="Legacy Store" />
+        <meta property="og:type" content={og.type || 'website'} />
+        <meta property="og:title" content={og.title || title} />
+        <meta property="og:description" content={og.description || description} />
+        {og.path && <meta property="og:url" content={SITE_ORIGIN + og.path} />}
+        {og.image && <meta property="og:image" content={og.image} />}
+        <meta name="twitter:card" content="summary" />
+      </>
+    )}
     <title>{title}</title>
     <!-- Tag <html> with the device type before paint, so device-specific CSS
          (e.g. Install vs Download on app pages) applies without a flash. Pages
@@ -90,10 +105,39 @@ const NAV = [
       </div>
     </div>
 
+    <!-- Press "/" anywhere to jump to the search box (unless you're already
+         typing in a field). A keyboard nicety for desktop; touch devices never
+         reach it. Old-WebKit-safe (var, keyCode fallback, no ES6). -->
+    <script is:inline>
+      (function () {
+        try {
+          document.addEventListener('keydown', function (e) {
+            var isSlash = e.key === '/' || (!e.key && e.keyCode === 191 && !e.shiftKey);
+            if (!isSlash || e.metaKey || e.ctrlKey || e.altKey) return;
+            var t = e.target || {};
+            var tag = (t.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable) return;
+            var inputs = document.querySelectorAll('input[type="search"][name="q"]');
+            for (var i = 0; i < inputs.length; i++) {
+              // Focus the one that's actually visible at this width (desktop
+              // header vs the phone strip); offsetParent is null when hidden.
+              if (inputs[i].offsetParent !== null) {
+                e.preventDefault();
+                inputs[i].focus();
+                try { inputs[i].select(); } catch (err) {}
+                return;
+              }
+            }
+          });
+        } catch (e) {}
+      })();
+    </script>
+
     <div id="globalfooter">
       <p class="gf-buy">A metadata-only preservation archive. App binaries are hosted by the <a href="https://archive.org/" rel="noopener">Internet Archive</a>, not here.</p>
       <ul class="gf-links piped">
         <li><a href="/colophon" class="first">Colophon</a></li>
+        <li><a href="/contribute">Contribute</a></li>
         <li><a href="/stats">Stats</a></li>
         <li><a href="https://github.com/samhenrigold/jangle" rel="noopener">Source</a></li>
       </ul>

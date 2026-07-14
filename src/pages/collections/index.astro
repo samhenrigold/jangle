@@ -1,0 +1,212 @@
+---
+import { supabaseFor } from '../../lib/supabase';
+import Layout from '../../components/Layout.astro';
+import DbError from '../../components/DbError.astro';
+import { cacheGet, cacheSet } from '../../lib/cache';
+import { formatNumber } from '../../lib/format';
+import { setCacheHeaders, setDegraded } from '../../lib/http';
+import { appIconSrc } from '../../lib/icons';
+
+setCacheHeaders(Astro.response, 3600);
+
+const supabase = supabaseFor(Astro);
+let dbError = false;
+
+// Published collections (RLS hides drafts) with their members embedded — the
+// whole table is editorial-scale (dozens of rows), so one round trip covers
+// the row strips and counts without an RPC.
+type CollectionRow = { slug: string; title: string; subtitle: string | null; series: string | null; count: number; icons: string[] };
+const cacheKey = 'collections_index_v2';
+let collections = cacheGet<CollectionRow[]>(cacheKey);
+if (!collections) {
+  const { data, error } = await supabase
+    .from('collections')
+    .select('slug, title, subtitle, series, sort_order, collection_members(position, apps!collection_members_app_id_fkey(oldest_icon_sha256, icon_url:live_icon_url, excluded))')
+    .order('sort_order', { ascending: true, nullsFirst: false });
+  if (error) {
+    console.error('collections query failed:', error.message);
+    dbError = true;
+  } else {
+    collections = (data || []).map((c: any) => {
+      const members = (c.collection_members || [])
+        .filter((m: any) => m.apps && !m.apps.excluded)
+        .sort((x: any, y: any) => x.position - y.position);
+      return {
+        slug: c.slug,
+        title: c.title,
+        subtitle: c.subtitle,
+        series: c.series,
+        count: members.length,
+        icons: members
+          .map((m: any) => appIconSrc(m.apps.oldest_icon_sha256, m.apps.icon_url))
+          .filter(Boolean)
+          .slice(0, 4),
+      };
+    });
+    cacheSet(cacheKey, collections, 10 * 60 * 1000);
+  }
+}
+
+// Flatten into a render list that inserts a subhead each time a new series
+// begins (collections without a series render standalone, no header).
+type Item = { header: string } | { col: CollectionRow };
+const renderItems: Item[] = [];
+let lastSeries: string | null = null;
+for (const c of collections || []) {
+  if (c.series && c.series !== lastSeries) renderItems.push({ header: c.series });
+  renderItems.push({ col: c });
+  lastSeries = c.series || null;
+}
+
+// A transient DB failure must not render as a cacheable empty page.
+if (dbError) setDegraded(Astro.response);
+---
+
+<Layout title="Collections — Legacy Store" activeTab="collections" description="Curated collections of classic iPhone and iPad apps — Apple Design Award winners and more, archived for old iOS devices." og={{ title: 'Collections', description: 'Curated collections from the Legacy Store archive — Apple Design Award winners, apps from iPhone commercials, and more.', path: '/collections' }}>
+  <div class="content">
+    {dbError ? (
+      <DbError />
+    ) : (
+      <ul class="col-list">
+        {renderItems.map((item) => (
+          'header' in item ? (
+            <li class="col-series"><h2 class="series-label">{item.header}</h2></li>
+          ) : (
+            <li class="col">
+              <a href={`/collections/${item.col.slug}`} class="col-link">
+                <span class="col-count">{formatNumber(item.col.count)} apps</span>
+                <span class="col-icons">
+                  {item.col.icons.map((src) => (
+                    <span class="col-icon"><img src={src} alt="" width="40" height="40" loading="lazy" /><span class="icon-mask"></span></span>
+                  ))}
+                </span>
+                <span class="col-info">
+                  <span class="col-title">{item.col.title}</span>
+                  {item.col.subtitle && <span class="col-sub">{item.col.subtitle}</span>}
+                </span>
+              </a>
+            </li>
+          )
+        ))}
+        {renderItems.length === 0 && <li class="col-empty">Nothing here yet.</li>}
+      </ul>
+    )}
+  </div>
+
+  <style>
+    /* Collection rows, same idiom as the categories index */
+    .col-list {
+      list-style: none;
+      margin: 10px 0 20px 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    /* Series grouping subhead (e.g. "Apple Design Award Winners") */
+    .col-series {
+      border-bottom: none;
+    }
+
+    .series-label {
+      margin: 18px 0 2px 0;
+      font-size: 1.15em;
+      line-height: 20px;
+      color: #474747;
+    }
+
+    .col-series:first-child .series-label {
+      margin-top: 4px;
+    }
+
+    .col {
+      border-bottom: 1px solid #ececec;
+    }
+
+    .col:last-child {
+      border-bottom: none;
+    }
+
+    /* A row that ends a series (next sibling is a header) keeps its divider;
+       the last col overall drops it via :last-child above. */
+
+    .col-link {
+      display: block;
+      padding: 8px 2px;
+      min-height: 40px;
+      text-decoration: none;
+      overflow: hidden;
+    }
+
+    .col-link:hover {
+      text-decoration: none;
+      background-color: #eaf3f8;
+    }
+
+    /* Strip of the first few member icons, glossed like everything else */
+    .col-icons {
+      float: left;
+      margin-right: 12px;
+    }
+
+    .col-icon {
+      position: relative;
+      float: left;
+      width: 40px;
+      height: 40px;
+      margin-right: 4px;
+      background: transparent url('/icon-placeholder.png') no-repeat;
+      background-size: 100% 100%;
+    }
+
+    .col-icon img {
+      display: block;
+      width: 40px;
+      height: 40px;
+    }
+
+    .col-icon .icon-mask {
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-size: 100% 100%;
+    }
+
+    .col-info {
+      display: block;
+      overflow: hidden;
+      padding-top: 3px;
+    }
+
+    .col-title {
+      display: block;
+      font-size: 13px;
+      font-weight: bold;
+      color: #298cda;
+      line-height: 18px;
+    }
+
+    .col-sub {
+      display: block;
+      color: #898989;
+      font-size: 11px;
+      line-height: 16px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .col-count {
+      float: right;
+      margin: 0 4px 0 10px;
+      color: #898989;
+      font-size: 11px;
+      line-height: 40px;
+    }
+
+    .col-empty {
+      padding: 24px 10px;
+      text-align: center;
+      color: #898989;
+    }
+  </style>
+</Layout>

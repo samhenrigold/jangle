@@ -56,10 +56,14 @@ export const GET: APIRoute = async (ctx) => {
     } catch { /* serve directly */ }
   }
 
+  let transient = false;
   for (const ext of ['jpg', 'png']) {
     try {
       const upstream = await fetch(`${R2_ICON_BASE}/${sha}.${ext}`, { headers: { Accept: 'image/*' } });
-      if (!upstream.ok) continue;
+      if (!upstream.ok) {
+        if (upstream.status !== 404) transient = true;
+        continue;
+      }
       return new Response(upstream.body, {
         status: 200,
         headers: {
@@ -69,7 +73,13 @@ export const GET: APIRoute = async (ctx) => {
         },
       });
     } catch {
+      transient = true;
     }
   }
-  return blank(404);
+  // Only a durable miss (both extensions cleanly 404 in R2) may cache: the
+  // object is content-addressed, so absence is stable until a backfill. A
+  // transient failure (R2/network blip) must NOT — a day-cached blank turns
+  // one blip into a persistently "missing" icon in that browser (seen live:
+  // Infinity Blade's icon, present in R2 since Jul 10, stuck blank).
+  return transient ? blankGif(503, 'no-store') : blank(404);
 };

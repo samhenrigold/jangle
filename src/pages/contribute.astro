@@ -1,0 +1,191 @@
+---
+import Layout from '../components/Layout.astro';
+
+// Static prose with no data dependencies: prerendered at build time and served
+// as a plain static asset — no worker invocation, no runtime headers needed.
+export const prerender = true;
+---
+
+<Layout
+  title="Contribute — Legacy Store"
+  activeTab="none"
+  description="How to help preserve the App Store's early years, and how to install and run these archived apps on an old iPhone or iPad."
+>
+  <div class="content colophon">
+    <h1 class="col-title">Contribute</h1>
+    <p class="col-lede">How to help preserve these apps — and how to run them yourself.</p>
+
+    <p>
+      Legacy Store is a metadata-only archive: the index, analysis, and history live
+      here, but the app binaries themselves live on the
+      <a class="col-link" href="https://archive.org/" rel="noopener">Internet Archive</a>.
+      That means preservation is a shared effort — anyone can add a missing app, and
+      anyone with the right hardware can install what's already here.
+    </p>
+
+    <h2 class="col-h2">Adding a missing app</h2>
+    <p>
+      Every greyed-out entry on this site — an Apple Design Award winner, an app that
+      flashed by in a 2009 commercial — is something the archive knows existed but
+      hasn't preserved. The single most useful thing you can contribute is a copy of
+      one of those apps: an original App Store <code>.ipa</code> file, uploaded to the
+      Internet Archive so it lives somewhere durable and public.
+    </p>
+    <p>Old <code>.ipa</code> files tend to survive in a few places:</p>
+    <ul>
+      <li>
+        An old <strong>iTunes library</strong>. Through iTunes 12.6.x (a build Apple
+        kept around specifically for this), the desktop App Store could still download
+        apps, leaving <code>.ipa</code> files under <em>iTunes Media / Mobile
+        Applications</em>. Those files are gold — many are the only surviving copy.
+      </li>
+      <li>
+        <strong>Local device backups</strong> from the era, which sometimes carry the
+        app payloads alongside their data.
+      </li>
+      <li>
+        Anything <strong>still in your purchase history</strong> — apps you bought years
+        ago can often still be re-downloaded, even after they've been pulled from sale.
+      </li>
+    </ul>
+    <p>
+      To contribute one, create a free
+      <a class="col-link" href="https://archive.org/account/signup" rel="noopener">Internet Archive account</a>
+      and upload the <code>.ipa</code> — ideally noting the app name, version, and where
+      it came from. Once it's on the Archive it becomes preservable, citable, and
+      installable, and it'll flow into this index on the next pass.
+    </p>
+    <p>
+      Spotted a wrong date, a bad category, or a mislabeled app? Corrections to the
+      <em>metadata</em> are just as welcome — the whole project is open source, so open
+      an issue or a pull request on
+      <a class="col-link" href="https://github.com/samhenrigold/jangle" rel="noopener">GitHub</a>.
+    </p>
+
+    <h2 class="col-h2">Installing an archived app</h2>
+    <p>
+      These are original App Store binaries, so getting one onto a device is its own
+      small adventure. There are two honest paths, depending on the app and your
+      hardware.
+    </p>
+    <p>
+      <strong>If the app is in your own purchase history</strong>, the simplest route
+      needs no computer and no jailbreak: on a period iPhone or iPad, the built-in App
+      Store can offer to download the <em>last version compatible with this device</em>
+      for anything you've previously bought. When it applies, this is the cleanest way
+      to get a genuinely period-correct build running.
+    </p>
+    <p>
+      <strong>For an arbitrary archived copy</strong> — one you didn't buy, downloaded
+      from the Internet Archive — you'll generally need a <strong>jailbroken device</strong>
+      running <a class="col-link" href="https://github.com/akemin-dayo/AppSync" rel="noopener">AppSync Unified</a>,
+      which lets iOS install the unsigned <code>.ipa</code> files the archive holds. One
+      caveat the archive is built around: many of these copies are still
+      FairPlay-encrypted and will install but refuse to launch — so check the install
+      status shown on each app's version list before you spend a download.
+    </p>
+
+    <h3 class="col-h3">Getting an old device jailbroken</h3>
+    <p>
+      For the 32-bit devices most of this archive is aimed at — an iPhone 3G through a
+      5c, an original iPad — the tool worth knowing is
+      <a class="col-link" href="https://github.com/LukeZGD/Legacy-iOS-Kit" rel="noopener">Legacy iOS Kit</a>,
+      an open-source, all-in-one utility (macOS and Linux) that can restore, downgrade,
+      save SHSH blobs, and jailbreak legacy hardware — 32-bit devices on iOS roughly
+      3.1.3 through 9.3.4, plus some 64-bit A7–A11 models. Its wiki walks through the
+      jailbreak step by step; from there, AppSync Unified handles the archived
+      <code>.ipa</code> files.
+    </p>
+    <p>
+      A few things worth setting expectations on: 32-bit apps won't run on iOS 11 or
+      later at all, so a period app wants a period device. Sideloading tools like
+      AltStore or Sideloadly are an option on newer hardware, but they re-sign apps on a
+      seven-day clock and need a computer to renew — for the classic devices this
+      archive serves, the jailbreak-plus-AppSync route is the durable one. And only
+      install apps you have a right to use; the binaries are hosted by the Internet
+      Archive, not by Legacy Store.
+    </p>
+
+    <p class="col-outro">
+      Preservation only works because people keep copies. If you have old devices,
+      old backups, or an old iTunes library gathering dust, there's history in there
+      worth saving.
+    </p>
+  </div>
+
+  <style>
+    .colophon {
+      max-width: 640px;
+      padding-bottom: 32px;
+      margin: 0 auto;
+    }
+
+    .col-title {
+      margin: 14px 0 2px 0;
+      font-size: 26px;
+      line-height: 30px;
+      color: #474747;
+    }
+
+    .col-lede {
+      margin: 0 0 12px 0;
+      color: #898989;
+      font-size: 15px;
+      font-style: italic;
+    }
+
+    .col-h2 {
+      margin: 26px 0 8px 0;
+      font-size: 18px;
+      line-height: 22px;
+      color: #474747;
+      border-top: 1px solid #ececec;
+      padding-top: 18px;
+    }
+
+    .col-h3 {
+      margin: 18px 0 6px 0;
+      font-size: 14px;
+      line-height: 18px;
+      color: #474747;
+    }
+
+    .colophon p {
+      margin: 0 0 12px 0;
+      font-size: 12px;
+      line-height: 18px;
+      color: #333;
+    }
+
+    .colophon ul {
+      margin: 0 0 12px 0;
+      padding-left: 20px;
+    }
+
+    .colophon li {
+      margin: 0 0 8px 0;
+      font-size: 12px;
+      line-height: 18px;
+      color: #333;
+    }
+
+    .colophon code {
+      font-family: Menlo, Monaco, "Courier New", monospace;
+      font-size: 13px;
+      background: #f3f3f3;
+      border-radius: 4px;
+      padding: 1px 4px;
+      word-break: break-word;
+    }
+
+    .col-link {
+      color: #298cda;
+      font-weight: bold;
+    }
+
+    .col-outro {
+      margin-top: 18px;
+      color: #767676;
+    }
+  </style>
+</Layout>

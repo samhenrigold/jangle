@@ -50,6 +50,14 @@ let totalPages = 1;
 // above the apps.
 let matchingDevs: any[] = [];
 let matchingDevTotal = 0;
+// Catalog-only supplement: apps we hold a listing for but have no archived
+// binary yet (version_count 0/null), surfaced in their own clearly-marked
+// section below the real results. Populated on page 1 only.
+let catalogOnly: any[] = [];
+let catalogTotal = 0;
+// Internal developer ids for the "Developer Name" branch — hoisted so the
+// catalog-only lookup can reuse them.
+let devIds: number[] | null = null;
 
 // Only fetch results if the Power Search has any term (keywords, developer,
 // or a category).
@@ -67,7 +75,7 @@ if (q || genreId || dev) {
     // them (bypasses the version-count RPCs, which don't take developer ids).
     const { data: devRows, error: devErr } = await supabase
       .from('developers')
-      .select('id, artist_name')
+      .select('id, artist_id, artist_name')
       .ilike('artist_name', `%${devLike}%`)
       .order('artist_name', { ascending: true })
       .limit(200);
@@ -78,7 +86,7 @@ if (q || genreId || dev) {
     // The matching developers themselves are shown first (page 1 only).
     if (page === 1) matchingDevs = (devRows || []).slice(0, 18);
     matchingDevTotal = (devRows || []).length;
-    const devIds = (devRows || []).map((d: any) => Number(d.id));
+    devIds = (devRows || []).map((d: any) => Number(d.id));
     if (!devIds.length) {
       total = 0;
       searchResults = [];
@@ -182,6 +190,33 @@ if (q || genreId || dev) {
     await Promise.all([loadCount(), loadList()]);
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   }
+
+  // Catalog-only matches (metadata, no archived binary). Page 1 only — this is a
+  // supplement to the paginated results, not itself paged. Same filters as the
+  // main search; the dev branch scopes it to the matched developers. Skipped
+  // when the query sanitized to nothing. Best-effort: a failure here leaves the
+  // section empty and never taints the real results or sets dbError.
+  if (page === 1 && !(q && !tsquery)) {
+    let cq: any = supabase
+      .from('apps')
+      .select('id, app_store_id, bundle_id, app_store_name, display_name, developer_id, genre_id, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)', { count: 'exact' })
+      .not('excluded', 'is', true)
+      .or('version_count.is.null,version_count.eq.0')
+      .order('app_store_name', { ascending: true, nullsFirst: false })
+      .limit(30);
+    if (tsquery) cq = cq.textSearch('search_vector', tsquery);
+    if (genreId) cq = cq.eq('genre_id', Number(genreId));
+    // Developer-name branch: only apps by the matched developers (none → empty).
+    if (dev) cq = (devIds && devIds.length) ? cq.in('developer_id', devIds) : null;
+    if (cq) {
+      const { data, count, error } = await cq;
+      if (error) console.error('catalog-only lookup failed:', error.message);
+      else {
+        catalogOnly = (data || []).map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
+        catalogTotal = count || 0;
+      }
+    }
+  }
 }
 
 const { genres, error: genresError } = await genresPromise;
@@ -243,7 +278,7 @@ function pageHref(p: number) {
                 />
                 <ul class="dev-matches">
                   {matchingDevs.map((d: any) => (
-                    <li><a href={`/developer/${d.id}`}>{d.artist_name}</a></li>
+                    <li><a href={`/developer/${d.artist_id ?? d.id}`}>{d.artist_name}</a></li>
                   ))}
                 </ul>
               </>
@@ -259,12 +294,27 @@ function pageHref(p: number) {
                 <AppList list={searchResults} iconShas={iconShas} />
                 {totalPages > 1 && <Pagination page={page} totalPages={totalPages} hrefFor={pageHref} />}
               </>
-            ) : matchingDevs.length === 0 ? (
+            ) : (matchingDevs.length === 0 && catalogOnly.length === 0) ? (
               <div class="no-results">
                 <p>{dev ? `No developer matches “${dev}”.` : q ? `No apps matched “${q}”.` : 'No apps in this genre yet.'}</p>
                 {q && <p>Search matches the beginnings of words — try a shorter prefix, a different word, or check the spelling.</p>}
               </div>
             ) : null}
+
+            {/* Catalog-only: we hold a store listing for these but have no
+                archived binary to download (yet). Kept visually distinct from
+                the real, installable results above. */}
+            {catalogOnly.length > 0 && (
+              <div class="catalog-only">
+                <SectionHeader
+                  title="Also in the catalog — no binaries archived yet"
+                  level={searchResults.length || matchingDevs.length ? 2 : 1}
+                  detail={catalogTotal > catalogOnly.length ? `${catalogOnly.length} of ${formatNumber(catalogTotal)}` : (catalogTotal ? `${formatNumber(catalogTotal)} found` : undefined)}
+                />
+                <p class="catalog-note">We have a store listing for {catalogTotal === 1 ? 'this app' : 'these apps'}, but no archived copy to install or download yet — metadata only.</p>
+                <AppList list={catalogOnly} />
+              </div>
+            )}
           </>
         )}
       </>
@@ -305,6 +355,25 @@ function pageHref(p: number) {
       text-align: center;
       padding: 34px 20px;
       color: #767676;
+    }
+
+    /* Catalog-only section: visually secondary to the installable results —
+       a hairline rule above it and slightly muted icons so it reads as "records
+       we know about" rather than "apps you can get". */
+    .catalog-only {
+      margin-top: 22px;
+      padding-top: 4px;
+      border-top: 1px solid #e2e2e2;
+    }
+
+    .catalog-note {
+      margin: -2px 2px 10px;
+      font-size: 11px;
+      color: #898989;
+    }
+
+    .catalog-only :global(.applist .icon) {
+      opacity: 0.72;
     }
 
     @media screen and (max-width: 767px) {
