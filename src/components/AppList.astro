@@ -17,7 +17,7 @@ const { list = [], startRank, peakLines, iconShas } = Astro.props;
     const count = a.version_count == null ? null : Number(a.version_count);
     const peak = peakLines && a.app_store_id ? peakLines.get(Number(a.app_store_id)) : null;
     return (
-    <li class="app">
+    <li class="app" data-app-store-id={a.app_store_id || undefined} data-bundle-id={a.bundle_id || undefined}>
       <a class="app-link" href={`/app/${a.app_store_id ? a.app_store_id : a.id}`}>
         {typeof startRank === 'number' && <span class="rank">{startRank + i}</span>}
         {/* The corner mask only goes over a real square icon; a missing icon

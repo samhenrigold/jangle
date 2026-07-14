@@ -801,7 +801,7 @@ if (sizePoints.length >= 3) {
         <div class="jb-notice">To install apps directly onto this device, it must be jailbroken with AppSync installed.</div>
 
         {/* Title lockup — h1 + "By developer", as on the original preview page */}
-        <div id="title" class="intro">
+        <div id="title" class="intro" data-app-store-id={appData.app_store_id || undefined} data-bundle-id={appData.bundle_id || undefined}>
           <h1>{appTitle}</h1>
           {developerName && (
             <h2>By {appData.developer_id

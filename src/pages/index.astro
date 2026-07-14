@@ -147,7 +147,7 @@ if (dbError) setDegraded(Astro.response);
                     </>
                   );
                   return (
-                    <li class="hero-row">
+                    <li class="hero-row" data-app-store-id={p.app_store_id || undefined} data-bundle-id={p.apps?.bundle_id || undefined}>
                       {href ? <a class="hero-row-link" href={href}>{inner}</a> : <span class="hero-row-link">{inner}</span>}
                     </li>
                   );
