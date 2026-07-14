@@ -3,7 +3,7 @@ import { cacheGet, cacheSet } from './cache';
 // Everything the app page needs from an apps row, with the developer/genre
 // names embedded.
 const APP_COLS =
-  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url:live_icon_url, oldest_icon_sha256, large_icon_sha256, large_icon_px, genre_id, developer_id, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)';
+  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url:live_icon_url, oldest_icon_sha256, large_icon_sha256, large_icon_px, genre_id, developer_id, original_release_date, original_release_date_source, developers!apps_developer_id_fkey(artist_name), genres!apps_genre_id_fkey(genre_name)';
 
 // app_store_name is the iTunes listing name ("Angry Birds HD Free") and
 // disambiguates the many apps whose bundle display_name is identical.
@@ -26,9 +26,11 @@ export async function resolveApp(
 
   const attempts: { col: string; value: string }[] = [];
   if (/^\d+$/.test(rawParam)) {
-    // app_store_id is int4 — an out-of-range param is "no such app", not a DB
-    // failure, so skip the probe. Never match the app_store_id=0 sentinel.
-    if (rawParam !== '0' && Number(rawParam) <= 2147483647) {
+    // app_store_id is bigint; cap the probe at 10 digits so an absurd param is
+    // "no such app" rather than a bigint-overflow DB error. Never match the
+    // app_store_id=0 sentinel. (The old int4 ceiling of 2147483647 wrongly
+    // 404'd modern ids — e.g. the 2021-era ids backfilled from gauthamp10.)
+    if (rawParam !== '0' && rawParam.length <= 10) {
       attempts.push({ col: 'app_store_id', value: rawParam });
     }
     attempts.push({ col: 'id', value: rawParam });

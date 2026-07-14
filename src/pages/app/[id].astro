@@ -829,6 +829,10 @@ if (sizePoints.length >= 3) {
                 <li class="genre"><span class="label">Category: </span><a href={`/categories/${appData.genre_id}`}>{genreName}</a></li>
               )}
               {subgenre && <li class="genre"><span class="label">Subgenre: </span>{subgenre}</li>}
+              {appData.original_release_date && (
+                <li title="When the app first appeared on the App Store (may predate our earliest archived copy)">
+                  <span class="label">First released: </span>{formatDate(appData.original_release_date)}</li>
+              )}
               <li><span class="label">Versions: </span>{versions.length} archived</li>
               {installableVersionCount > 0 && (
                 <li><span class="label">Installable: </span>{installableVersionCount} of {versions.length}</li>
