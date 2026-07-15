@@ -5,13 +5,14 @@ import DbError from '../../components/DbError.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
-import { iconSrc, appIconSrc } from '../../lib/icons';
 import { formatDate, formatNumber } from '../../lib/format';
 import {
   getChartTypes,
   getGenreNames,
   getSnapshotIndex,
   getSnapshotPositions,
+  getArtworkFates,
+  chartRowIcon,
   dedupeByDate,
   nearestSnapshot,
   deviceOf,
@@ -19,6 +20,7 @@ import {
   waybackUrl,
   formatWaybackTs,
   type Device,
+  type ArtworkFate,
 } from '../../lib/timemachine';
 import { getOldestIcons, getIconsNearDate } from '../../lib/appicons';
 
@@ -161,15 +163,23 @@ async function nextDifferentSnap(step: number): Promise<any> {
 // gets 2015 icons), then the oldest extracted icon for apps with no datable
 // version, then the live CDN icon — that fallback chain is why some rows (e.g.
 // Puzzloop) used to show no icon in the list but did on the app page.
-const loadChartIcons = async (): Promise<{ near?: Map<number, string>; oldest?: Map<number, string> }> => {
+type ChartIcons = {
+  near?: Map<number, string>;
+  oldest?: Map<number, string>;
+  fates?: Map<string, ArtworkFate>;
+};
+const loadChartIcons = async (): Promise<ChartIcons> => {
   if (dbError || !positions.length || !snapshot) return {};
   const ids = Array.from(new Set(positions.map((p: any) => Number(p.apps?.id)).filter(Boolean)));
-  if (!ids.length) return {};
-  const [near, oldest] = await Promise.all([
-    getIconsNearDate(supabase, ids, snapshot.snapshot_date),
-    getOldestIcons(supabase, ids),
+  // Which feed artworks are rehosted vs permanently gone — a 'gone' phobos URL
+  // must yield to the archive icon instead of rendering a blank tile.
+  const artworkUrls = positions.map((p: any) => p.artwork_url).filter(Boolean);
+  const [near, oldest, fates] = await Promise.all([
+    ids.length ? getIconsNearDate(supabase, ids, snapshot.snapshot_date) : Promise.resolve(undefined),
+    ids.length ? getOldestIcons(supabase, ids) : Promise.resolve(undefined),
+    getArtworkFates(supabase, artworkUrls),
   ]);
-  return { near, oldest };
+  return { near, oldest, fates };
 };
 
 // The two direction walks and the icon lookup are independent — one burst.
@@ -281,7 +291,12 @@ const pageTitle = snapshot
               {positions.map((p: any) => {
                 const appId = Number(p.apps?.id);
                 const sha = (appId && (chartIcons.near?.get(appId) || chartIcons.oldest?.get(appId))) || null;
-                const icon = iconSrc(p.artwork_url) || appIconSrc(sha, p.apps?.icon_url);
+                const icon = chartRowIcon(
+                  p.artwork_url,
+                  p.artwork_url ? chartIcons.fates?.get(p.artwork_url) : undefined,
+                  sha,
+                  p.apps?.icon_url
+                );
                 const price = formatPrice(p.price_amount, p.price_currency);
                 const inLibrary = !!p.apps;
                 const href = inLibrary ? `/app/${p.apps.app_store_id || p.apps.id}` : null;

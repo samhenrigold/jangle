@@ -6,17 +6,20 @@ import AppList from '../components/AppList.astro';
 import SectionHeader from '../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { setCacheHeaders, setDegraded } from '../lib/http';
-import { iconSrc, appIconSrc } from '../lib/icons';
+import { appIconSrc } from '../lib/icons';
 import { formatDate } from '../lib/format';
 import {
   getChartTypes,
   getSnapshotIndex,
   getSnapshotPositions,
   getPeakLines,
+  getArtworkFates,
+  chartRowIcon,
   dedupeByDate,
   nearestSnapshot,
   deviceOf,
   formatPrice,
+  type ArtworkFate,
 } from '../lib/timemachine';
 import { getIconsNearDate } from '../lib/appicons';
 
@@ -32,6 +35,7 @@ let heroSnapshot: any = null;
 let heroType: any = null;
 let heroEntries: any[] = [];
 let heroIconShas: Map<number, string> | undefined;
+let heroArtFates: Map<string, ArtworkFate> | undefined;
 let heroYearsAgo = 0;
 
 // Featured: the 'featured' editorial collection (collections table) — the
@@ -100,9 +104,15 @@ const loadHero = async () => {
     if (positions) {
       heroEntries = positions.slice(0, 5);
       // Icons dated nearest the snapshot, not each app's oldest (decorative —
-      // an empty map just leaves the oldest-icon fallback in place).
+      // an empty map just leaves the oldest-icon fallback in place). Fates tell
+      // us which feed artworks are dead so we don't render a blank over them.
       const ids = heroEntries.map((p: any) => Number(p.apps?.id)).filter(Boolean);
-      if (ids.length) heroIconShas = await getIconsNearDate(supabase, ids, heroSnapshot.snapshot_date);
+      const [shas, fates] = await Promise.all([
+        ids.length ? getIconsNearDate(supabase, ids, heroSnapshot.snapshot_date) : Promise.resolve(undefined),
+        getArtworkFates(supabase, heroEntries.map((p: any) => p.artwork_url).filter(Boolean)),
+      ]);
+      heroIconShas = shas;
+      heroArtFates = fates;
     } else heroSnapshot = null;
   }
 };
@@ -188,14 +198,15 @@ if (dbError) setDegraded(Astro.response);
               </div>
               <ul class="hero-list">
                 {heroEntries.map((p: any) => {
-                  // Chart-date artwork first (period-correct, /img-resurrected),
-                  // then the archive's own icon nearest the snapshot date, then
-                  // its oldest extracted icon; the app's LIVE listing icon
-                  // (modern, era-wrong) only as a last resort.
-                  const icon = iconSrc(p.artwork_url)
-                    || appIconSrc(
-                      heroIconShas?.get(Number(p.apps?.id)) || p.apps?.oldest_icon_sha256,
-                      p.apps?.icon_url);
+                  // Chart-date artwork first (period-correct), unless it's a
+                  // known-dead phobos URL — then the archive's own icon nearest
+                  // the snapshot date, then its oldest extracted icon; the app's
+                  // LIVE listing icon (modern, era-wrong) only as a last resort.
+                  const icon = chartRowIcon(
+                    p.artwork_url,
+                    p.artwork_url ? heroArtFates?.get(p.artwork_url) : undefined,
+                    heroIconShas?.get(Number(p.apps?.id)) || p.apps?.oldest_icon_sha256,
+                    p.apps?.icon_url);
                   const price = formatPrice(p.price_amount, p.price_currency);
                   const href = p.apps ? `/app/${p.apps.app_store_id || p.apps.id}` : null;
                   const inner = (

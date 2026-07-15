@@ -3,6 +3,7 @@
 // sections (chart trajectory, rating history, archived reviews).
 
 import { cacheGet, cacheSet } from './cache';
+import { iconSrc, appIconSrc } from './icons';
 
 export type ChartType = { id: number; name: string; slug: string };
 
@@ -108,6 +109,83 @@ export async function getSnapshotIndex(supabase: any): Promise<SnapshotMeta[] | 
   }));
   cacheSet('tm:snapshot_index', index, 10 * 60 * 1000);
   return index;
+}
+
+// What became of a chart feed's original phobos artwork URL, per the rehost
+// ledger (cdn_assets). `sha256` = rehosted to R2 (link the durable /icon/<sha>
+// straight, skipping the /img 302 hop); `gone` = probed and permanently dead on
+// Apple's CDN (do NOT link it — it renders a blank tile through the live proxy,
+// so the caller falls back to the app's archive icon). A URL absent from the
+// ledger was never probed: no entry, and the caller serves it live via /img.
+export type ArtworkFate = { sha256: string | null; gone: boolean };
+
+// Batched cdn_assets lookup for a set of artwork URLs, per-URL cached (fates are
+// effectively immutable once recorded, and the same apps chart repeatedly).
+// Chunked because these URLs are long and PostgREST filters ride the query
+// string; a failed chunk is left absent (degrades to live proxy), never poisoned
+// into the cache. Never throws — worst case every URL is treated as unknown.
+export async function getArtworkFates(supabase: any, urls: string[]): Promise<Map<string, ArtworkFate>> {
+  const out = new Map<string, ArtworkFate>();
+  const misses: string[] = [];
+  for (const u of Array.from(new Set(urls.filter(Boolean)))) {
+    const cached = cacheGet<ArtworkFate>(`tm:artfate:${u}`);
+    if (cached) out.set(u, cached);
+    else misses.push(u);
+  }
+  if (!misses.length) return out;
+
+  const CHUNK = 40;
+  const batches: string[][] = [];
+  for (let i = 0; i < misses.length; i += CHUNK) batches.push(misses.slice(i, i + CHUNK));
+  const results = await Promise.all(
+    batches.map(async (batch) => {
+      const { data, error } = await supabase
+        .from('cdn_assets')
+        .select('url, status, sha256')
+        .in('url', batch);
+      if (error) {
+        console.error('cdn_assets fate query failed:', error.message);
+        return null; // transient — leave this batch absent so it retries next render
+      }
+      return (data || []) as Array<{ url: string; status: string; sha256: string | null }>;
+    })
+  );
+
+  for (let i = 0; i < batches.length; i++) {
+    const rows = results[i];
+    if (rows === null) continue; // failed chunk: don't record a fate for these URLs
+    const byUrl = new Map(rows.map((r) => [r.url, r]));
+    for (const u of batches[i]) {
+      const r = byUrl.get(u);
+      // Present in the ledger → definitive fate; absent → never probed (unknown).
+      const fate: ArtworkFate = r
+        ? { sha256: r.status === 'ok' ? r.sha256 : null, gone: r.status === 'gone' }
+        : { sha256: null, gone: false };
+      out.set(u, fate);
+      cacheSet(`tm:artfate:${u}`, fate, 60 * 60 * 1000);
+    }
+  }
+  return out;
+}
+
+// The row-icon selection chain for a chart entry, one place so /charts and the
+// homepage hero stay identical. Exact feed artwork wins when it still resolves —
+// it's what the store literally showed that day — but a dead ('gone') URL is
+// skipped in favour of the app's period-authentic archive icon rather than
+// rendering a blank. `sha` is the caller's already-resolved archive icon
+// (date-nearest → oldest). Returns '' only when nothing is showable.
+export function chartRowIcon(
+  artworkUrl: string | null | undefined,
+  fate: ArtworkFate | undefined,
+  sha: string | null | undefined,
+  liveIconUrl: string | null | undefined
+): string {
+  if (fate?.sha256) return `/icon/${fate.sha256}`;          // rehosted → durable, no 302
+  if (artworkUrl && !fate?.gone) {
+    const live = iconSrc(artworkUrl);                        // never-probed / still-live artwork
+    if (live) return live;
+  }
+  return appIconSrc(sha, liveIconUrl);                       // dead/absent artwork → archive icon
 }
 
 // Chart entries for one capture, ranked. Shared by /charts and the
