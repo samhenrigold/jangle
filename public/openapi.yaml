@@ -1,0 +1,151 @@
+openapi: 3.0.3
+info:
+  title: Legacy Store — Archive Coverage API
+  version: "1.0.0"
+  description: >
+    Public, open-data endpoint for checking which iOS App Store app versions the Legacy
+    Store archive already holds copies of, and in what state. FairPlay only encrypts an
+    app's main executable, so the plists inside a downloaded .ipa (Info.plist, and for
+    iTunes downloads iTunesMetadata.plist) stay readable even while the binary is
+    encrypted — a caller can read identifiers out of their own files without decrypting
+    anything, and ask which are already preserved so they only spend effort on the gaps.
+    Read-only; no authentication.
+  license:
+    name: See legacystore.app
+    url: https://legacystore.app/
+servers:
+  - url: https://legacystore.app
+paths:
+  /api/coverage:
+    get:
+      summary: Usage, or a single coverage lookup by any identifier subset
+      description: >
+        With no query parameters, returns a self-describing usage document. With any of
+        the identifier parameters, returns the coverage for the version they locate. A
+        version is locatable with an external_id, or a version plus an app key (bundle_id
+        or app_store_id).
+      parameters:
+        - { name: bundle_id, in: query, required: false, schema: { type: string, maxLength: 300 } }
+        - { name: version, in: query, required: false, schema: { type: string, maxLength: 100 } }
+        - { name: external_id, in: query, required: false, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: app_store_id, in: query, required: false, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        "200":
+          description: A usage document or a single coverage entry.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/CoverageEntry"
+                  - type: object
+          headers:
+            Cache-Control: { schema: { type: string }, description: "public, max-age=300 for a lookup; 3600 for usage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    post:
+      summary: Batch coverage lookup
+      description: >
+        Look up many versions in one request. Results are returned 1:1 with the input
+        probes, in request order, with duplicates preserved. A probe that cannot locate a
+        version rejects the whole batch (so results never silently shift off their input).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [probes]
+                  properties:
+                    probes:
+                      type: array
+                      minItems: 1
+                      maxItems: 500
+                      items: { $ref: "#/components/schemas/Probe" }
+                - type: array
+                  minItems: 1
+                  maxItems: 500
+                  items: { $ref: "#/components/schemas/Probe" }
+      responses:
+        "200":
+          description: One coverage entry per input probe, in order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/CoverageEntry" }
+        "400": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    options:
+      summary: CORS preflight
+      responses:
+        "204": { description: No content }
+  /api/coverage/{bundle_id}/{version}:
+    get:
+      summary: Coverage for one version, by bundle id and version (cacheable resource)
+      parameters:
+        - { name: bundle_id, in: path, required: true, schema: { type: string, maxLength: 300 } }
+        - { name: version, in: path, required: true, schema: { type: string, maxLength: 100 } }
+      responses:
+        "200":
+          description: The coverage entry for this version.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageEntry" }
+          headers:
+            Cache-Control: { schema: { type: string }, description: "public, max-age=300" }
+        "400": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    options:
+      summary: CORS preflight
+      responses:
+        "204": { description: No content }
+components:
+  schemas:
+    Probe:
+      type: object
+      description: >
+        Any subset of identifiers. Must be locatable: an external_id, or a version plus an
+        app key (bundle_id or app_store_id).
+      properties:
+        bundle_id: { type: string, maxLength: 300, description: CFBundleIdentifier / softwareVersionBundleId }
+        version: { type: string, maxLength: 100, description: CFBundleShortVersionString }
+        external_id: { type: integer, format: int64, minimum: 1, description: softwareVersionExternalIdentifier }
+        app_store_id: { type: integer, format: int64, minimum: 1, description: itemId }
+      additionalProperties: false
+    CoverageEntry:
+      type: object
+      required: [copies]
+      properties:
+        bundle_id: { type: string, nullable: true }
+        version: { type: string, nullable: true }
+        external_id: { type: integer, format: int64, nullable: true }
+        app_store_id: { type: integer, format: int64, nullable: true }
+        copies:
+          type: object
+          description: >
+            Map of the archive's install_status vocabulary to a count of publicly-available
+            copies, e.g. {"installable":3,"encrypted":4}. Empty when nothing matched. The
+            key set is open-ended; treat unrecognized keys gracefully. Quarantined/tampered
+            copies are never counted.
+          additionalProperties: { type: integer, minimum: 0 }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+  responses:
+    Error:
+      description: Error envelope.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

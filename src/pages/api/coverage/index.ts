@@ -30,6 +30,7 @@ const USAGE = {
   },
   copies:
     'a map of install_status -> count for publicly-available copies (e.g. {"installable":3,"encrypted":4}); {} means none. installable > 0 means a usable, already-decrypted copy exists. Quarantined/tampered copies are never counted.',
+  schema: 'https://legacystore.app/openapi.yaml',
 };
 
 export const OPTIONS: APIRoute = () => new Response(null, { status: 204, headers: CORS });
