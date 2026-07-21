@@ -95,6 +95,7 @@ Other scripts: `npm run build` (production build) and `npm run preview`.
 │   │   ├── manifest/[ipa_id].plist.ts   # OTA install manifest
 │   │   ├── icon/[sha].ts, screen/[sha].ts, img.ts   # Content-addressed assets
 │   │   ├── ipa/[id].ts         # Download / install redirector
+│   │   ├── api/coverage/       # Public archive-coverage API (see /contribute)
 │   │   ├── sitemap.xml.ts, sitemap-[n].xml.ts
 │   │   └── 404.astro
 │   └── styles/            # Global styles
