@@ -119,6 +119,11 @@ components:
       additionalProperties: false
     CoverageEntry:
       type: object
+      description: >
+        The identifier fields are resolved to the matched version's full identity — an
+        external_id lookup comes back with the bundle_id, version, and app_store_id filled
+        in. A field is null when the match is ambiguous, and falls back to the caller's own
+        value on a no-match (so a probe that matched nothing still echoes what was asked).
       required: [copies]
       properties:
         bundle_id: { type: string, nullable: true }
