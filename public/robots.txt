@@ -2,6 +2,8 @@ User-agent: *
 Disallow: /search
 Disallow: /manifest/
 Disallow: /img
+Disallow: /api/
+Disallow: /ipa/
 Disallow: /time-machine?
 Disallow: /charts?
 Disallow: /app/*?

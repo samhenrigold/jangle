@@ -59,6 +59,9 @@ export function json(body: unknown, status = 200, cacheControl = 'no-store'): Re
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': cacheControl,
+      // Open data meant for programmatic use, not SERPs — keep JSON responses out
+      // of search indexes regardless of what a crawler does with robots.txt.
+      'X-Robots-Tag': 'noindex',
       ...CORS,
     },
   });

@@ -21,21 +21,42 @@ export const SITE_ORIGIN = 'https://legacystore.app';
 //     --data '{"purge_everything":true}'
 const MAX_HTML_CDN_SECONDS = 3600;
 
-// Sets shared-cache headers. Browser TTL stays short so users pick up
-// fixes; the CDN TTL does the heavy lifting (bounded by MAX_HTML_CDN_SECONDS).
+// How long a stale (expired) copy may still be served.
+//   • stale-while-revalidate covers the normal refresh gap: the edge returns the
+//     expired copy instantly and revalidates in the background, so no visitor
+//     ever blocks on a slow RPC render.
+//   • stale-if-error covers origin failure: if a re-render throws, times out, or
+//     503s (see setDegraded), the edge keeps serving the last good copy for up to
+//     a week instead of showing an error — the right default for a preservation
+//     archive, and the reason the launch-day origin blips were invisible to users.
+// Both directives are DISABLED at a shared cache by s-maxage / must-revalidate /
+// proxy-revalidate (RFC 9111 §4.2.4), so the edge TTL below must be expressed as
+// max-age. We keep a *short* browser TTL and a *long* edge TTL by putting them on
+// separate headers (Cloudflare-CDN-Cache-Control is edge-only and stripped before
+// the response reaches the browser) rather than the old s-maxage split.
+const STALE_WHILE_REVALIDATE = 86400; // 1 day
+const STALE_IF_ERROR = 604800; // 7 days
+
+// Sets shared-cache headers. Browser TTL stays short (so users pick up fixes and
+// never hold HTML pointing at rotated content-hashed assets); the edge TTL does
+// the heavy lifting (bounded by MAX_HTML_CDN_SECONDS). Both layers carry the
+// stale-serve cushions above.
 export function setCacheHeaders(response: Response | { headers: Headers }, cdnSeconds: number, browserSeconds = 300): void {
   const cdn = Math.min(cdnSeconds, MAX_HTML_CDN_SECONDS);
-  response.headers.set(
-    'Cache-Control',
-    `public, max-age=${browserSeconds}, s-maxage=${cdn}`
-  );
+  const stale = `stale-while-revalidate=${STALE_WHILE_REVALIDATE}, stale-if-error=${STALE_IF_ERROR}`;
+  response.headers.set('Cache-Control', `public, max-age=${browserSeconds}, ${stale}`);
+  response.headers.set('Cloudflare-CDN-Cache-Control', `public, max-age=${cdn}, ${stale}`);
 }
 
-// Marks a degraded response (transient DB failure) as uncacheable and 503, so
-// the edge never pins an empty page for the full TTL. Overrides any
-// Cache-Control set earlier in the request.
+// Marks a degraded response (transient DB failure) as uncacheable and 503. The
+// 503 itself is never pinned (no-store on BOTH the browser and the edge header),
+// and because it's a 5xx returned while revalidating an expired entry, the edge
+// serves the last good copy via that copy's stale-if-error instead of showing the
+// error — the whole point of dropping s-maxage above. Overrides any cache headers
+// set earlier in the request.
 export function setDegraded(response: { headers: Headers; status?: number }): void {
   response.headers.set('Cache-Control', 'no-store');
+  response.headers.set('Cloudflare-CDN-Cache-Control', 'no-store');
   response.status = 503;
 }
 
