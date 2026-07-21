@@ -106,24 +106,28 @@ export const prerender = true;
     <p>
       Before you spend effort on a stack of old <code>.ipa</code> files, you can ask the
       archive which versions it already holds a usable copy of, and only bother with the
-      gaps. FairPlay encrypts only an app's main executable, so the
-      <code>Info.plist</code> inside every <code>.ipa</code> stays readable even while the
-      binary is still encrypted — a plain <code>unzip</code> gives you the two things the
-      archive matches on: <code>CFBundleIdentifier</code> and
-      <code>CFBundleShortVersionString</code>. Pass them to the public coverage endpoint:
+      gaps. FairPlay encrypts only an app's main executable, so the plists inside every
+      <code>.ipa</code> stay readable even while the binary is still encrypted — a plain
+      <code>unzip</code> gives you the identifiers the archive matches on. A file
+      downloaded through iTunes also carries an <code>iTunesMetadata.plist</code> whose
+      <code>softwareVersionExternalIdentifier</code> pins the exact App Store build, which
+      is the most precise thing to match on. Pass whatever a file has to the public
+      coverage endpoint — the external id alone, or a bundle id and version:
     </p>
-    <pre class="col-pre"><code>curl https://legacystore.app/api/coverage/com.rovio.angrybirds/1.0</code></pre>
+    <pre class="col-pre"><code>curl https://legacystore.app/api/coverage?external_id=723458015
+curl https://legacystore.app/api/coverage/com.rovio.angrybirds/1.0</code></pre>
     <p>
       It replies with a <code>copies</code> map counting the copies the archive holds for
       that version, by state — for example <code>&#123;"installable":3,"encrypted":4&#125;</code>,
       or <code>&#123;&#125;</code> for a version nothing here matches. An
       <code>installable</code> count above zero means a decrypted, runnable copy already
       exists, so that one's covered; anything else is worth uploading. To sweep a whole
-      library at once, <code>POST</code> a JSON array of
-      <code>&#123;"bundle_id","version"&#125;</code> entries to
-      <code>/api/coverage</code> and you'll get one result back per entry. Tampered or
-      modified repackages never count toward these totals — only genuine copies do, so a
-      clean dump of something we only hold a modded version of still reads as a gap.
+      library at once, <code>POST</code> a JSON array of probes — each carrying any of
+      <code>bundle_id</code>, <code>app_store_id</code>, <code>version</code>, or
+      <code>external_id</code> — to <code>/api/coverage</code>, and you'll get one result
+      back per entry. Tampered or modified repackages never count toward these totals —
+      only genuine copies do, so a clean dump of something we only hold a modded version
+      of still reads as a gap.
     </p>
 
     <h2 class="col-h2">Installing an archived app</h2>
