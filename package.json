@@ -6,7 +6,9 @@
     "dev": "astro dev --host",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.12",

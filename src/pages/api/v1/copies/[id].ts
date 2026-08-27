@@ -15,7 +15,7 @@ export const GET: APIRoute = async (ctx) => {
   const supabase = supabaseFor(ctx);
 
   try {
-    const { data: f, error: fe } = await supabase
+    const { data: fRow, error: fe } = await supabase
       .from('ipa_files')
       .select(
         'id, app_version_id, filename, file_size, md5_hash, available, ' +
@@ -25,6 +25,7 @@ export const GET: APIRoute = async (ctx) => {
       .eq('id', id)
       .maybeSingle();
     if (fe) throw new Error(fe.message);
+    const f: any = fRow;
     const bin: any = (f as any)?.binaries;
     if (!f || bin?.hidden) return fail(404, 'not_found', 'no such archived copy');
 

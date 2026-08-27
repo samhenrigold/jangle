@@ -52,9 +52,9 @@ export const GET: APIRoute = async (ctx) => {
       snapshot_date: snap.snapshot_date,
       // 14-digit Wayback ts → ISO 8601 (the API-wide timestamp convention);
       // the raw form survives inside wayback_url.
-      captured_at: /^\d{14}$/.test(snap.captured_ts || '')
-        ? `${snap.captured_ts.slice(0, 4)}-${snap.captured_ts.slice(4, 6)}-${snap.captured_ts.slice(6, 8)}T${snap.captured_ts.slice(8, 10)}:${snap.captured_ts.slice(10, 12)}:${snap.captured_ts.slice(12, 14)}Z`
-        : null,
+      captured_at: ((cts: string | null) => (cts && /^\d{14}$/.test(cts)
+        ? `${cts.slice(0, 4)}-${cts.slice(4, 6)}-${cts.slice(6, 8)}T${cts.slice(8, 10)}:${cts.slice(10, 12)}:${cts.slice(12, 14)}Z`
+        : null))(snap.captured_ts),
       // source_url may carry an internal "wayback:" prefix marking a
       // Wayback-recovered page — strip it for the public record.
       source_url: (snap.source_url || '').replace(/^wayback:/, '') || null,

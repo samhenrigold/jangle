@@ -8,6 +8,17 @@
 # icon-placeholder.png alone was the #2 most-requested URL on launch day and was
 # revalidating on every hit. If one is ever re-authored, rename it or purge cache.
 
+# Build-time content-hashed assets: the filename changes whenever the bytes do,
+# so the URL is a permanent key — cache forever. Without this they carried the
+# zone default (must-revalidate), so every repeat visitor paid a conditional
+# round trip for the CSS after 4h.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Period-authentic UI sprites/images — original artifacts that never change.
+/wsf/*
+  Cache-Control: public, max-age=31536000, immutable
+
 /icon-placeholder.png
   Cache-Control: public, max-age=31536000, immutable
 
