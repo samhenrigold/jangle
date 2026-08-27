@@ -232,7 +232,7 @@ paths:
     get:
       summary: One archived copy with its content-addressed binary
       description: >
-        A copy is one mirrored .ipa file on the Internet Archive; its binary is the
+        A copy is one mirrored .ipa file on the Internet Archive; its binary is the
         content-addressed (sha1) analysis shared by every identical copy. Quarantined
         binaries and excluded apps 404.
       parameters:
@@ -558,7 +558,7 @@ components:
           items: { type: integer }
           description: "UIDeviceFamily (1 = iPhone/iPod touch, 2 = iPad)."
         external_identifier: { type: string, nullable: true, description: Apple's externalVersionId for this version. }
-        unavailable_copies: { type: integer, description: Copies no longer reachable on the Internet Archive. }
+        unavailable_copies: { type: integer, description: Copies no longer reachable on the Internet Archive. }
         copies:
           type: array
           items:
@@ -569,7 +569,7 @@ components:
               filename: { type: string, nullable: true }
               size: { type: integer, format: int64, nullable: true }
               md5: { type: string, nullable: true }
-              ia_item_id: { type: string, nullable: true, description: Internet Archive item holding this copy. }
+              ia_item_id: { type: string, nullable: true, description: Internet Archive item holding this copy. }
               sha1: { type: string, nullable: true, description: Content hash of the binary. }
               install_status: { type: string, nullable: true, description: "installable | encrypted | unknown — will it actually launch." }
               architectures:
@@ -588,7 +588,7 @@ components:
         filename: { type: string, nullable: true }
         size: { type: integer, format: int64, nullable: true }
         md5: { type: string, nullable: true }
-        available: { type: boolean, description: false when the copy is no longer reachable on the Internet Archive. }
+        available: { type: boolean, description: false when the copy is no longer reachable on the Internet Archive. }
         ia_item_id: { type: string, nullable: true }
         version: { type: string, nullable: true }
         app_store_id: { type: string, nullable: true }
@@ -737,8 +737,8 @@ components:
     Genre:
       type: object
       properties:
-        genre_id: { type: string, description: "Internal id — what ?genre= filters take." }
-        apple_genre_id: { type: string, nullable: true }
+        genre_id: { type: string, description: "Internal id — what ?genre= filters take. Usually equals apple_genre_id, but not always." }
+        apple_genre_id: { type: string, nullable: true, description: "Apple's own genre id, for joining against App Store data." }
         name: { type: string, nullable: true }
         app_count: { type: integer, nullable: true }
     Probe:

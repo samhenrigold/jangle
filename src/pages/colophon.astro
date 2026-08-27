@@ -32,7 +32,7 @@ export const prerender = true;
     <h2 class="col-h2">What this is, and why it exists</h2>
     <p>
       There are <strong>more than 200,000 archived <code>.ipa</code> file copies</strong> on the
-      Internet Archive, which deduplicate by content hash to roughly <strong>160,000 distinct
+      Internet&nbsp;Archive, which deduplicate by content hash to roughly <strong>160,000 distinct
       binaries</strong>. About 115,000 of those are genuine App Store apps; the rest are
       re-signed or repackaged copies the archive catalogues but keeps out of its listings —
       why, and how they are told apart, is further down. The archive treats the binary —
@@ -47,12 +47,12 @@ export const prerender = true;
       to run. Legacy Store answers the question up front — <em>will this actually run on
       my device?</em> — for every app, before you spend a download on it. On a listing it
       shows each version's copies with their install status, hides the copies that are
-      no longer on the Internet Archive, and, when you visit on an old iPhone or iPad,
+      no longer on the Internet&nbsp;Archive, and, when you visit on an old iPhone or iPad,
       reads your iOS version and can hide the versions too new to install on it.
     </p>
     <p>
       The archive is <strong>metadata-only</strong>. It never re-hosts the app binaries
-      themselves; those live on the Internet Archive, and Legacy Store links out to
+      themselves; those live on the Internet&nbsp;Archive, and Legacy Store links out to
       them. What Legacy Store contributes is the analysis, the history, and the index
       that makes the whole collection navigable.
     </p>
@@ -61,7 +61,7 @@ export const prerender = true;
     <p>Five public sources, used politely:</p>
     <ul>
       <li>
-        <strong>The Internet Archive</strong> — the home of the binaries themselves, and, through
+        <strong>The Internet&nbsp;Archive</strong> — the home of the binaries themselves, and, through
         its <strong>Wayback Machine</strong>, the source for nearly all of the historical record:
         archived App Store pages, chart feeds, rating snapshots, and reviews going
         back to 2010.
@@ -93,7 +93,7 @@ export const prerender = true;
       </li>
     </ul>
     <p>
-      New Internet Archive dumps are ingested automatically on a regular schedule.
+      New Internet&nbsp;Archive dumps are ingested automatically on a regular schedule.
       When new items appear, they are diffed against what's already known by file
       hash, and only genuinely new binaries enter the analysis pipeline. Nothing is
       scraped twice.
@@ -105,7 +105,7 @@ export const prerender = true;
       To decide whether an app will run, you do not need the whole app. You need the
       first few hundred kilobytes of its Mach-O executable — the compiled program's
       header. So that is all Legacy Store fetches. Using <strong>HTTP range requests</strong>
-      against the raw <code>.ipa</code> on the Internet Archive, the pipeline reads the Zip
+      against the raw <code>.ipa</code> on the Internet&nbsp;Archive, the pipeline reads the Zip
       archive's directory from the tail, locates the executable inside it, and pulls
       just enough of it to parse the header. A typical binary is understood from well
       under a megabyte of transfer, with no full download and no server-side
@@ -154,12 +154,12 @@ export const prerender = true;
       copy, each distinct binary is scanned exactly once. The raw artifacts pulled
       during that scan — the plists, the parsed header, the file manifest — are kept
       in object storage, so any new field wanted later can be derived from them
-      without ever crawling the Internet Archive again.
+      without ever crawling the Internet&nbsp;Archive again.
     </p>
 
     <h2 class="col-h2">What belongs in the archive</h2>
     <p>
-      Not everything uploaded to the Internet Archive as an <code>.ipa</code> is an App
+      Not everything uploaded to the Internet&nbsp;Archive as an <code>.ipa</code> is an App
       Store app. The mid-2010s sideloading scene left behind thousands of
       <em>modified</em> repackages — "Snapchat++", ad-stripped YouTube builds,
       tweak-injected clones — almost all of which reuse the real app's bundle
@@ -184,7 +184,7 @@ export const prerender = true;
       hashes are remembered, so they can never sneak back in) but quarantined: they
       never appear on an app's page, are never counted in its version history, and
       are never offered for install or download. The files themselves remain where
-      they always were, on the Internet Archive — this index simply will not point
+      they always were, on the Internet&nbsp;Archive — this index simply will not point
       at them.
     </p>
     <p>
@@ -276,7 +276,7 @@ export const prerender = true;
       Downloads themselves go two ways. On a legacy iOS device, Legacy Store serves an
       <code>itms-services://</code> install manifest for true over-the-air installation straight
       onto the hardware. On a desktop browser, it hands you the <code>.ipa</code> directly. In
-      both cases the file itself is fetched from the Internet Archive — Legacy Store
+      both cases the file itself is fetched from the Internet&nbsp;Archive — Legacy Store
       points the way, it doesn't hold the goods.
     </p>
 
@@ -295,7 +295,7 @@ export const prerender = true;
         that describe apps, versions, binaries, charts, ratings, and reviews can be
         queried directly. The supported way in, though, is the open JSON API — a
         self-describing index at <code>/api/v1</code>, documented for humans on the
-        <a class="col-link" href="/developers">developers page</a>.
+        <a class="col-link" href="/api">developers page</a>.
       </li>
       <li>
         <strong>Files</strong> — normalized icons, recovered screenshots, and the raw metadata
@@ -313,7 +313,7 @@ export const prerender = true;
     <ul>
       <li>
         <strong>Metadata only, never the binaries.</strong> Legacy Store analyzes and indexes; it
-        does not re-host the apps. Those remain on the Internet Archive, which the
+        does not re-host the apps. Those remain on the Internet&nbsp;Archive, which the
         site links to directly.
       </li>
       <li>
@@ -339,7 +339,7 @@ export const prerender = true;
     <p>Legacy Store stands on other people's work and is glad to say so.</p>
     <ul>
       <li>
-        The <strong>Internet Archive</strong> and its <strong>Wayback Machine</strong>, without which almost
+        The <strong>Internet&nbsp;Archive</strong> and its <strong>Wayback Machine</strong>, without which almost
         none of this would exist — both as the home of the binaries and as the memory
         of the App Store itself.
       </li>

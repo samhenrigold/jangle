@@ -1,6 +1,6 @@
 ---
-import Layout from '../components/Layout.astro';
-import { SITE_ORIGIN } from '../lib/http';
+import Layout from '../../components/Layout.astro';
+import { SITE_ORIGIN } from '../../lib/http';
 
 // Static prose with no data dependencies: prerendered at build time and served
 // as a plain static asset — no worker invocation, no runtime headers needed.
@@ -30,11 +30,11 @@ const jsonLd = {
   name: 'Legacy Store — iOS App Store preservation archive',
   description:
     'A metadata archive of the iOS App Store’s first ~15 years: tens of thousands of apps with ' +
-    'their version histories, archived .ipa copies (hosted by the Internet Archive), historical ' +
+    'their version histories, archived .ipa copies (hosted by the Internet&nbsp;Archive), historical ' +
     'top charts from 2008 onward, archived customer reviews and rating histories, screenshots, ' +
     'and icons. Queryable through an open, read-only JSON API; app binaries are content-addressed ' +
     'and every record carries its archival provenance.',
-  url: `${SITE_ORIGIN}/developers`,
+  url: `${SITE_ORIGIN}/api`,
   creator: { '@type': 'Person', name: 'Sam Henri Gold', url: 'https://samhenri.gold/' },
   license: `${SITE_ORIGIN}/colophon`,
   isAccessibleForFree: true,
@@ -54,14 +54,13 @@ const jsonLd = {
 ---
 
 <Layout
-  title="Developers — Legacy Store"
+  title="API — Legacy Store"
   activeTab="colophon"
   description="The Legacy Store API: an open, read-only JSON API over the archive — apps, versions, charts, reviews, screenshots, and more."
   jsonLd={jsonLd}
 >
   <div class="content devdoc">
-    <h1 class="dev-title">Developers</h1>
-    <p class="dev-lede">The archive, as an API.</p>
+    <h1 class="dev-title">API</h1>
 
     <p>
       Everything on this site is available as an open, read-only JSON API at
@@ -89,9 +88,9 @@ const jsonLd = {
           <tr><th>Endpoint</th><th>Returns</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>GET /api/v1</code></td><td>Self-describing index</td></tr>
-          <tr><td><code>GET /api/v1/apps</code></td><td>Search / list the catalog</td></tr>
-          <tr><td><code>GET /api/v1/apps/ids</code></td><td>Every public app key, in one response</td></tr>
+          <tr><td><a class="dev-link" href="/api/v1"><code>GET&nbsp;/api/v1</code></a></td><td>Self-describing index</td></tr>
+          <tr><td><a class="dev-link" href="/api/v1/apps"><code>GET&nbsp;/api/v1/apps</code></a></td><td>Search / list the catalog</td></tr>
+          <tr><td><a class="dev-link" href="/api/v1/apps/ids"><code>GET&nbsp;/api/v1/apps/ids</code></a></td><td>Every public app key, in one response</td></tr>
           <tr><td><code>GET /api/v1/apps/&#123;key&#125;</code></td><td>One app with its full version/copy tree</td></tr>
           <tr><td><code>GET /api/v1/apps/&#123;key&#125;/versions</code></td><td>The version/copy tree alone</td></tr>
           <tr><td><code>GET /api/v1/apps/&#123;key&#125;/charts</code></td><td>The app's chart trajectory</td></tr>
@@ -99,13 +98,13 @@ const jsonLd = {
           <tr><td><code>GET /api/v1/apps/&#123;key&#125;/reviews</code></td><td>Archived customer reviews</td></tr>
           <tr><td><code>GET /api/v1/apps/&#123;key&#125;/screenshots</code></td><td>Archived screenshot sets</td></tr>
           <tr><td><code>GET /api/v1/copies/&#123;ipa_id&#125;</code></td><td>One archived copy with binary analysis</td></tr>
-          <tr><td><code>GET /api/v1/charts</code></td><td>One archived chart snapshot, ranked</td></tr>
-          <tr><td><code>GET /api/v1/charts/types</code></td><td>Chart type slugs</td></tr>
-          <tr><td><code>GET /api/v1/genres</code></td><td>Genres with app counts</td></tr>
-          <tr><td><code>GET /api/v1/collections</code></td><td>Editorial collections</td></tr>
+          <tr><td><a class="dev-link" href="/api/v1/charts"><code>GET&nbsp;/api/v1/charts</code></a></td><td>One archived chart snapshot, ranked</td></tr>
+          <tr><td><a class="dev-link" href="/api/v1/charts/types"><code>GET&nbsp;/api/v1/charts/types</code></a></td><td>Chart type slugs</td></tr>
+          <tr><td><a class="dev-link" href="/api/v1/genres"><code>GET&nbsp;/api/v1/genres</code></a></td><td>Genres with app counts</td></tr>
+          <tr><td><a class="dev-link" href="/api/v1/collections"><code>GET&nbsp;/api/v1/collections</code></a></td><td>Editorial collections</td></tr>
           <tr><td><code>GET /api/v1/collections/&#123;slug&#125;</code></td><td>One collection with its members</td></tr>
-          <tr><td><code>GET /api/v1/stats</code></td><td>Archive-wide statistics</td></tr>
-          <tr><td><code>GET|POST /api/coverage</code></td><td>Which of your IPAs the archive holds</td></tr>
+          <tr><td><a class="dev-link" href="/api/v1/stats"><code>GET&nbsp;/api/v1/stats</code></a></td><td>Archive-wide statistics</td></tr>
+          <tr><td><a class="dev-link" href="/api/coverage"><code>GET|POST&nbsp;/api/coverage</code></a></td><td>Which of your IPAs the archive holds</td></tr>
         </tbody>
       </table>
     </div>
@@ -115,8 +114,8 @@ const jsonLd = {
     <pre class="dev-pre">GET /api/v1/apps</pre>
     <p>Parameters (none required):</p>
     <ul>
-      <li><code>q</code> — keyword search; with a dot, a bundle-id substring match</li>
-      <li><code>genre</code> — genre id from <code>/api/v1/genres</code></li>
+      <li><code>q</code> — search app names by keyword. If it contains a dot (<code>com.rovio</code>), it matches against bundle ids instead</li>
+      <li><code>genre</code> — genre id from <a class="dev-link" href="/api/v1/genres"><code>/api/v1/genres</code></a></li>
       <li><code>sort</code> — <code>versions</code> (default) | <code>first_date</code> | <code>newest</code> | <code>name</code></li>
       <li><code>limit</code> — 1–200, default 50</li>
     </ul>
@@ -144,7 +143,7 @@ const jsonLd = {
     <p>
       One app with every version and archived copy. <code>install_status</code> is the
       will-it-run answer: <code>installable</code> or <code>encrypted</code>.
-      <code>download_url</code> 302s to the <code>.ipa</code> on the Internet Archive;
+      <code>download_url</code> 302s to the <code>.ipa</code> on the Internet&nbsp;Archive;
       <code>manifest_url</code> is an <code>itms-services</code> manifest for
       over-the-air install on a real device.
     </p>
@@ -193,7 +192,7 @@ const jsonLd = {
     <pre class="dev-pre">GET /api/v1/charts</pre>
     <p>Parameters (none required):</p>
     <ul>
-      <li><code>type</code> — slug from <code>/api/v1/charts/types</code>, default <code>top-free</code></li>
+      <li><code>type</code> — slug from <a class="dev-link" href="/api/v1/charts/types"><code>/api/v1/charts/types</code></a>, default <code>top-free</code></li>
       <li><code>date</code> — YYYY-MM-DD; nearest archived snapshot is returned</li>
       <li><code>genre</code> — genre id for genre charts; omit for the all-apps chart</li>
       <li><code>device</code> — <code>iphone</code> (default) | <code>ipad</code></li>
@@ -370,10 +369,10 @@ const jsonLd = {
 }`)} />
 
     <p class="dev-outro">
-      The underlying Postgres database is also publicly readable, but that access is
-      undocumented and its schema shifts without notice — the API above is the
-      supported surface. The <a class="dev-link" href="/colophon">colophon</a> tells
-      the story of where all this data comes from.
+      This API is the supported surface for the archive's data — anything else you
+      find is undocumented and shifts without notice. The
+      <a class="dev-link" href="/colophon">colophon</a> tells the story of where all
+      this data comes from.
     </p>
   </div>
 

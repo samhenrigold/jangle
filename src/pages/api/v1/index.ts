@@ -32,7 +32,7 @@ const INDEX = {
     coverage: `${S}/api/coverage (see its own usage doc)`,
   },
   schema: `${S}/openapi.yaml`,
-  docs: `${S}/developers`,
+  docs: `${S}/api`,
 };
 
 export const GET: APIRoute = () => json(INDEX, 200, 3600);
