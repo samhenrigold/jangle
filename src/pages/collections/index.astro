@@ -2,7 +2,7 @@
 import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
-import { cached } from '../../lib/cache';
+import { fetchCollectionsWithMembers } from '../../lib/collections';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { appIconSrc } from '../../lib/icons';
@@ -16,33 +16,19 @@ let dbError = false;
 // whole table is editorial-scale (dozens of rows), so one round trip covers
 // the row strips and counts without an RPC.
 type CollectionRow = { slug: string; title: string; subtitle: string | null; series: string | null; count: number; icons: string[] };
-const { data: collections, error: colErr } = await cached<CollectionRow[]>('collections_index_v2', 10 * 60 * 1000, async () => {
-  const { data, error } = await supabase
-    .from('collections')
-    .select('slug, title, subtitle, series, sort_order, collection_members(position, apps!collection_members_app_id_fkey(oldest_icon_sha256, icon_url:live_icon_url, excluded))')
-    .order('sort_order', { ascending: true, nullsFirst: false });
-  if (error) return { data: null, error };
-  return {
-    data: (data || []).map((c: any) => {
-      const members = (c.collection_members || [])
-        .filter((m: any) => m.apps && !m.apps.excluded)
-        .sort((x: any, y: any) => x.position - y.position);
-      return {
-        slug: c.slug,
-        title: c.title,
-        subtitle: c.subtitle,
-        series: c.series,
-        count: members.length,
-        icons: members
-          .map((m: any) => appIconSrc(m.apps.oldest_icon_sha256, m.apps.icon_url))
-          .filter(Boolean)
-          .slice(0, 4),
-      };
-    }),
-    error: null,
-  };
-});
+const { data: rawCollections, error: colErr } = await fetchCollectionsWithMembers(supabase);
 if (colErr) dbError = true;
+const collections: CollectionRow[] = (rawCollections || []).map((c: any) => ({
+  slug: c.slug,
+  title: c.title,
+  subtitle: c.subtitle,
+  series: c.series,
+  count: c.collection_members.length,
+  icons: c.collection_members
+    .map((m: any) => appIconSrc(m.apps.oldest_icon_sha256, m.apps.icon_url))
+    .filter(Boolean)
+    .slice(0, 4),
+}));
 
 // Flatten into a render list that inserts a subhead each time a new series
 // begins (collections without a series render standalone, no header).

@@ -1,21 +1,388 @@
 openapi: 3.0.3
 info:
-  title: Legacy Store — Archive Coverage API
-  version: "1.0.0"
+  title: Legacy Store API
+  version: "2.0.0"
   description: >
-    Public, open-data endpoint for checking which iOS App Store app versions the Legacy
-    Store archive already holds copies of, and in what state. FairPlay only encrypts an
-    app's main executable, so the plists inside a downloaded .ipa (Info.plist, and for
-    iTunes downloads iTunesMetadata.plist) stay readable even while the binary is
-    encrypted — a caller can read identifiers out of their own files without decrypting
-    anything, and ask which are already preserved so they only spend effort on the gaps.
-    Read-only; no authentication.
+    Open, read-only JSON API over the Legacy Store preservation archive of the iOS App
+    Store's first ~15 years — apps, versions, archived .ipa copies, historical charts,
+    customer reviews, rating history, screenshots, editorial collections, genres, and
+    archive-wide stats. No authentication; CORS is open (Access-Control-Allow-Origin: *).
+    Responses carry long edge-cache TTLs — please cache and be gentle.
+
+
+    Conventions: all id-like fields serialize as JSON strings (some overflow 2^53);
+    timestamps are ISO 8601 UTC; keys are always present, value-or-null. List endpoints
+    return an envelope {data, total, next_url} — when next_url is non-null, follow it
+    verbatim for the next page (the cursor parameter is opaque; never construct one).
+    Errors are {"error":{"code","message"}} with a real HTTP status; unknown query
+    parameters are rejected with 400. A transient backend failure returns an uncacheable
+    503 with Retry-After.
+
+
+    App {key} rule: an app is addressed by its App Store ID (canonical), its bundle_id,
+    or its internal id. Non-canonical keys 301-redirect to the canonical
+    App-Store-ID-based URL — follow redirects.
   license:
     name: See legacystore.app
     url: https://legacystore.app/
 servers:
   - url: https://legacystore.app
 paths:
+  /api/v1:
+    get:
+      summary: Self-describing API index
+      description: Endpoint directory, conventions, and a link to this schema.
+      responses:
+        "200":
+          description: The index document.
+          content:
+            application/json:
+              schema: { type: object }
+  /api/v1/apps:
+    get:
+      summary: Search / list the app catalog
+      description: >
+        With q, keyword search (prefix-matched full-text) — or, when q contains a dot,
+        a bundle-id substring match. Without q, lists the catalog in the chosen sort.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+          description: Keyword query, or bundle-id substring when it contains a dot.
+        - name: genre
+          in: query
+          required: false
+          schema: { type: integer }
+          description: Internal genre id (genre_id from /api/v1/genres).
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [versions, first_date, newest, name], default: versions }
+          description: versions = most-archived first; first_date = oldest first; newest = newest first; name = alphabetical.
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Envelope of AppSummary rows.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AppSummary" }
+        "400": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/apps/ids:
+    get:
+      summary: Every public app key (bulk enumeration)
+      description: >
+        Every public app key — the App Store ID when the app has a real one, else the
+        internal id — sorted, in one response. Fetch once, then GET /api/v1/apps/{key}
+        per id (politely).
+      responses:
+        "200":
+          description: "{data: [key strings], total, next_url: null}."
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { type: string }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{key}:
+    get:
+      summary: One app with its full version/copy tree
+      parameters:
+        - $ref: "#/components/parameters/appKey"
+      responses:
+        "200":
+          description: The app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppDetail" }
+        "301": { description: Non-canonical key — Location points at the canonical App-Store-ID URL. }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{key}/versions:
+    get:
+      summary: The app's versions with their archived copies
+      description: The same array embedded in /apps/{key}. Newest first. Bounded — no pagination.
+      parameters:
+        - $ref: "#/components/parameters/appKey"
+      responses:
+        "200":
+          description: Envelope of Version rows (next_url always null).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Version" }
+        "301": { description: Non-canonical key redirect. }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{key}/charts:
+    get:
+      summary: The app's archived chart trajectory
+      description: >
+        One group per (chart type, device, genre) with its dated positions and peak.
+        Bounded — no pagination.
+      parameters:
+        - $ref: "#/components/parameters/appKey"
+      responses:
+        "200":
+          description: Envelope of AppChartGroup rows.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AppChartGroup" }
+        "301": { description: Non-canonical key redirect. }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{key}/ratings:
+    get:
+      summary: Raw listing-snapshot rating/price history
+      description: >
+        The raw capture trail (rating average/count, listed version, price), oldest
+        first. Raw archival captures — they can mix storefronts or current-version-only
+        counts; smooth client-side if you need a monotonic series. Bounded — no pagination.
+      parameters:
+        - $ref: "#/components/parameters/appKey"
+      responses:
+        "200":
+          description: Envelope of RatingCapture rows.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/RatingCapture" }
+        "301": { description: Non-canonical key redirect. }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{key}/reviews:
+    get:
+      summary: Archived customer reviews (chronological)
+      parameters:
+        - $ref: "#/components/parameters/appKey"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Envelope of Review rows.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Review" }
+        "301": { description: Non-canonical key redirect. }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{key}/screenshots:
+    get:
+      summary: Archived screenshot sets
+      description: One set per distinct capture (content-deduped), newest first. Bounded — no pagination.
+      parameters:
+        - $ref: "#/components/parameters/appKey"
+      responses:
+        "200":
+          description: Envelope of ScreenshotSet rows.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ScreenshotSet" }
+        "301": { description: Non-canonical key redirect. }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/copies/{ipa_id}:
+    get:
+      summary: One archived copy with its content-addressed binary
+      description: >
+        A copy is one mirrored .ipa file on the Internet Archive; its binary is the
+        content-addressed (sha1) analysis shared by every identical copy. Quarantined
+        binaries and excluded apps 404.
+      parameters:
+        - name: ipa_id
+          in: path
+          required: true
+          schema: { type: string }
+          description: The copy's id (a positive integer, serialized as a string in responses).
+      responses:
+        "200":
+          description: The copy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Copy" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/charts:
+    get:
+      summary: One archived chart snapshot with ranked positions
+      description: >
+        Returns the archived snapshot nearest the requested date (the archive is sparse;
+        snapshot_date says which date you actually got, and available_dates lists every
+        archived date for the combination). Omit date for the newest snapshot.
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema: { type: string, default: top-free }
+          description: Chart type slug — see /api/v1/charts/types.
+        - name: genre
+          in: query
+          required: false
+          schema: { type: integer }
+          description: Internal genre id for genre charts; omit for the all-apps chart.
+        - name: date
+          in: query
+          required: false
+          schema: { type: string, format: date }
+          description: YYYY-MM-DD — nearest archived snapshot is returned.
+        - name: device
+          in: query
+          required: false
+          schema: { type: string, enum: [iphone, ipad], default: iphone }
+      responses:
+        "200":
+          description: The snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChartSnapshot" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/charts/types:
+    get:
+      summary: The archived chart feed types
+      responses:
+        "200":
+          description: "Envelope of {chart_type_id, name, slug} rows."
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            chart_type_id: { type: string }
+                            name: { type: string }
+                            slug: { type: string }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/genres:
+    get:
+      summary: Every genre with its app count
+      responses:
+        "200":
+          description: Envelope of Genre rows.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Genre" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/collections:
+    get:
+      summary: Published editorial collections
+      responses:
+        "200":
+          description: Envelope of Collection rows.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Collection" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/collections/{slug}:
+    get:
+      summary: One collection with its members in curated order
+      description: >
+        Members without an archived app (curator-listed ghosts) carry app: null but
+        keep their label — the curation is data too.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The collection.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slug: { type: string }
+                  title: { type: string, nullable: true }
+                  subtitle: { type: string, nullable: true }
+                  description: { type: string, nullable: true }
+                  members:
+                    type: array
+                    items: { $ref: "#/components/schemas/CollectionMember" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/stats:
+    get:
+      summary: Archive-wide statistics
+      description: >
+        The nightly-refreshed stats blob — corpus counts, architecture and minimum-OS
+        breakdowns, price split, superlatives. Shape is informational and may grow.
+      responses:
+        "200":
+          description: The stats object.
+          content:
+            application/json:
+              schema: { type: object }
+        "503": { $ref: "#/components/responses/Error" }
   /api/coverage:
     get:
       summary: Usage, or a single coverage lookup by any identifier subset
@@ -23,7 +390,9 @@ paths:
         With no query parameters, returns a self-describing usage document. With any of
         the identifier parameters, returns the coverage for the version they locate. A
         version is locatable with an external_id, or a version plus an app key (bundle_id
-        or app_store_id).
+        or app_store_id). FairPlay only encrypts an app's main executable, so the plists
+        inside a downloaded .ipa stay readable — a caller can read identifiers out of
+        their own files without decrypting anything, and ask which are already preserved.
       parameters:
         - { name: bundle_id, in: query, required: false, schema: { type: string, maxLength: 300 } }
         - { name: version, in: query, required: false, schema: { type: string, maxLength: 100 } }
@@ -104,43 +473,274 @@ paths:
       summary: CORS preflight
       responses:
         "204": { description: No content }
-  /api/emulator/apps:
-    get:
-      summary: Emulator catalog search (LightTouch — iPod touch 2G / iOS 3.1.3)
-      description: >
-        Each record is one app with its single best emulator-compatible archived copy
-        (newest compatible version, best copy within it). With q, searches app names,
-        bundle ids (if q contains a dot), and developer names; with no q, returns the
-        most-archived compatible apps. With ipa_id, returns the one record for a known
-        copy (404 if unknown or not compatible). download_url 302s to archive.org —
-        a link, not a proxy.
-      parameters:
-        - { name: q, in: query, required: false, schema: { type: string } }
-        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
-        - { name: ipa_id, in: query, required: false, schema: { type: integer, format: int64, minimum: 1 } }
-      responses:
-        "200":
-          description: Matching records (possibly empty).
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [apps]
-                properties:
-                  apps:
-                    type: array
-                    items: { $ref: "#/components/schemas/EmulatorRecord" }
-          headers:
-            Cache-Control: { schema: { type: string }, description: "public, max-age=300" }
-        "400": { $ref: "#/components/responses/Error" }
-        "404": { $ref: "#/components/responses/Error" }
-        "502": { $ref: "#/components/responses/Error" }
-    options:
-      summary: CORS preflight
-      responses:
-        "204": { description: No content }
 components:
+  parameters:
+    appKey:
+      name: key
+      in: path
+      required: true
+      schema: { type: string }
+      description: >
+        App Store ID (canonical), bundle_id, or internal id. Non-canonical keys 301
+        to the canonical App-Store-ID URL.
+    limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      description: Page size (advisory; junk values fall back to the default).
+    cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string }
+      description: Opaque pagination cursor. Never construct one — follow next_url.
   schemas:
+    ListEnvelope:
+      type: object
+      required: [data, total, next_url]
+      properties:
+        data:
+          type: array
+          items: {}
+        total:
+          type: integer
+          nullable: true
+          description: Total rows in the collection (null when unknown).
+        next_url:
+          type: string
+          nullable: true
+          description: Ready-made URL of the next page; null at the end of the collection.
+    AppSummary:
+      type: object
+      description: The app summary embedded anywhere an app is referenced.
+      properties:
+        app_store_id: { type: string, nullable: true }
+        bundle_id: { type: string, nullable: true }
+        name: { type: string, nullable: true }
+        developer: { type: string, nullable: true }
+        genre_id: { type: string, nullable: true, description: Internal genre id (see /api/v1/genres). }
+        version_count: { type: integer, nullable: true }
+        icon_url: { type: string, nullable: true, description: The oldest archived build-time icon. }
+        url: { type: string, description: This app's API URL. }
+        web_url: { type: string, description: This app's page on legacystore.app. }
+    AppDetail:
+      allOf:
+        - $ref: "#/components/schemas/AppSummary"
+        - type: object
+          properties:
+            display_name: { type: string, nullable: true }
+            copyright: { type: string, nullable: true }
+            developer_artist_id: { type: string, nullable: true }
+            genre: { type: string, nullable: true, description: Genre name. }
+            original_release_date: { type: string, format: date-time, nullable: true }
+            original_release_date_source: { type: string, nullable: true, description: Provenance tag for the trusted release date. }
+            catalog_only: { type: boolean, description: "true for catalog-seed stubs: listing metadata known, no archived binary." }
+            versions:
+              type: array
+              items: { $ref: "#/components/schemas/Version" }
+            links:
+              type: object
+              description: API URLs of the app's subresources (versions, charts, ratings, reviews, screenshots).
+              additionalProperties: { type: string }
+    Version:
+      type: object
+      description: One released version with its archived copies. Newest first.
+      properties:
+        version: { type: string, nullable: true }
+        build_number: { type: string, nullable: true }
+        release_date: { type: string, format: date-time, nullable: true, description: Trusted, source-tagged date (null when unknown). }
+        estimated_release_date: { type: string, format: date-time, nullable: true, description: Estimate interpolated from App Store download identifiers. }
+        minimum_os_version: { type: string, nullable: true }
+        device_family:
+          type: array
+          nullable: true
+          items: { type: integer }
+          description: "UIDeviceFamily (1 = iPhone/iPod touch, 2 = iPad)."
+        external_identifier: { type: string, nullable: true, description: Apple's externalVersionId for this version. }
+        unavailable_copies: { type: integer, description: Copies no longer reachable on the Internet Archive. }
+        copies:
+          type: array
+          items:
+            type: object
+            description: One available archived copy (an inline subset of Copy).
+            properties:
+              ipa_id: { type: string }
+              filename: { type: string, nullable: true }
+              size: { type: integer, format: int64, nullable: true }
+              md5: { type: string, nullable: true }
+              ia_item_id: { type: string, nullable: true, description: Internet Archive item holding this copy. }
+              sha1: { type: string, nullable: true, description: Content hash of the binary. }
+              install_status: { type: string, nullable: true, description: "installable | encrypted | unknown — will it actually launch." }
+              architectures:
+                type: array
+                nullable: true
+                items: { type: string }
+              macho_min_os: { type: string, nullable: true, description: Minimum iOS version read from the Mach-O header. }
+              url: { type: string, description: "The copy's API URL (/api/v1/copies/{ipa_id})." }
+              download_url: { type: string, description: 302s to the .ipa on archive.org. }
+              manifest_url: { type: string, description: itms-services install manifest for OTA install on legacy devices. }
+    Copy:
+      type: object
+      description: One archived copy with its content-addressed binary analysis.
+      properties:
+        ipa_id: { type: string }
+        filename: { type: string, nullable: true }
+        size: { type: integer, format: int64, nullable: true }
+        md5: { type: string, nullable: true }
+        available: { type: boolean, description: false when the copy is no longer reachable on the Internet Archive. }
+        ia_item_id: { type: string, nullable: true }
+        version: { type: string, nullable: true }
+        app_store_id: { type: string, nullable: true }
+        bundle_id: { type: string, nullable: true }
+        binary:
+          type: object
+          nullable: true
+          properties:
+            sha1: { type: string }
+            install_status: { type: string, nullable: true }
+            architectures:
+              type: array
+              nullable: true
+              items: { type: string }
+            macho_min_os: { type: string, nullable: true }
+            device_family_macho:
+              type: array
+              nullable: true
+              items: { type: integer }
+            has_watch_app: { type: boolean, nullable: true }
+            has_extensions: { type: boolean, nullable: true }
+            retina_iphone: { type: boolean, nullable: true }
+            retina_ipad: { type: boolean, nullable: true }
+            icon_url: { type: string, nullable: true, description: The build-time icon extracted from this exact binary. }
+        download_url: { type: string }
+        manifest_url: { type: string }
+        app_url: { type: string, nullable: true }
+    ChartSnapshot:
+      type: object
+      description: One archived chart snapshot with its ranked positions.
+      properties:
+        chart_type:
+          type: object
+          properties:
+            chart_type_id: { type: string }
+            name: { type: string }
+            slug: { type: string }
+        genre_id: { type: string, nullable: true }
+        device: { type: string, enum: [iphone, ipad] }
+        snapshot_date: { type: string, format: date, description: The date you actually got (nearest archived to the requested date). }
+        captured_at: { type: string, format: date-time, nullable: true, description: When the source page was captured (ISO 8601 UTC). }
+        source_url: { type: string, nullable: true }
+        wayback_url: { type: string, nullable: true, description: The exact Wayback capture the snapshot was rebuilt from. }
+        available_dates:
+          type: array
+          items: { type: string, format: date }
+          description: Every archived snapshot date for this chart/genre/device combination.
+        positions:
+          type: array
+          items: { $ref: "#/components/schemas/ChartPosition" }
+    ChartPosition:
+      type: object
+      properties:
+        position: { type: integer }
+        app_store_id: { type: string, nullable: true }
+        name: { type: string, nullable: true, description: The chart feed's own (period-accurate) name. }
+        developer: { type: string, nullable: true }
+        price_amount: { type: number, nullable: true }
+        price_currency: { type: string, nullable: true }
+        app:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/AppSummary"
+          description: The archived app, when the charted app is in the archive.
+    AppChartGroup:
+      type: object
+      description: One app's trajectory on one (chart type, device, genre) chart.
+      properties:
+        chart_type_id: { type: string, nullable: true }
+        chart_type: { type: string, nullable: true }
+        chart_type_slug: { type: string, nullable: true }
+        device: { type: string }
+        genre_id: { type: string, nullable: true }
+        peak_position: { type: integer, nullable: true }
+        peak_date: { type: string, format: date, nullable: true }
+        first_seen: { type: string, format: date, nullable: true }
+        last_seen: { type: string, format: date, nullable: true }
+        positions:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              position: { type: integer }
+    Review:
+      type: object
+      description: One archived customer review.
+      properties:
+        review_id: { type: string, nullable: true }
+        title: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        stars: { type: integer, nullable: true }
+        author: { type: string, nullable: true }
+        app_version: { type: string, nullable: true, description: The version the review was written against. }
+        reviewed_at: { type: string, format: date-time, nullable: true }
+        first_seen_ts: { type: string, nullable: true, description: 14-digit Wayback capture timestamp of the feed this review was recovered from (null for live-fetched). }
+    RatingCapture:
+      type: object
+      description: One raw listing snapshot — a point on the rating/price timeline.
+      properties:
+        captured_at: { type: string, format: date-time, nullable: true }
+        rating_avg: { type: number, nullable: true }
+        rating_count: { type: integer, nullable: true }
+        listed_version: { type: string, nullable: true }
+        price_amount: { type: number, nullable: true }
+        price_currency: { type: string, nullable: true }
+    ScreenshotSet:
+      type: object
+      description: One distinct screenshot capture (content-deduped).
+      properties:
+        captured_at: { type: string, format: date-time, nullable: true }
+        version: { type: string, nullable: true, description: The listed version at capture time. }
+        shots:
+          type: array
+          items:
+            type: object
+            properties:
+              url: { type: string }
+              sha256: { type: string }
+              width: { type: integer, nullable: true }
+              height: { type: integer, nullable: true }
+    Collection:
+      type: object
+      description: One published editorial collection (list row).
+      properties:
+        slug: { type: string }
+        title: { type: string, nullable: true }
+        subtitle: { type: string, nullable: true }
+        series: { type: string, nullable: true }
+        app_count: { type: integer }
+        url: { type: string }
+        web_url: { type: string }
+    CollectionMember:
+      type: object
+      properties:
+        position: { type: integer }
+        group: { type: string, nullable: true }
+        label: { type: string, nullable: true }
+        pinned_version: { type: string, nullable: true }
+        pinned_version_date: { type: string, format: date-time, nullable: true }
+        app:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/AppSummary"
+          description: null for curator-listed ghosts with no archived app.
+    Genre:
+      type: object
+      properties:
+        genre_id: { type: string, description: "Internal id — what ?genre= filters take." }
+        apple_genre_id: { type: string, nullable: true }
+        name: { type: string, nullable: true }
+        app_count: { type: integer, nullable: true }
     Probe:
       type: object
       description: >
@@ -173,21 +773,6 @@ components:
             key set is open-ended; treat unrecognized keys gracefully. Quarantined/tampered
             copies are never counted.
           additionalProperties: { type: integer, minimum: 0 }
-    EmulatorRecord:
-      type: object
-      required: [ipa_id, download_url, app_url]
-      properties:
-        bundle_id: { type: string, nullable: true }
-        name: { type: string }
-        developer: { type: string, nullable: true }
-        version: { type: string, nullable: true }
-        min_os: { type: string, nullable: true, description: Effective minimum iOS version }
-        min_os_source: { type: string, description: Where min_os came from (metadata or the binary itself) }
-        size: { type: integer, format: int64, nullable: true, description: File size in bytes }
-        ipa_id: { type: integer, format: int64 }
-        icon_url: { type: string, nullable: true }
-        download_url: { type: string, description: 302s to the archived copy on archive.org }
-        app_url: { type: string }
     Error:
       type: object
       required: [error]

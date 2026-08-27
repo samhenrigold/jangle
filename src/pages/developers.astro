@@ -1,0 +1,505 @@
+---
+import Layout from '../components/Layout.astro';
+import { SITE_ORIGIN } from '../lib/http';
+
+// Static prose with no data dependencies: prerendered at build time and served
+// as a plain static asset — no worker invocation, no runtime headers needed.
+export const prerender = true;
+
+// schema.org Dataset markup → Google Dataset Search, where this archive's
+// actual audience (researchers, preservationists) looks. Must live on this
+// indexable HTML page — the noindexed JSON endpoints can't carry it.
+// Build-time JSON syntax highlighting for the sample outputs (this page is
+// prerendered — zero client JS). Regex tokenizer, not JSON.parse: the samples
+// carry … elision markers.
+const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function hl(src: string): string {
+  return escHtml(src).replace(
+    /("(?:[^"\\]|\\.)*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?/g,
+    (m, str, colon, kw) => {
+      if (str) return colon ? `<span class="j-key">${str}</span>${colon}` : `<span class="j-str">${str}</span>`;
+      if (kw) return `<span class="j-kw">${kw}</span>`;
+      return `<span class="j-num">${m}</span>`;
+    }
+  );
+}
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Dataset',
+  name: 'Legacy Store — iOS App Store preservation archive',
+  description:
+    'A metadata archive of the iOS App Store’s first ~15 years: tens of thousands of apps with ' +
+    'their version histories, archived .ipa copies (hosted by the Internet Archive), historical ' +
+    'top charts from 2008 onward, archived customer reviews and rating histories, screenshots, ' +
+    'and icons. Queryable through an open, read-only JSON API; app binaries are content-addressed ' +
+    'and every record carries its archival provenance.',
+  url: `${SITE_ORIGIN}/developers`,
+  creator: { '@type': 'Person', name: 'Sam Henri Gold', url: 'https://samhenri.gold/' },
+  license: `${SITE_ORIGIN}/colophon`,
+  isAccessibleForFree: true,
+  distribution: [
+    {
+      '@type': 'DataDownload',
+      contentUrl: `${SITE_ORIGIN}/api/v1`,
+      encodingFormat: 'application/json',
+    },
+    {
+      '@type': 'DataDownload',
+      contentUrl: `${SITE_ORIGIN}/openapi.yaml`,
+      encodingFormat: 'application/yaml',
+    },
+  ],
+};
+---
+
+<Layout
+  title="Developers — Legacy Store"
+  activeTab="colophon"
+  description="The Legacy Store API: an open, read-only JSON API over the archive — apps, versions, charts, reviews, screenshots, and more."
+  jsonLd={jsonLd}
+>
+  <div class="content devdoc">
+    <h1 class="dev-title">Developers</h1>
+    <p class="dev-lede">The archive, as an API.</p>
+
+    <p>
+      Everything on this site is available as an open, read-only JSON API at
+      <code>https://legacystore.app/api/v1</code>. No keys, no auth, CORS is open.
+      The machine-readable contract is the
+      <a class="dev-link" href="/openapi.yaml">OpenAPI spec</a>; the API also
+      describes itself at <a class="dev-link" href="/api/v1">/api/v1</a>.
+    </p>
+
+    <h2 class="dev-h2">Getting started</h2>
+    <p>Base URL: <code>https://legacystore.app/api/v1</code>. No authentication.</p>
+    <ul>
+      <li>All ids are JSON strings. Timestamps are ISO 8601 UTC.</li>
+      <li>Lists are <code>{'{'}data, total, next_url{'}'}</code>. Follow <code>next_url</code> for the next page.</li>
+      <li>Cursors are opaque — never construct one.</li>
+      <li>An app is addressed by App Store ID (canonical); a <code>bundle_id</code> or internal id 301-redirects, so pass <code>-L</code> to curl.</li>
+      <li>Errors are <code>{'{'}error: {'{'}code, message{'}'}{'}'}</code> with a real HTTP status.</li>
+      <li>Please cache. Responses carry long cache headers; this is a preservation project on shared infrastructure.</li>
+    </ul>
+
+    <h2 class="dev-h2">Endpoints</h2>
+    <div class="dev-tablewrap">
+      <table class="dev-table">
+        <thead>
+          <tr><th>Endpoint</th><th>Returns</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>GET /api/v1</code></td><td>Self-describing index</td></tr>
+          <tr><td><code>GET /api/v1/apps</code></td><td>Search / list the catalog</td></tr>
+          <tr><td><code>GET /api/v1/apps/ids</code></td><td>Every public app key, in one response</td></tr>
+          <tr><td><code>GET /api/v1/apps/&#123;key&#125;</code></td><td>One app with its full version/copy tree</td></tr>
+          <tr><td><code>GET /api/v1/apps/&#123;key&#125;/versions</code></td><td>The version/copy tree alone</td></tr>
+          <tr><td><code>GET /api/v1/apps/&#123;key&#125;/charts</code></td><td>The app's chart trajectory</td></tr>
+          <tr><td><code>GET /api/v1/apps/&#123;key&#125;/ratings</code></td><td>Rating/price capture history</td></tr>
+          <tr><td><code>GET /api/v1/apps/&#123;key&#125;/reviews</code></td><td>Archived customer reviews</td></tr>
+          <tr><td><code>GET /api/v1/apps/&#123;key&#125;/screenshots</code></td><td>Archived screenshot sets</td></tr>
+          <tr><td><code>GET /api/v1/copies/&#123;ipa_id&#125;</code></td><td>One archived copy with binary analysis</td></tr>
+          <tr><td><code>GET /api/v1/charts</code></td><td>One archived chart snapshot, ranked</td></tr>
+          <tr><td><code>GET /api/v1/charts/types</code></td><td>Chart type slugs</td></tr>
+          <tr><td><code>GET /api/v1/genres</code></td><td>Genres with app counts</td></tr>
+          <tr><td><code>GET /api/v1/collections</code></td><td>Editorial collections</td></tr>
+          <tr><td><code>GET /api/v1/collections/&#123;slug&#125;</code></td><td>One collection with its members</td></tr>
+          <tr><td><code>GET /api/v1/stats</code></td><td>Archive-wide statistics</td></tr>
+          <tr><td><code>GET|POST /api/coverage</code></td><td>Which of your IPAs the archive holds</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="dev-h2">Find an app</h2>
+    <p>Search the catalog by keyword or bundle id.</p>
+    <pre class="dev-pre">GET /api/v1/apps</pre>
+    <p>Parameters (none required):</p>
+    <ul>
+      <li><code>q</code> — keyword search; with a dot, a bundle-id substring match</li>
+      <li><code>genre</code> — genre id from <code>/api/v1/genres</code></li>
+      <li><code>sort</code> — <code>versions</code> (default) | <code>first_date</code> | <code>newest</code> | <code>name</code></li>
+      <li><code>limit</code> — 1–200, default 50</li>
+    </ul>
+    <pre class="dev-pre">curl 'https://legacystore.app/api/v1/apps?q=doodle&amp;limit=2'</pre>
+    <pre class="dev-pre dev-out" set:html={hl(`{
+  "data": [
+    {
+      "app_store_id": "307727765",
+      "bundle_id": "com.yourcompany.DoodleJump",
+      "name": "Doodle Jump - BE WARNED: Insanely Addictive!",
+      "developer": "Lima Sky",
+      "genre_id": "6014",
+      "version_count": 85,
+      "icon_url": "https://legacystore.app/icon/3836…",
+      "url": "https://legacystore.app/api/v1/apps/307727765",
+      "web_url": "https://legacystore.app/app/307727765"
+    },
+    …
+  ],
+  "total": 188,
+  "next_url": "https://legacystore.app/api/v1/apps?q=doodle&limit=2&cursor=JTVCMiU1RA"
+}`)} />
+
+    <h2 class="dev-h2">Versions and download links</h2>
+    <p>
+      One app with every version and archived copy. <code>install_status</code> is the
+      will-it-run answer: <code>installable</code> or <code>encrypted</code>.
+      <code>download_url</code> 302s to the <code>.ipa</code> on the Internet Archive;
+      <code>manifest_url</code> is an <code>itms-services</code> manifest for
+      over-the-air install on a real device.
+    </p>
+    <pre class="dev-pre">GET /api/v1/apps/{'{key}'}</pre>
+    <p>Parameters: none.</p>
+    <pre class="dev-pre">curl -L 'https://legacystore.app/api/v1/apps/307727765'</pre>
+    <pre class="dev-pre dev-out" set:html={hl(`{
+  "app_store_id": "307727765",
+  "name": "Doodle Jump - BE WARNED: Insanely Addictive!",
+  "original_release_date": "2009-03-27T02:01:56.000Z",
+  "genre": "Games",
+  "version_count": 85,
+  "versions": [
+    {
+      "version": "3.20.18",
+      "minimum_os_version": "15.0",
+      "copies": [
+        {
+          "ipa_id": "99743",
+          "size": 63692423,
+          "sha1": "79d76b3585cc10cc3f6506dfdaaf120bf5fa76ba",
+          "install_status": "installable",
+          "architectures": [
+            "arm64"
+          ],
+          "download_url": "https://legacystore.app/ipa/99743",
+          "manifest_url": "https://legacystore.app/manifest/99743.plist"
+        }
+      ]
+    },
+    …
+  ]
+}`)} />
+    <p>
+      <code>/api/v1/apps/{'{key}'}/versions</code> returns the same tree alone.
+      <code>/api/v1/copies/{'{ipa_id}'}</code> is one copy with the full binary analysis
+      (Retina, Watch app, extensions…).
+    </p>
+
+    <h2 class="dev-h2">Walk a chart</h2>
+    <p>
+      One archived chart snapshot with its ranked positions. The archive is sparse,
+      so you get the snapshot nearest your date — <code>snapshot_date</code> says
+      which, and <code>wayback_url</code> is the exact capture it was rebuilt from.
+    </p>
+    <pre class="dev-pre">GET /api/v1/charts</pre>
+    <p>Parameters (none required):</p>
+    <ul>
+      <li><code>type</code> — slug from <code>/api/v1/charts/types</code>, default <code>top-free</code></li>
+      <li><code>date</code> — YYYY-MM-DD; nearest archived snapshot is returned</li>
+      <li><code>genre</code> — genre id for genre charts; omit for the all-apps chart</li>
+      <li><code>device</code> — <code>iphone</code> (default) | <code>ipad</code></li>
+    </ul>
+    <pre class="dev-pre">curl 'https://legacystore.app/api/v1/charts?type=top-paid&amp;date=2010-06-01'</pre>
+    <pre class="dev-pre dev-out" set:html={hl(`{
+  "chart_type": {
+    "name": "Top Paid",
+    "slug": "top-paid"
+  },
+  "device": "iphone",
+  "snapshot_date": "2010-06-01",
+  "wayback_url": "https://web.archive.org/web/20100601055221/http://www.apple.com/itunes/charts/paid-apps/",
+  "available_dates": [
+    "2008-12-15",
+    "2008-12-16",
+    …
+  ],
+  "positions": [
+    {
+      "position": 1,
+      "app_store_id": "343200656",
+      "name": "Angry Birds",
+      "app": {
+        "url": "https://legacystore.app/api/v1/apps/343200656",
+        …
+      }
+    },
+    {
+      "position": 2,
+      "app_store_id": "307727765",
+      "name": "Doodle Jump - BE WARNED: Insanely Addictive!",
+      …
+    },
+    …
+  ]
+}`)} />
+    <p>One app's whole trajectory: <code>/api/v1/apps/{'{key}'}/charts</code>.</p>
+
+    <h2 class="dev-h2">Reviews</h2>
+    <p>Archived customer reviews, oldest first.</p>
+    <pre class="dev-pre">GET /api/v1/apps/{'{key}'}/reviews</pre>
+    <p>Parameters (none required): <code>limit</code> — 1–200, default 50.</p>
+    <pre class="dev-pre">curl 'https://legacystore.app/api/v1/apps/307727765/reviews?limit=1'</pre>
+    <pre class="dev-pre dev-out" set:html={hl(`{
+  "data": [
+    {
+      "review_id": "10357181791521232",
+      "title": "Favorite",
+      "body": "Game. Still!",
+      "stars": 5,
+      "author": "Mitch/Replay",
+      "reviewed_at": "2025-10-29T00:00:00.000Z",
+      …
+    }
+  ],
+  "total": 26,
+  "next_url": "…cursor=JTVCMSU1RA"
+}`)} />
+
+    <h2 class="dev-h2">Rating history</h2>
+    <p>
+      Raw archival captures of an app's rating count, average, and price over time,
+      oldest first. Captures can mix storefronts — smooth client-side if you need a
+      monotonic series.
+    </p>
+    <pre class="dev-pre">GET /api/v1/apps/{'{key}'}/ratings</pre>
+    <p>Parameters: none.</p>
+    <pre class="dev-pre">curl 'https://legacystore.app/api/v1/apps/307727765/ratings'</pre>
+    <pre class="dev-pre dev-out" set:html={hl(`{
+  "data": [
+    {
+      "captured_at": "2010-02-07T13:00:48.000Z",
+      "rating_count": 23631,
+      "listed_version": "1.13.4",
+      "price_amount": 0.99,
+      …
+    },
+    {
+      "captured_at": "2011-01-06T23:20:53.000Z",
+      "rating_count": 174041,
+      …
+    },
+    …
+  ]
+}`)} />
+
+    <h2 class="dev-h2">Screenshots</h2>
+    <p>One set per distinct capture, content-deduped, newest first.</p>
+    <pre class="dev-pre">GET /api/v1/apps/{'{key}'}/screenshots</pre>
+    <p>Parameters: none.</p>
+    <pre class="dev-pre">curl 'https://legacystore.app/api/v1/apps/307727765/screenshots'</pre>
+    <pre class="dev-pre dev-out" set:html={hl(`{
+  "data": [
+    {
+      "captured_at": "2013-03-03T03:54:18.000Z",
+      "version": "3.4",
+      "shots": [
+        {
+          "url": "https://legacystore.app/screen/7dc234f5536435a6…",
+          "width": 640,
+          "height": 960
+        },
+        …
+      ]
+    },
+    …
+  ]
+}`)} />
+
+    <h2 class="dev-h2">Collections</h2>
+    <p>Editorial collections; each member keeps its curated order and label.</p>
+    <pre class="dev-pre">GET /api/v1/collections</pre>
+    <p>Parameters: none. One collection: <code>/api/v1/collections/{'{slug}'}</code>.</p>
+    <pre class="dev-pre">curl 'https://legacystore.app/api/v1/collections'</pre>
+    <pre class="dev-pre dev-out" set:html={hl(`{
+  "data": [
+    {
+      "slug": "featured",
+      "title": "Featured",
+      "app_count": 26,
+      "url": "https://legacystore.app/api/v1/collections/featured",
+      …
+    },
+    {
+      "slug": "ada-2008",
+      "title": "Apple Design Awards 2008",
+      "series": "Apple Design Award Winners",
+      "app_count": 5,
+      …
+    },
+    …
+  ]
+}`)} />
+
+    <h2 class="dev-h2">Bulk enumeration</h2>
+    <p>
+      Every public app key in one response; then <code>GET /api/v1/apps/{'{key}'}</code>
+      per id — politely, please. Archive-wide numbers live at
+      <a class="dev-link" href="/api/v1/stats">/api/v1/stats</a>.
+    </p>
+    <pre class="dev-pre">GET /api/v1/apps/ids</pre>
+    <p>Parameters: none.</p>
+    <pre class="dev-pre">curl 'https://legacystore.app/api/v1/apps/ids'</pre>
+    <pre class="dev-pre dev-out" set:html={hl(`{
+  "data": [
+    "100",
+    "1000170341",
+    "1000230545",
+    "1000256889",
+    …
+  ],
+  "total": …
+}`)} />
+
+    <h2 class="dev-h2">Check coverage of your own IPAs</h2>
+    <p>
+      FairPlay only encrypts the executable — the plists in your own
+      <code>.ipa</code> files stay readable — so you can ask which versions the
+      archive already preserves without decrypting anything.
+    </p>
+    <pre class="dev-pre">GET /api/coverage/{'{bundle_id}'}/{'{version}'}</pre>
+    <p>Parameters: none. Batch: <code>POST /api/coverage</code> with up to 500 probes.</p>
+    <pre class="dev-pre">curl 'https://legacystore.app/api/coverage/com.limasky.doodlejumpfree/1.0'</pre>
+    <pre class="dev-pre dev-out" set:html={hl(`{
+  "bundle_id": "com.limasky.doodlejumpfree",
+  "version": "1.0",
+  "external_id": 4033516,
+  "app_store_id": 456355158,
+  "copies": {
+    "encrypted": 6,
+    "installable": 8
+  }
+}`)} />
+
+    <p class="dev-outro">
+      The underlying Postgres database is also publicly readable, but that access is
+      undocumented and its schema shifts without notice — the API above is the
+      supported surface. The <a class="dev-link" href="/colophon">colophon</a> tells
+      the story of where all this data comes from.
+    </p>
+  </div>
+
+  <style>
+    .devdoc {
+      max-width: 640px;
+      padding-bottom: 32px;
+      margin: 0 auto;
+    }
+
+    .dev-title {
+      margin: 14px 0 2px 0;
+      font-size: 26px;
+      line-height: 30px;
+      color: #474747;
+    }
+
+    .dev-lede {
+      margin: 0 0 12px 0;
+      color: #898989;
+      font-size: 15px;
+      font-style: italic;
+    }
+
+    .dev-h2 {
+      margin: 26px 0 8px 0;
+      font-size: 18px;
+      line-height: 22px;
+      color: #474747;
+      border-top: 1px solid #ececec;
+      padding-top: 18px;
+    }
+
+    .devdoc p {
+      margin: 0 0 12px 0;
+      font-size: 12px;
+      line-height: 18px;
+      color: #333;
+    }
+
+    .devdoc ul {
+      margin: 0 0 12px 0;
+      padding-left: 20px;
+      list-style: disc; /* global.css resets lists; these are real bullets */
+    }
+
+    .devdoc li {
+      margin: 0 0 6px 0;
+      font-size: 12px;
+      line-height: 18px;
+      color: #333;
+    }
+
+    .devdoc code {
+      font-family: Menlo, Monaco, "Courier New", monospace;
+      font-size: 11px;
+      background: #f3f3f3;
+      border-radius: 4px;
+      padding: 1px 4px;
+      word-break: break-word;
+    }
+
+    .dev-tablewrap {
+      overflow-x: auto;
+      margin: 0 0 12px 0;
+    }
+
+    .dev-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      line-height: 18px;
+      color: #333;
+    }
+
+    .dev-table th {
+      text-align: left;
+      padding: 4px 10px 4px 0;
+      border-bottom: 1px solid #ccc;
+      color: #474747;
+    }
+
+    .dev-table td {
+      padding: 4px 10px 4px 0;
+      border-bottom: 1px solid #ececec;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+
+    .dev-table td:last-child {
+      white-space: normal;
+    }
+
+    .dev-table code {
+      background: none;
+      padding: 0;
+    }
+
+    .dev-pre {
+      margin: 0 0 8px 0;
+      padding: 8px 10px;
+      font-family: Menlo, Monaco, "Courier New", monospace;
+      font-size: 11px;
+      line-height: 16px;
+      background: #f3f3f3;
+      border: 1px solid #e2e2e2;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre;
+      color: #333;
+    }
+
+    .dev-out {
+      background: #fbfbfb;
+      color: #8a8a8a;
+    }
+
+    /* JSON token colors — muted, in the site's palette */
+    .dev-out :global(.j-key) { color: #298cda; }
+    .dev-out :global(.j-str) { color: #448c27; }
+    .dev-out :global(.j-num) { color: #b05a00; }
+    .dev-out :global(.j-kw)  { color: #a626a4; }
+
+    .dev-link {
+      color: #298cda;
+      font-weight: bold;
+    }
+  </style>
+</Layout>

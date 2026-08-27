@@ -50,7 +50,69 @@ export async function loadRankedAppPage(
 // Everything the app page needs from an apps row, with the developer/genre
 // names embedded.
 const APP_COLS =
-  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url:live_icon_url, oldest_icon_sha256, large_icon_sha256, large_icon_px, genre_id, developer_id, original_release_date, original_release_date_source, developers!apps_developer_id_fkey(artist_name, artist_id), genres!apps_genre_id_fkey(genre_name)';
+  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url:live_icon_url, oldest_icon_sha256, large_icon_sha256, large_icon_px, genre_id, developer_id, original_release_date, original_release_date_source, excluded, developers!apps_developer_id_fkey(artist_name, artist_id), genres!apps_genre_id_fkey(genre_name)';
+
+// The app page's core data chain, shared with /api/v1/apps/{key}: versions →
+// archived copies (chunked at 150 — one .in() over ≤1000 version ids both
+// risks a 414 and truncates at PostgREST's 1000-row cap) → icon-alias
+// canonicalization. Same cache keys as the page, so the two surfaces share
+// warm entries.
+export async function fetchAppCore(supabase: any, appId: number): Promise<{
+  versions: any[];
+  ipaFiles: any[];
+  binariesBySha1: Map<string, any>;
+  canonicalBySha: Map<string, string>;
+  error: boolean;
+}> {
+  const out = { versions: [] as any[], ipaFiles: [] as any[], binariesBySha1: new Map(), canonicalBySha: new Map(), error: false };
+
+  const { data: versions, error: vErr } = await cached<any[]>(`versions:${appId}`, 5 * 60 * 1000, () =>
+    supabase
+      .from('app_versions')
+      .select('id, version_string, build_number, minimum_os_version, release_date, estimated_release_date, external_identifier, device_family')
+      .eq('app_id', appId)
+      .order('release_date', { ascending: false })
+      .limit(1000)
+  );
+  if (vErr) return { ...out, error: true };
+  out.versions = versions || [];
+  const versionIds = out.versions.map((v: any) => v.id);
+  if (!versionIds.length) return out;
+
+  const { data: ipaFiles, error: fErr } = await cached<any[]>(`ipa_files_b:${appId}:${versionIds.length}`, 5 * 60 * 1000, async () => {
+    const results = await Promise.all(
+      Array.from({ length: Math.ceil(versionIds.length / 150) }, (_, i) =>
+        supabase
+          .from('ipa_files')
+          .select('id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, info_plist_path, binary_sha1, available, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id), binaries!ipa_files_binary_sha1_fkey(sha1, install_status, architectures, macho_min_os, itunes_artwork_sha256, bundle_icon_sha256, has_watch_app, has_extensions, hidden, retina_iphone, retina_ipad, retina_iphone_plus, device_family_macho)')
+          .in('app_version_id', versionIds.slice(i * 150, i * 150 + 150))
+      )
+    );
+    const failed = results.find((r: any) => r.error);
+    return { data: failed ? null : results.flatMap((r: any) => r.data || []), error: failed?.error || null };
+  });
+  if (fErr) return { ...out, error: true };
+  out.ipaFiles = ipaFiles || [];
+  for (const f of out.ipaFiles) {
+    if (f.binaries?.sha1) out.binariesBySha1.set(f.binaries.sha1, f.binaries);
+  }
+
+  // Icon-alias canonicalization (best-effort — consensus falls back without it).
+  const iconShas = Array.from(new Set(Array.from(out.binariesBySha1.values())
+    .flatMap((b: any) => [b.bundle_icon_sha256, b.itunes_artwork_sha256]).filter(Boolean)));
+  await Promise.all(
+    Array.from({ length: Math.ceil(iconShas.length / 150) }, (_, i) =>
+      supabase
+        .from('icon_aliases')
+        .select('sha256, canonical_sha256')
+        .in('sha256', iconShas.slice(i * 150, i * 150 + 150))
+        .then(({ data: al }: any) => {
+          for (const a of al || []) out.canonicalBySha.set(a.sha256, a.canonical_sha256);
+        })
+    )
+  );
+  return out;
+}
 
 // app_store_name is the iTunes listing name ("Angry Birds HD Free") and
 // disambiguates the many apps whose bundle display_name is identical.

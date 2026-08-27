@@ -102,7 +102,7 @@ if (dbError) setDegraded(Astro.response);
 const genreName = genre?.genre_name || 'Category';
 ---
 
-<Layout title={`${genreName} — Legacy Store`} activeTab="categories" description={`Top ${genreName} apps on Legacy Store — archived versions of classic iPhone and iPad apps, installable on old iOS devices.`}>
+<Layout title={`${genreName} — Legacy Store`} activeTab="categories" canonicalPath={`/categories/${genreId}${page > 1 ? `?page=${page}` : ''}`} description={`Top ${genreName} apps on Legacy Store — archived versions of classic iPhone and iPad apps, installable on old iOS devices.`}>
   <div class="content">
     {dbError ? (
       <DbError />

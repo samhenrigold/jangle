@@ -7,10 +7,15 @@ const {
   activeTab = 'featured',
   description = 'Legacy Store — install archived versions of classic iPhone and iPad apps directly on old iOS devices.',
   searchQuery = '',
-  // Set on pages reachable under several URLs (an app has app_store_id,
-  // internal-id, and bundle-id aliases plus filter params) so search engines
-  // consolidate them. Omit everywhere else.
-  canonicalPath = '',
+  // Canonical URL path. Pages reachable under several URLs (an app has
+  // app_store_id, internal-id, and bundle-id aliases plus filter params) set
+  // it explicitly; paginated pages include their ?page= (canonicalizing page
+  // 2+ to page 1 would hide deep apps from discovery). Everywhere else the
+  // self-referential default keeps all canonicalization signals agreeing.
+  canonicalPath = Astro.url.pathname,
+  // Optional schema.org JSON-LD (object or array of objects) rendered in the
+  // head. Only mark up data visible on the page.
+  jsonLd = null,
   // Extra class on <body> for page-specific chrome (e.g. 'charts-landing').
   bodyClass = '',
   // Open Graph card for link sharing: { title?, description?, path, image?,
@@ -37,6 +42,7 @@ const NAV = [
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     {canonicalPath && <link rel="canonical" href={SITE_ORIGIN + canonicalPath} />}
+    {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
     {og && (
       <>
         <meta property="og:site_name" content="Legacy Store" />
@@ -137,6 +143,7 @@ const NAV = [
       <ul class="gf-links piped">
         <li><a href="/colophon" class="first">Colophon</a></li>
         <li><a href="/stats">Stats</a></li>
+        <li><a href="/developers">API</a></li>
         <li><a href="https://github.com/samhenrigold/jangle" rel="noopener">Source</a></li>
       </ul>
     </div>

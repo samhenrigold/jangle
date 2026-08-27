@@ -321,9 +321,10 @@ export async function getAppRatingHistory(supabase: any, appStoreId: number): Pr
 export async function getAppReviews(
   supabase: any,
   appStoreId: number,
-  limit: number
+  limit: number,
+  offset = 0
 ): Promise<{ rows: any[]; total: number } | null> {
-  const { data: result } = await cached<{ rows: any[]; total: number }>(`tm:reviews:${appStoreId}`, 10 * 60 * 1000, async () => {
+  const { data: result } = await cached<{ rows: any[]; total: number }>(`tm:reviews:${appStoreId}:${limit}:${offset}`, 10 * 60 * 1000, async () => {
     // Chronological, oldest first. Ordering by vote_sum surfaced the handful of
     // recently live-fetched reviews (stamped with today's fetch date) over the
     // hundreds of genuine period reviews recovered from archived feeds — which
@@ -336,7 +337,7 @@ export async function getAppReviews(
       .eq('app_store_id', appStoreId)
       .order('first_seen_ts', { ascending: true, nullsFirst: false })
       .order('review_id', { ascending: true })
-      .limit(limit);
+      .range(offset, offset + limit - 1);
     if (error) return { data: null, error };
     return { data: { rows: data || [], total: count || (data || []).length }, error: null };
   });
