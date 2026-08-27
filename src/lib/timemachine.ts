@@ -77,6 +77,11 @@ export async function getSnapshotIndex(supabase: any): Promise<SnapshotMeta[] | 
         // the filter options entirely. position_count is a maintained column, so
         // this is an indexed filter, not a per-request aggregate over chart_positions.
         .gt('position_count', 3)
+        // Skip genre-fallback dupes: genre-labeled snapshots whose content is
+        // identical to another same-day chart (the upstream feed ignored the
+        // genre param — e.g. the dead 2021 "new apps" feeds, or RSS genre
+        // fallbacks). Derived flag, see refresh_chart_genre_fallback().
+        .not('genre_fallback', 'is', true)
         .order('snapshot_date', { ascending: true })
         .order('id', { ascending: true })
         .range(i * CHUNK, i * CHUNK + CHUNK - 1);
@@ -297,6 +302,9 @@ export async function getAppChartHistory(supabase: any, appStoreId: number): Pro
       .from('chart_positions')
       .select('position, chart_snapshots(snapshot_date, genre_id, chart_type_id, source_url)')
       .eq('app_store_id', appStoreId)
+      // Genre-fallback dupes would credit fake genre placements; filtering the
+      // embed nulls it out and foldChartGroups skips null-snap rows.
+      .not('chart_snapshots.genre_fallback', 'is', true)
       .limit(1000);
     return { data: error ? null : data || [], error };
   });
