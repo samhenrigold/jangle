@@ -50,7 +50,7 @@ export async function loadRankedAppPage(
 // Everything the app page needs from an apps row, with the developer/genre
 // names embedded.
 const APP_COLS =
-  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url:live_icon_url, oldest_icon_sha256, rep_icon_sha256, rep_icon_px, large_icon_sha256, large_icon_px, genre_id, developer_id, original_release_date, original_release_date_source, excluded, developers!apps_developer_id_fkey(artist_name, artist_id), genres!apps_genre_id_fkey(genre_name)';
+  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, description, is_available, icon_url:live_icon_url, oldest_icon_sha256, rep_icon_sha256, rep_icon_px, large_icon_sha256, large_icon_px, genre_id, developer_id, original_release_date, original_release_date_source, excluded, developers!apps_developer_id_fkey(artist_name, artist_id), genres!apps_genre_id_fkey(genre_name)';
 
 // The app page's core data chain, shared with /api/v1/apps/{key}: versions →
 // archived copies (chunked at 150 — one .in() over ≤1000 version ids both
@@ -118,6 +118,23 @@ export async function fetchAppCore(supabase: any, appId: number): Promise<{
 // disambiguates the many apps whose bundle display_name is identical.
 export function appTitleOf(a: any): string {
   return a?.app_store_name || a?.display_name || a?.bundle_id || '';
+}
+
+// apps.description is a TEXT column holding a JSON string like
+// {"standard": "...", "<locale>": "..."} (App Store localized descriptions),
+// though some rows are plain prose. Return the standard-locale description as
+// plain text, or the raw string if it isn't the JSON shape, or null.
+export function descriptionText(raw: unknown): string | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const s = raw.trim();
+  if (s[0] === '{') {
+    try {
+      const obj = JSON.parse(s);
+      const val = obj?.standard ?? obj?.en ?? Object.values(obj)[0];
+      return typeof val === 'string' && val.trim() ? val : null;
+    } catch { /* not JSON after all — fall through */ }
+  }
+  return s;
 }
 
 // Resolve an /app/<param> URL to an apps row. A numeric param prefers the App

@@ -12,7 +12,7 @@ import {
   minOsMajor, buildVersionRows, fillNearestSiblingIcons, buildSizePoints,
 } from '../../lib/appdetail';
 import { setCacheHeaders, setDegraded, SITE_ORIGIN } from '../../lib/http';
-import { resolveApp, appTitleOf } from '../../lib/apps';
+import { resolveApp, appTitleOf, descriptionText } from '../../lib/apps';
 import {
   getChartTypes, getGenreNames, getAppChartHistory, getAppRatingHistory, getAppReviews,
   starString, formatMonthYear, formatPrice, formatApproxMonthYear,
@@ -29,6 +29,7 @@ const rawParam = id as string;
 // App Store ID in the URL preferred, then bundle_id, fallback to internal DB id.
 const resolved = await resolveApp(supabase, rawParam);
 const appData = resolved.app;
+const appDescription = appData ? descriptionText(appData.description) : null;
 let dbError = resolved.dbError;
 
 // A transient DB failure must not become a cached 404 (or a cached empty page).
@@ -581,6 +582,15 @@ if (sizePoints.length >= 3) {
   description={appData ? `${appTitle}${developerName ? ` by ${developerName}` : ''} — ${versions.length} ${versionNoun} for old iOS devices, installable directly on iPhone, iPad, and iPod touch.` : 'Legacy Store'}
   canonicalPath={appData ? `/app/${appData.app_store_id || appData.id}` : ''}
   jsonLd={jsonLd}
+  og={appData ? {
+    type: 'website',
+    title: `${appTitle}${developerName ? ` — ${developerName}` : ''}`,
+    description: (appDescription
+      ? appDescription.replace(/\s+/g, ' ').trim().slice(0, 200)
+      : `${appTitle} — ${versions.length} ${versionNoun} archived for old iOS devices.`),
+    path: `/app/${appData.app_store_id || appData.id}`,
+    image: appIcon ? (appIcon.startsWith('/') ? SITE_ORIGIN + appIcon : appIcon) : undefined,
+  } : undefined}
 >
     {dbError ? (
       <DbError />
@@ -649,6 +659,12 @@ if (sizePoints.length >= 3) {
               <li><span class="label">Versions: </span>{versions.length} archived</li>
               {installableVersionCount > 0 && (
                 <li><span class="label">Installable: </span>{installableVersionCount} of {versions.length}</li>
+              )}
+              {appData.is_available === false && (
+                <li class="availability"><span class="label">Availability: </span>Removed from the App Store</li>
+              )}
+              {appData.is_available === true && appData.app_store_id && Number(appData.app_store_id) !== 0 && (
+                <li class="availability"><span class="label">Availability: </span><a href={`https://apps.apple.com/app/id${appData.app_store_id}`} rel="noopener">Still on the App Store &#8599;</a></li>
               )}
               {developerName && <li><span class="label">Seller: </span>{developerName}</li>}
               <li class="copyright" title={appData.bundle_id}>{appData.bundle_id}</li>
@@ -722,6 +738,13 @@ if (sizePoints.length >= 3) {
         </div>
 
         <div class="center-stack">
+        {appDescription && (
+          <div class="app-description">
+            {appDescription.split(/\n{2,}/).filter((p: string) => p.trim()).map((para: string) => (
+              <p>{para.trim()}</p>
+            ))}
+          </div>
+        )}
         {screenshotSets.length > 0 && (
           <div class="screenshots" aria-label="Screenshots">
             <div class="shots-head">
@@ -1028,6 +1051,15 @@ if (sizePoints.length >= 3) {
     }
 
     /* One-row filter/sort bar above the version list */
+    .app-description {
+      margin: 0 0 18px 0;
+      color: #333;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .app-description p { margin: 0 0 10px 0; }
+    .app-description p:last-child { margin-bottom: 0; }
+
     .screenshots { margin: 0 0 16px 0; }
     .shots-head {
       display: flex;

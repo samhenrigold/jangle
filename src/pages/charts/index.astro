@@ -324,6 +324,10 @@ const pageTitle = snapshot
               {positions.length === 0 && <li class="applist-empty">This capture is empty — try another date.</li>}
             </ul>
 
+            {positions.some((p: any) => !p.apps) && (
+              <p class="chart-ghost-note">Titles shown in grey haven't been preserved in the archive yet. <a href="/contribute">Help preserve one &#9654;</a></p>
+            )}
+
             <div class="pagination">
               {prevSnap
                 ? <a href={qs({ date: prevSnap.snapshot_date })}>&#9664; {formatDate(prevSnap.snapshot_date)}</a>
@@ -351,6 +355,16 @@ const pageTitle = snapshot
       color: #5cc3f6 !important;
       font-weight: bold;
     }
+
+    .chart-ghost-note {
+      clear: both;
+      margin: 4px 0 0;
+      padding-top: 14px;
+      border-top: 1px solid #222;
+      color: grey;
+      font-size: 11px;
+    }
+    .chart-ghost-note a { color: #5cc3f6 !important; font-weight: bold; }
 
     .tm-form {
       display: inline;
