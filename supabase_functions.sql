@@ -1,5 +1,14 @@
--- SQL functions to add to Supabase for efficient app sorting
--- These should be run in the Supabase SQL editor
+-- SQL functions for Legacy Store. This file is a DESIGN REFERENCE / journal,
+-- NOT the source of truth — the live DB is (functions land via MCP migrations).
+-- Do not blind-replay it: it is a partial mirror (extension functions and some
+-- app functions live only in the DB). To dump the authoritative bodies:
+--   select string_agg(pg_get_functiondef(p.oid), E'\n\n' order by p.proname)
+--   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--   where n.nspname='public' and p.prokind='f';
+-- The get_apps_sorted_*/get_apps_count/get_genre_top_apps bodies here were
+-- re-synced to live 2026-08-27 (they had drifted to a dropped a.icon_url column
+-- and omitted the `excluded IS NOT TRUE` filter — replaying the stale copies
+-- would have leaked excluded apps into every list page).
 --
 -- NOTE: this file is a chronological journal. Superseded early definitions of
 -- get_apps_sorted_by_version_count / get_apps_sorted_by_first_version_date /
@@ -249,7 +258,7 @@ RETURNS TABLE (genre_id bigint, app_id bigint, icon_url text)
 LANGUAGE sql STABLE
 SET search_path = public, pg_temp
 AS $$
-  SELECT DISTINCT ON (a.genre_id) a.genre_id, a.id, a.icon_url
+  SELECT DISTINCT ON (a.genre_id) a.genre_id, a.id, a.live_icon_url
   FROM apps a
   WHERE a.genre_id IS NOT NULL
     AND a.bundle_id <> 'com.foxnews.foxnews'
@@ -344,7 +353,8 @@ BEGIN
   END IF;
   RETURN (SELECT count(*) FROM apps a
           WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
-            AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query)));
+            AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+            AND a.excluded IS NOT TRUE);
 END;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_apps_count(bigint, text) TO anon, authenticated;
@@ -544,20 +554,22 @@ BEGIN
   IF p_ascending THEN
     RETURN QUERY
       SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name, a.developer_id, a.genre_id,
-             a.copyright, a.icon_url, a.display_name, a.executable_name, a.created_at,
+             a.copyright, a.live_icon_url, a.display_name, a.executable_name, a.created_at,
              d.artist_name, g.genre_name, a.version_count::bigint, a.first_version_date, a.oldest_icon_sha256
       FROM apps a LEFT JOIN developers d ON a.developer_id = d.id LEFT JOIN genres g ON a.genre_id = g.id
       WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
         AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+        AND a.excluded IS NOT TRUE
       ORDER BY a.version_count ASC, a.display_name ASC LIMIT p_limit OFFSET p_offset;
   ELSE
     RETURN QUERY
       SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name, a.developer_id, a.genre_id,
-             a.copyright, a.icon_url, a.display_name, a.executable_name, a.created_at,
+             a.copyright, a.live_icon_url, a.display_name, a.executable_name, a.created_at,
              d.artist_name, g.genre_name, a.version_count::bigint, a.first_version_date, a.oldest_icon_sha256
       FROM apps a LEFT JOIN developers d ON a.developer_id = d.id LEFT JOIN genres g ON a.genre_id = g.id
       WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
         AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+        AND a.excluded IS NOT TRUE
       ORDER BY a.version_count DESC, a.display_name ASC LIMIT p_limit OFFSET p_offset;
   END IF;
 END;
@@ -582,20 +594,22 @@ BEGIN
   IF p_ascending THEN
     RETURN QUERY
       SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name, a.developer_id, a.genre_id,
-             a.copyright, a.icon_url, a.display_name, a.executable_name, a.created_at,
+             a.copyright, a.live_icon_url, a.display_name, a.executable_name, a.created_at,
              d.artist_name, g.genre_name, a.version_count::bigint, a.first_version_date, a.oldest_icon_sha256
       FROM apps a LEFT JOIN developers d ON a.developer_id = d.id LEFT JOIN genres g ON a.genre_id = g.id
       WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
         AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+        AND a.excluded IS NOT TRUE
       ORDER BY a.first_version_date ASC, a.display_name ASC LIMIT p_limit OFFSET p_offset;
   ELSE
     RETURN QUERY
       SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name, a.developer_id, a.genre_id,
-             a.copyright, a.icon_url, a.display_name, a.executable_name, a.created_at,
+             a.copyright, a.live_icon_url, a.display_name, a.executable_name, a.created_at,
              d.artist_name, g.genre_name, a.version_count::bigint, a.first_version_date, a.oldest_icon_sha256
       FROM apps a LEFT JOIN developers d ON a.developer_id = d.id LEFT JOIN genres g ON a.genre_id = g.id
       WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
         AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
+        AND a.excluded IS NOT TRUE
       ORDER BY a.first_version_date DESC, a.display_name ASC LIMIT p_limit OFFSET p_offset;
   END IF;
 END;
