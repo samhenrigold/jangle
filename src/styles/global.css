@@ -39,6 +39,9 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+ul, ol, li, dl, dt, dd, h1, h2, h3, h4, h5, h6, pre, p,
+blockquote { text-wrap: balance; }
+
 a { color: #298cda; outline: none; }
 a:link, a:visited, a:active { text-decoration: none; }
 a:hover { text-decoration: underline; }

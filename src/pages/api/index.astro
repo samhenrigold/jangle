@@ -56,23 +56,25 @@ const jsonLd = {
 <Layout
   title="API — Legacy Store"
   activeTab="colophon"
-  description="The Legacy Store API: an open, read-only JSON API over the archive — apps, versions, charts, reviews, screenshots, and more."
+  description="The Legacy Store API: a public API for archived apps, versions, charts, reviews, screenshots, and more."
   jsonLd={jsonLd}
 >
   <div class="content devdoc">
     <h1 class="dev-title">API</h1>
 
     <p>
-      Everything on this site is available as an open, read-only JSON API at
-      <code>https://legacystore.app/api/v1</code>. No keys, no auth, CORS is open.
+      Everything on this site is available as a totally open, read-only JSON API. No keys, no auth, CORS is open.
+      It stays that way because people are decent about it, so
+      <strong>please cache responses</strong> and <strong>keep request rates reasonable</strong>.
       The machine-readable contract is the
       <a class="dev-link" href="/openapi.yaml">OpenAPI spec</a>; the API also
       describes itself at <a class="dev-link" href="/api/v1">/api/v1</a>.
     </p>
 
     <h2 class="dev-h2">Getting started</h2>
-    <p>Base URL: <code>https://legacystore.app/api/v1</code>. No authentication.</p>
+    <p>Base URL: <code>https://legacystore.app/api/v1</code></p>
     <ul>
+      <li>No authentication.</li>
       <li>All ids are JSON strings. Timestamps are ISO 8601 UTC.</li>
       <li>Lists are <code>{'{'}data, total, next_url{'}'}</code>. Follow <code>next_url</code> for the next page.</li>
       <li>Cursors are opaque — never construct one.</li>
