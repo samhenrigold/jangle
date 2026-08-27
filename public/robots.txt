@@ -4,6 +4,7 @@ Disallow: /manifest/
 Disallow: /img
 Disallow: /api/
 Disallow: /ipa/
+Disallow: /screen/
 Disallow: /time-machine?
 Disallow: /charts?
 Disallow: /app/*?
