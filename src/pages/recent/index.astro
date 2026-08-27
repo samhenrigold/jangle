@@ -1,0 +1,103 @@
+---
+import { supabaseFor } from '../../lib/supabase';
+import Layout from '../../components/Layout.astro';
+import DbError from '../../components/DbError.astro';
+import Pagination from '../../components/Pagination.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
+import { appIconSrc } from '../../lib/icons';
+import { appTitleOf } from '../../lib/apps';
+import { clampPage, clampPageSize } from '../../lib/search';
+import { setCacheHeaders, setDegraded } from '../../lib/http';
+import { getOldestIcons } from '../../lib/appicons';
+
+// Freshness is the point of this page — much shorter edge TTL than the rest.
+setCacheHeaders(Astro.response, 300);
+
+const url = new URL(Astro.request.url);
+const page = clampPage(url.searchParams.get('page'));
+const pageSize = clampPageSize(url.searchParams.get('per_page'), 50);
+const offset = (page - 1) * pageSize;
+
+const supabase = supabaseFor(Astro);
+let dbError = false;
+
+// The unit is the version: a newly archived app surfaces when its first
+// version lands (badged "new app" when the app row is about as old as the
+// version row). Ordered by ingest time, not release date — this is a feed of
+// what the pipeline added, for monitoring, not an app-history view.
+const { data: versions, error } = await supabase
+  .from('app_versions')
+  .select(
+    'id, version_string, created_at, release_date, estimated_release_date, ' +
+      'apps!inner(id, app_store_id, bundle_id, app_store_name, display_name, ' +
+      'icon_url:live_icon_url, created_at, excluded, ' +
+      'developers!apps_developer_id_fkey(artist_name))'
+  )
+  .not('apps.excluded', 'is', true)
+  .order('created_at', { ascending: false })
+  .range(offset, offset + pageSize - 1);
+if (error) {
+  console.error('recent feed failed:', error.message);
+  dbError = true;
+}
+const rows: any[] = versions || [];
+
+let iconShas: Map<number, string> = new Map();
+if (!dbError && rows.length) {
+  iconShas = (await getOldestIcons(supabase, rows.map((v: any) => Number(v.apps?.id)).filter(Boolean))) || new Map();
+}
+
+const fmtAbs = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+const fmtRel = (iso: string) => {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 60) return `${Math.max(mins, 1)}m ago`;
+  if (mins < 60 * 24) return `${Math.floor(mins / 60)}h ago`;
+  const days = Math.floor(mins / (60 * 24));
+  return days < 30 ? `${days}d ago` : fmtAbs(iso);
+};
+const isNewApp = (v: any) =>
+  v.apps?.created_at && Math.abs(new Date(v.created_at).getTime() - new Date(v.apps.created_at).getTime()) < 3600_000;
+
+if (dbError) setDegraded(Astro.response);
+---
+
+<Layout title="Recently Added — Legacy Store" activeTab="recent" description="The latest apps and versions added to the Legacy Store archive.">
+  <div class="content">
+    {dbError ? (
+      <DbError />
+    ) : (
+      <>
+        <SectionHeader title="Recently Added" level={1} detail="Versions in the order ingestion archived them, newest first." />
+        <ul class="applist">
+          {rows.map((v: any) => {
+            const a = v.apps;
+            const icon = appIconSrc(iconShas.get(Number(a.id)), a.icon_url);
+            return (
+              <li class="app" data-app-store-id={a.app_store_id || undefined} data-bundle-id={a.bundle_id || undefined}>
+                <a class="app-link" href={`/app/${a.app_store_id ? a.app_store_id : a.id}`}>
+                  <span class="icon">{icon ? <><img src={icon} alt="" width="60" height="60" loading="lazy" decoding="async" /><span class="icon-mask"></span></> : null}</span>
+                  <span class="chevron">&#8250;</span>
+                  <span class="count">{fmtRel(v.created_at)}<span class="count-label">added</span></span>
+                  <span class="info">
+                    <span class="name">{appTitleOf(a)}</span>
+                    <span class="meta">
+                      {v.version_string ? `Version ${v.version_string}` : 'Unknown version'}
+                      {isNewApp(v) ? ' · first archived version' : ''}
+                    </span>
+                    {a.developers?.artist_name && <span class="meta">{a.developers.artist_name}</span>}
+                    <span class="meta meta-bundle">{a.bundle_id}</span>
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+          {rows.length === 0 && <li class="applist-empty">Nothing here yet.</li>}
+        </ul>
+        {rows.length === pageSize && (
+          <Pagination page={page} totalPages={page + 1} hrefFor={(p) => `/recent?page=${p}${pageSize !== 50 ? `&per_page=${pageSize}` : ''}`} nextLabel={`Next ${pageSize}`} />
+        )}
+      </>
+    )}
+  </div>
+</Layout>

@@ -42,18 +42,24 @@ export async function resolveApp(
   // lowest id so duplicate app_store_ids / bundle_ids route deterministically
   // (and maybeSingle never trips on multiple rows). Returns {found} so the caller
   // can distinguish "no eligible row" from "DB error".
+  // One round trip for all attempts: OR the eq probes together, then pick the
+  // winner client-side in attempt order (app_store_id beats internal id),
+  // lowest id per column. Replaces a serial loop that cost up to 2 queries
+  // per restriction before the page could start.
   const tryAttempts = async (
     restrict: (q: any) => any
   ): Promise<{ app: any | null; dbError: boolean; found: boolean }> => {
+    if (!attempts.length) return { app: null, dbError: false, found: false };
+    const orExpr = attempts.map(({ col, value }) => `${col}.eq.${value}`).join(',');
+    const { data, error } = await restrict(
+      supabase.from('apps').select(APP_COLS).or(orExpr)
+    )
+      .order('id', { ascending: true })
+      .limit(attempts.length * 2);
+    if (error) return { app: null, dbError: true, found: false };
     for (const { col, value } of attempts) {
-      const { data, error } = await restrict(
-        supabase.from('apps').select(APP_COLS).eq(col, value)
-      )
-        .order('id', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (error) return { app: null, dbError: true, found: false };
-      if (data) return { app: data, dbError: false, found: true };
+      const hit = (data || []).find((r: any) => String(r[col]) === value);
+      if (hit) return { app: hit, dbError: false, found: true };
     }
     return { app: null, dbError: false, found: false };
   };

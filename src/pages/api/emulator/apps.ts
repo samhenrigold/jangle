@@ -19,8 +19,10 @@ import { appTitleOf } from '../../../lib/apps';
 // archive.org via /ipa/<id>, which re-checks available/hidden at fetch time.
 
 const VERSION_FIELDS = 'id, app_id, version_string, minimum_os_version, device_family, release_date';
-const FILE_FIELDS = 'id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, info_plist_path, binary_sha1, available';
 const BIN_FIELDS = 'sha1, install_status, architectures, macho_min_os, hidden, device_family_macho, has_extensions, bundle_icon_sha256, itunes_artwork_sha256';
+// binaries ride along as a PostgREST embed via the ipa_files.binary_sha1 FK —
+// one round trip instead of a second chunked sweep over the sha1 set.
+const FILE_FIELDS = `id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, info_plist_path, binary_sha1, available, binaries!ipa_files_binary_sha1_fkey(${BIN_FIELDS})`;
 const CHUNK = 150; // keeps .in() filters under URL-length limits (app-page precedent)
 
 function record(origin: string, app: any, version: any, file: any, bin: any) {
@@ -46,15 +48,17 @@ async function chunkedIn(
   supabase: any, table: string, fields: string, column: string, values: any[],
   refine?: (q: any) => any
 ): Promise<any[]> {
-  const out: any[] = [];
-  for (let i = 0; i < values.length; i += CHUNK) {
-    let query = supabase.from(table).select(fields).in(column, values.slice(i, i + CHUNK)).limit(1000);
+  // Chunks are independent — fetch concurrently instead of serially.
+  const slices: any[][] = [];
+  for (let i = 0; i < values.length; i += CHUNK) slices.push(values.slice(i, i + CHUNK));
+  const results = await Promise.all(slices.map(async (slice) => {
+    let query = supabase.from(table).select(fields).in(column, slice).limit(1000);
     if (refine) query = refine(query);
     const { data, error } = await query;
     if (error) throw new Error(`${table}: ${error.message}`);
-    out.push(...(data || []));
-  }
-  return out;
+    return data || [];
+  }));
+  return results.flat();
 }
 
 // Newest compatible version's best compatible copy, or null.
@@ -93,17 +97,14 @@ export const GET: APIRoute = async (ctx) => {
         .from('app_versions').select(VERSION_FIELDS).eq('id', file.app_version_id).maybeSingle();
       if (ve) throw new Error(ve.message);
       if (!version) return fail(404, 'not_found', 'no such archived copy');
-      const [{ data: app, error: ae }, bins] = await Promise.all([
-        supabase
-          .from('apps')
-          .select('id, app_store_id, bundle_id, app_store_name, display_name, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)')
-          .eq('id', version.app_id)
-          .maybeSingle(),
-        file.binary_sha1 ? chunkedIn(supabase, 'binaries', BIN_FIELDS, 'sha1', [file.binary_sha1]) : Promise.resolve([]),
-      ]);
+      const { data: app, error: ae } = await supabase
+        .from('apps')
+        .select('id, app_store_id, bundle_id, app_store_name, display_name, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)')
+        .eq('id', version.app_id)
+        .maybeSingle();
       if (ae) throw new Error(ae.message);
       if (!app) return fail(404, 'not_found', 'no such archived copy');
-      const bin = bins[0];
+      const bin = (file as any).binaries || undefined;
       if (!emulatorCompatible(version, file, bin)) {
         return fail(404, 'not_compatible', 'this copy is not compatible with the emulator');
       }
@@ -186,10 +187,7 @@ export const GET: APIRoute = async (ctx) => {
     if (!eligible.length) return json({ apps: [] }, 200, 'public, max-age=300');
 
     const files = await chunkedIn(supabase, 'ipa_files', FILE_FIELDS, 'app_version_id', eligible.map((v) => v.id));
-    const shas = Array.from(new Set(files.map((f) => f.binary_sha1).filter(Boolean)));
-    const bins = await chunkedIn(supabase, 'binaries', BIN_FIELDS, 'sha1', shas);
-    const binBySha = new Map(bins.map((b) => [b.sha1, b]));
-    const binOf = (f: any) => (f?.binary_sha1 ? binBySha.get(f.binary_sha1) : undefined);
+    const binOf = (f: any) => f?.binaries || undefined;
 
     const versionsByApp = new Map<any, any[]>();
     for (const v of eligible) {

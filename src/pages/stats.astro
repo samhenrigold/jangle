@@ -56,11 +56,13 @@ const bar = (label: string, value: number, extra: Partial<BarDatum> = {}): BarDa
 // The "as of" line shows the exact timestamp the numbers were computed — down to
 // the minute (UTC), so on localhost a live recompute is visibly fresh.
 const asOfFmt = new Intl.DateTimeFormat('en-US', {
-  month: 'short', day: 'numeric', year: 'numeric',
+  month: 'long', day: 'numeric', year: 'numeric',
   hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short',
 });
 
 let asOf = '';
+let asOfIso = '';
+let lastIngest = '';
 let tiles: { n: string; label: string }[] = [];
 let charts: Record<string, string> = {};
 let records: { title: string; entries: { text: string; detail: string; href?: string; icon?: string }[] }[] = [];
@@ -69,6 +71,11 @@ let notes: string[] = [];
 if (stats) {
   const computedAt = stats.computed_at ? new Date(stats.computed_at) : null;
   asOf = computedAt && !isNaN(computedAt.getTime()) ? asOfFmt.format(computedAt) : formatDate(stats.computed_at);
+  asOfIso = computedAt && !isNaN(computedAt.getTime()) ? computedAt.toISOString() : '';
+
+  if (stats.last_ingest_at) {
+    lastIngest = `The last archive.org crawl added ${formatNumber(stats.apps_added_last_ingest)} new app${Number(stats.apps_added_last_ingest) === 1 ? '' : 's'} on ${formatDate(stats.last_ingest_at)}.`;
+  }
 
   tiles = [
     { n: formatNumber(stats.apps), label: 'apps' },
@@ -192,7 +199,49 @@ if (stats) {
   ) : (
     <div class="content stats">
       <h1 class="stats-title">Stats</h1>
-      <p class="stats-lede">The archive, by the numbers. As of {asOf}.</p>
+      <p class="stats-lede">Last updated <span id="as-of" data-iso={asOfIso}>{asOf}</span>.</p>
+      {asOfIso && (
+        <script is:inline>
+          // No Intl (unavailable before iOS 10) and no ES6 (no transpile pipeline —
+          // see astro.config.mjs) — plain Date methods + var/IIFE so this still runs
+          // on iOS 5/6. Swaps just this one span, not the whole page.
+          (function () {
+            try {
+              var el = document.getElementById('as-of');
+              var iso = el && el.getAttribute('data-iso');
+              var d = iso ? new Date(iso) : null;
+              if (!el || !d || isNaN(d.getTime())) return;
+              var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+              var h = d.getHours();
+              var ampm = h >= 12 ? 'PM' : 'AM';
+              h = h % 12 || 12;
+              var min = d.getMinutes();
+              if (min < 10) min = '0' + min;
+              // Named zone (PDT, GMT+2, etc) where Intl exists (all iOS 10+ / modern
+              // browsers); a hand-rolled UTC offset covers iOS 5/6, which lack Intl.
+              var tz;
+              if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+                try {
+                  var parts = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' }).formatToParts(d);
+                  for (var i = 0; i < parts.length; i++) {
+                    if (parts[i].type === 'timeZoneName') tz = parts[i].value;
+                  }
+                } catch (e2) {}
+              }
+              if (!tz) {
+                var offset = -d.getTimezoneOffset();
+                var sign = offset >= 0 ? '+' : '-';
+                offset = Math.abs(offset);
+                var offH = Math.floor(offset / 60);
+                var offM = offset % 60;
+                tz = 'GMT' + sign + offH + (offM ? ':' + (offM < 10 ? '0' + offM : offM) : '');
+              }
+              el.textContent = months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear() + ' at ' + h + ':' + min + ' ' + ampm + ' ' + tz;
+            } catch (e) {}
+          })();
+        </script>
+      )}
+      {lastIngest && <p class="stats-lede">{lastIngest}</p>}
 
       <div class="tiles">
         {tiles.map((t) => (

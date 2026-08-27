@@ -273,7 +273,7 @@ WITH av AS (
 -- (hidden=false) count as clean; `IS NOT TRUE` also passes copies whose
 -- binary row is missing (LEFT JOIN).
 bins AS (
-  SELECT sha1, install_status, architectures, icon_sha256, bundle_icon_sha256, has_watch_app
+  SELECT sha1, install_status, architectures, itunes_artwork_sha256, bundle_icon_sha256, has_watch_app
   FROM binaries
   WHERE hidden IS NOT TRUE
 ),
@@ -295,7 +295,7 @@ SELECT jsonb_build_object(
   'copies_available',  ipf.copies_available,
   'archive_items',     (SELECT count(*) FROM archive_items),
   'total_bytes',       ipf.total_bytes,
-  'distinct_icons',    (SELECT count(DISTINCT coalesce(bundle_icon_sha256, icon_sha256)) FROM bins),
+  'distinct_icons',    (SELECT count(DISTINCT coalesce(bundle_icon_sha256, itunes_artwork_sha256)) FROM bins),
   'wayback_captures',  (SELECT reltuples::bigint FROM pg_class WHERE oid = 'public.wayback_captures'::regclass),
   'listing_snapshots', (SELECT count(*) FROM app_listing_snapshots),
   'reviews',           (SELECT count(*) FROM app_reviews),
@@ -325,21 +325,21 @@ SELECT jsonb_build_object(
   'prices',            jsonb_build_object('known', av.p_known, 'free', av.p_free, 'paid', av.p_paid),
   -- price integers mix currencies; ranking only makes sense within one, so USD
   'priciest',          (SELECT jsonb_agg(x) FROM (
-                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url,
-                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN bins b ON b.sha1=f.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
+                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.live_icon_url,
+                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.itunes_artwork_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN bins b ON b.sha1=f.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b.bundle_icon_sha256,b.itunes_artwork_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
                             'price', v.price_display) x
                           FROM app_versions v JOIN apps a ON a.id = v.app_id
                           WHERE v.price > 0 AND v.price_display LIKE '$%'
                           ORDER BY v.price DESC LIMIT 3) s),
   'most_versions',     (SELECT jsonb_agg(x) FROM (
-                          SELECT jsonb_build_object('name', coalesce(display_name, app_store_name), 'id', app_store_id, 'icon', icon_url,
-                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.icon_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN bins b ON b.sha1=f.binary_sha1 WHERE v2.app_id=apps.id AND coalesce(b.bundle_icon_sha256,b.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
+                          SELECT jsonb_build_object('name', coalesce(display_name, app_store_name), 'id', app_store_id, 'icon', live_icon_url,
+                            'icon_sha', (SELECT coalesce(b.bundle_icon_sha256, b.itunes_artwork_sha256) FROM app_versions v2 JOIN ipa_files f ON f.app_version_id=v2.id JOIN bins b ON b.sha1=f.binary_sha1 WHERE v2.app_id=apps.id AND coalesce(b.bundle_icon_sha256,b.itunes_artwork_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
                             'n', version_count) x
                           FROM apps WHERE app_store_name IS NOT NULL AND app_store_id IS NOT NULL
                           ORDER BY version_count DESC LIMIT 5) s),
   'biggest',           (SELECT jsonb_agg(x) FROM (
-                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.icon_url,
-                            'icon_sha', (SELECT coalesce(b2.bundle_icon_sha256, b2.icon_sha256) FROM app_versions v2 JOIN ipa_files f2 ON f2.app_version_id=v2.id JOIN bins b2 ON b2.sha1=f2.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b2.bundle_icon_sha256,b2.icon_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
+                          SELECT jsonb_build_object('name', a.app_store_name, 'id', a.app_store_id, 'icon', a.live_icon_url,
+                            'icon_sha', (SELECT coalesce(b2.bundle_icon_sha256, b2.itunes_artwork_sha256) FROM app_versions v2 JOIN ipa_files f2 ON f2.app_version_id=v2.id JOIN bins b2 ON b2.sha1=f2.binary_sha1 WHERE v2.app_id=a.id AND coalesce(b2.bundle_icon_sha256,b2.itunes_artwork_sha256) IS NOT NULL ORDER BY v2.release_date ASC NULLS LAST LIMIT 1),
                             'bytes', f.file_size) x
                           FROM ipa_files f
                           JOIN bins b ON b.sha1 = f.binary_sha1
@@ -351,7 +351,11 @@ SELECT jsonb_build_object(
                           SELECT jsonb_build_object('g', g.genre_name, 'gid', g.id, 'n', count(*)) x
                           FROM apps a JOIN genres g ON g.id = a.genre_id
                           GROUP BY g.genre_name, g.id ORDER BY count(*) DESC LIMIT 10) s),
-  'apps_with_genre',   (SELECT count(*) FROM apps WHERE genre_id IS NOT NULL)
+  'apps_with_genre',   (SELECT count(*) FROM apps WHERE genre_id IS NOT NULL),
+  -- Last day new apps were ingested, and how many landed that day — apps.created_at
+  -- is the closest thing to a scrape-run log we have (no dedicated run table).
+  'last_ingest_at',        (SELECT max(created_at) FROM apps),
+  'apps_added_last_ingest', (SELECT count(*) FROM apps WHERE created_at::date = (SELECT max(created_at::date) FROM apps))
 )
 FROM av, ipf;
 $$;
@@ -787,3 +791,223 @@ BEGIN
 END;
 $$;
 GRANT EXECUTE ON FUNCTION get_apps_sorted_by_first_version_date(integer,integer,bigint,boolean,text) TO anon, authenticated;
+
+-- ============================================================================
+-- Definitions below were recovered from the live DB (pg_get_functiondef,
+-- 2026-08-27) — they were created via MCP migrations and never checked in,
+-- leaving this file stale. Source of truth is still the live DB; keep this
+-- file in sync when changing them.
+-- ============================================================================
+
+-- Sitemap: every public app slug (app_store_id preferred, internal id fallback).
+CREATE OR REPLACE FUNCTION public.get_sitemap_slugs()
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select coalesce(json_agg(slug order by slug), '[]'::json)
+  from (
+    select distinct coalesce(nullif(app_store_id, 0), id)::text as slug
+    from apps where excluded is not true
+  ) s;
+$function$;
+
+-- Chart/hero icons nearest a snapshot date (precomputed app_icon_timeline).
+CREATE OR REPLACE FUNCTION public.get_icons_near_date(p_app_ids bigint[], p_target date)
+ RETURNS TABLE(app_id bigint, icon_sha256 text)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT DISTINCT ON (t.app_id) t.app_id, t.icon_sha256
+  FROM app_icon_timeline t
+  WHERE t.app_id = ANY (p_app_ids[1:500])
+    AND EXISTS (
+      SELECT 1 FROM app_icon_timeline t2
+      WHERE t2.app_id = t.app_id AND t2.icon_date <= p_target
+    )
+  ORDER BY t.app_id,
+    abs(t.icon_date - p_target) ASC,
+    (t.icon_date > p_target) ASC,
+    t.icon_sha256 ASC;
+$function$;
+
+-- Public /api/report endpoint (the only anon write path; sanitizes + caps).
+CREATE OR REPLACE FUNCTION public.submit_issue_report(p_message text, p_app_id bigint DEFAULT NULL::bigint, p_app_store_id bigint DEFAULT NULL::bigint, p_path text DEFAULT NULL::text, p_user_agent text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_msg text;
+begin
+  -- Strip control characters (keep tab 0x09 and newline 0x0A), trim, cap.
+  v_msg := btrim(regexp_replace(coalesce(p_message, ''), '[\x00-\x08\x0B-\x1F\x7F]', '', 'g'));
+  if v_msg = '' then
+    raise exception 'empty message';
+  end if;
+  insert into public.issue_reports (message, app_id, app_store_id, path, user_agent)
+  values (
+    left(v_msg, 4000),
+    p_app_id,
+    p_app_store_id,
+    left(regexp_replace(coalesce(p_path, ''), '[\x00-\x1F\x7F]', '', 'g'), 300),
+    left(regexp_replace(coalesce(p_user_agent, ''), '[\x00-\x1F\x7F]', '', 'g'), 500)
+  );
+end;
+$function$;
+
+-- Batch coverage probe for /api/coverage — one RPC resolves ≤500 (bundle_id,
+-- version | external_id) probes to per-version install_status counts.
+CREATE OR REPLACE FUNCTION public.coverage_lookup(probes jsonb)
+ RETURNS TABLE(bundle_id text, version text, external_id bigint, app_store_id bigint, copies jsonb)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select
+    coalesce(c.r_bundle_id,    p.bundle_id)    as bundle_id,
+    coalesce(c.r_version,      p.version)      as version,
+    coalesce(c.r_external_id,  p.external_id)  as external_id,
+    coalesce(c.r_app_store_id, p.app_store_id) as app_store_id,
+    c.copies
+  from rows from (
+         jsonb_to_recordset(probes)
+           as (bundle_id text, version text, external_id bigint, app_store_id bigint)
+       ) with ordinality as p(bundle_id, version, external_id, app_store_id, ord)
+  left join lateral (
+    with matched as (
+      -- external version id route (constrained to the app when an app key is given)
+      select av.id
+      from app_versions av
+      where p.external_id is not null
+        and av.external_identifier = p.external_id
+        and (
+          (p.bundle_id is null and p.app_store_id is null)
+          or exists (
+            select 1 from apps a
+            where a.id = av.app_id
+              and (a.bundle_id = p.bundle_id or a.app_store_id = p.app_store_id)
+          )
+        )
+      union
+      -- app key (bundle id or store id) + marketing version route
+      select av.id
+      from app_versions av
+      join apps a on a.id = av.app_id
+      where p.version is not null
+        and av.version_string = p.version
+        and (a.bundle_id = p.bundle_id or a.app_store_id = p.app_store_id)
+    )
+    select
+      case when count(distinct a.bundle_id)        = 1 then max(a.bundle_id)          end as r_bundle_id,
+      case when count(distinct av.version_string)  = 1 then max(av.version_string)     end as r_version,
+      case when count(distinct av.external_identifier) = 1 then max(av.external_identifier) end as r_external_id,
+      case when count(distinct a.app_store_id)     = 1 then max(a.app_store_id)        end as r_app_store_id,
+      coalesce(
+        (select jsonb_object_agg(s.install_status, s.cnt) filter (where s.install_status is not null)
+         from (
+           select b.install_status, count(*)::int as cnt
+           from matched m
+           join ipa_files f on f.app_version_id = m.id
+           join binaries b  on b.sha1 = f.binary_sha1
+           where b.hidden is not true
+           group by b.install_status
+         ) s),
+        '{}'::jsonb
+      ) as copies
+    from matched m
+    join app_versions av on av.id = m.id
+    join apps a          on a.id = av.app_id
+  ) c on true
+  order by p.ord;
+$function$;
+
+-- App-page screenshot sets (the snapshot_screenshots view is too slow filtered
+-- per app): dedups listing-snapshot sets by content, resolves R2 masters,
+-- prefers iphone shots, prefix-collapses subsets, dates each set to a version.
+CREATE OR REPLACE FUNCTION public.get_app_screenshots(p_app_store_id bigint, p_max_sets integer DEFAULT 40)
+ RETURNS TABLE(captured_at timestamp with time zone, version_string text, shots jsonb)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  with app as (select id from apps where app_store_id = p_app_store_id),
+  dated as (
+    select estimated_release_date as vd, version_string,
+      lead(estimated_release_date) over (order by estimated_release_date) as next_vd
+    from app_versions
+    where app_id = (select id from app) and estimated_release_date is not null
+  ),
+  distinct_json as (
+    select distinct on (md5(s.screenshot_urls::text))
+      md5(s.screenshot_urls::text) as set_key, s.captured_at, s.screenshot_urls
+    from app_listing_snapshots s
+    where s.app_store_id = p_app_store_id and s.screenshot_urls is not null
+    order by md5(s.screenshot_urls::text), s.captured_at asc
+  ),
+  exploded as (
+    select dj.set_key, dj.captured_at, e.ordinality,
+      case when jsonb_typeof(e.value)='object' then coalesce(e.value->>'device','unknown') else 'unknown' end as device,
+      case when jsonb_typeof(e.value)='object' then e.value->>'url' else e.value #>> '{}' end as url
+    from distinct_json dj
+    cross join lateral jsonb_array_elements(dj.screenshot_urls) with ordinality e(value, ordinality)
+  ),
+  resolved as (
+    select ex.set_key, ex.captured_at, ex.ordinality, ex.device, ex.url,
+           m.sha256, m.width, m.height
+    from exploded ex
+    left join screenshot_masters m on m.url = ex.url and m.status = 'ok'
+  ),
+  pref as (
+    select r.*, bool_or(device = 'iphone') over (partition by set_key) as has_iphone
+    from resolved r
+  ),
+  picked as (
+    select set_key, captured_at, ordinality, sha256, width, height
+    from pref
+    where (has_iphone and device = 'iphone') or (not has_iphone)
+  ),
+  per_set as (
+    select set_key, min(captured_at) as captured_at,
+      count(*) as n_total, count(sha256) as n_resolved,
+      string_agg(sha256, '|' order by ordinality) as content_sig,
+      jsonb_agg(jsonb_build_object('sha', sha256, 'w', width, 'h', height) order by ordinality) as shots
+    from picked
+    group by set_key
+  ),
+  content_distinct as (
+    select distinct on (content_sig) content_sig, captured_at, shots
+    from per_set
+    where n_resolved = n_total and n_total > 0
+    order by content_sig, captured_at asc
+  ),
+  kept as (
+    select c.content_sig, c.shots,
+      least(c.captured_at,
+        coalesce((select min(c2.captured_at) from content_distinct c2
+                  where c2.content_sig <> c.content_sig
+                    and (c.content_sig || '|') like (c2.content_sig || '|') || '%'),
+                 c.captured_at)) as captured_at
+    from content_distinct c
+    where not exists (
+      select 1 from content_distinct c3
+      where c3.content_sig <> c.content_sig
+        and (c3.content_sig || '|') like (c.content_sig || '|') || '%'
+    )
+  ),
+  limited as (
+    select * from kept order by captured_at asc limit p_max_sets
+  )
+  select l.captured_at,
+    (select d.version_string from dated d
+      where d.vd <= l.captured_at
+        and (l.captured_at < d.next_vd
+             or (d.next_vd is null and l.captured_at < d.vd + interval '120 days'))
+      order by d.vd desc limit 1) as version_string,
+    l.shots
+  from limited l
+  order by l.captured_at asc;
+$function$;

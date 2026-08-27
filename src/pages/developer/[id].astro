@@ -30,22 +30,26 @@ if (!developer) {
     if (rawParam !== '0' && Number(rawParam) <= 2147483647) attempts.push({ col: 'artist_id', value: rawParam });
     attempts.push({ col: 'id', value: rawParam });
   }
-  for (const { col, value } of attempts) {
-    // maybeSingle separates "no such developer" (404) from a transient DB
-    // failure (503, uncacheable). Break ties by lowest id for determinism.
+  if (attempts.length) {
+    // One OR'd query for both probes; pick the winner in attempt order
+    // (artist_id beats internal id), lowest id per column for determinism.
+    // A query error is a transient DB failure (503, uncacheable); an empty
+    // result is "no such developer" (404).
     const { data, error } = await supabase
       .from('developers')
       .select('id, artist_id, artist_name')
-      .eq(col, value)
+      .or(attempts.map(({ col, value }) => `${col}.eq.${value}`).join(','))
       .order('id', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .limit(attempts.length * 2);
     if (error) {
       console.error('developer fetch failed:', error.message);
       dbError = true;
-      break;
+    } else {
+      for (const { col, value } of attempts) {
+        const hit = (data || []).find((r: any) => String(r[col]) === value);
+        if (hit) { developer = hit; break; }
+      }
     }
-    if (data) { developer = data; break; }
   }
   if (developer) cacheSet(devCacheKey, developer, 30 * 60 * 1000);
 }
