@@ -1000,7 +1000,9 @@ if (sizePoints.length >= 3) {
                       return [r.author ? `by ${r.author}` : '', when, r.app_version ? `v${r.app_version}` : '', r.vote_count > 0 ? `${r.vote_sum} of ${r.vote_count} found helpful` : ''].filter(Boolean).join(' · ');
                     })()}
                   </div>
-                  {r.body && <p class="review-body">{r.body}</p>}
+                  {r.body && (
+                    <p class="review-body">{r.body.replace(/<br\s*\/?>/gi, '\n')}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1538,6 +1540,7 @@ if (sizePoints.length >= 3) {
       line-height: 17px;
       color: #898989;
       word-wrap: break-word;
+      white-space: pre-line;
     }
 
     .history-note {
