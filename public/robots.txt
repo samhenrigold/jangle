@@ -8,4 +8,7 @@ Disallow: /screen/
 Disallow: /time-machine?
 Disallow: /charts?
 Disallow: /app/*?
+Disallow: /most-archived?
+Disallow: /recent?
+Disallow: /categories/*?
 Sitemap: https://legacystore.app/sitemap.xml

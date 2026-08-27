@@ -38,12 +38,17 @@ async function fetchImage(url: string): Promise<Response | null> {
     if (!upstream.ok) return null;
     const ct = upstream.headers.get('content-type') || '';
     // The thumb service answers misses with 200-ish JSON ("Nothing found for
-    // token …"), so an image content-type is the real success signal.
-    if (!/^image\//i.test(ct)) return null;
+    // token …"), so an image content-type is the real success signal. Reject
+    // SVG: it's served same-origin from /img, and SVG executes script in this
+    // origin — mzstatic carries developer-supplied assets, so an image/svg+xml
+    // passthrough would be stored XSS. Raster types only.
+    if (!/^image\/(?!svg)/i.test(ct)) return null;
     return new Response(upstream.body, {
       status: 200,
       headers: {
         'Content-Type': ct,
+        // Never let a browser sniff these bytes back into an active type.
+        'X-Content-Type-Options': 'nosniff',
         // Icons/artwork are effectively immutable; cache hard at edge + client.
         'Cache-Control': 'public, max-age=604800, s-maxage=2592000, immutable',
       },

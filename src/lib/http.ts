@@ -97,6 +97,7 @@ export async function serveR2Image(
         status: 200,
         headers: {
           'Content-Type': ct,
+          'X-Content-Type-Options': 'nosniff',
           // Content-addressed → truly immutable; cache as hard as possible.
           'Cache-Control': 'public, max-age=604800, s-maxage=31536000, immutable',
         },

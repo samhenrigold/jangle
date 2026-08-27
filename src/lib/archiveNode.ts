@@ -43,8 +43,12 @@ const nodeCache = new Map<string, Cached>();
 
 // ia600508.us.archive.org → legacy node, iOS-6-compatible TLS (RSA + CBC-SHA).
 // dn720004.ca.archive.org → modern node, ECDSA/AES-GCM-only, unreachable by iOS 6.
+// Fully anchored to archive.org: `workable_servers` is trusted IA data, but this
+// URL is a 302 an iOS device follows to install a signed package — a start-only
+// anchor (/^ia\d+\./) would let `ia1.evil.com` through if that source were ever
+// tainted. Blast radius doesn't justify the looseness.
 function isLegacyCompatible(host: string): boolean {
-  return /^ia\d+\./i.test(host);
+  return /^ia\d+\.[a-z]{2}\.archive\.org$/i.test(host);
 }
 
 async function fetchMetaField(item: string, field: string): Promise<unknown> {

@@ -1,6 +1,11 @@
 ---
 import Layout from '../components/Layout.astro';
+import { setCacheHeaders } from '../lib/http';
 Astro.response.status = 404;
+// Without this the 404 body is cf-cache-status: BYPASS, so every crawler probe
+// of a bad /app/<id> re-runs resolveApp (2 DB hits). The not-found page is
+// static — let the edge hold it. setCacheHeaders keeps status 404 intact.
+setCacheHeaders(Astro.response, 3600);
 ---
 <Layout title="Not Found — Legacy Store" activeTab="none" description="Page not found on Legacy Store.">
   <div class="content">

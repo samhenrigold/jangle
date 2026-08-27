@@ -37,7 +37,11 @@ export function clampPage(input: unknown): number {
   return Number.isFinite(n) && n >= 1 ? Math.min(n, MAX_PAGE) : 1;
 }
 
+// Snap to the two real values (def and max) instead of clamping to a range: a
+// free-form per_page multiplied the edge-cache keyspace ~50× per listing (each
+// a distinct DB query on miss) for a knob no reader uses at intermediate sizes.
+// The site's only per_page link is the "Next {max}" control, so {def, max} keeps
+// every real URL working and collapses the rest to the default.
 export function clampPageSize(input: unknown, def = 20, max = 50): number {
-  const n = Math.floor(Number(input));
-  return Number.isFinite(n) && n >= 1 ? Math.min(n, max) : def;
+  return Math.floor(Number(input)) === max ? max : def;
 }
