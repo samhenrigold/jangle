@@ -27,6 +27,8 @@ export function formatDate(iso: unknown): string {
 export function formatFileSize(bytes: unknown): string {
   const b = Number(bytes);
   if (!Number.isFinite(b) || b <= 0) return '';
+  const tib = 1024 * 1024 * 1024 * 1024;
+  if (b >= tib) return `${(b / tib).toFixed(1)} TB`;
   if (b >= 1024 * 1024 * 1024) return `${(b / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   if (b >= 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
   if (b >= 1024) return `${Math.round(b / 1024)} KB`;

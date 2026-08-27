@@ -9,7 +9,7 @@
 // passes. Unknown min-OS is included (min_os_source: 'unknown') rather than
 // dropped — same posture as the app page's ?ios filter.
 
-export const EMULATOR_MAX_OS_MAJOR = 3;
+const EMULATOR_MAX_OS_MAJOR = 3;
 
 export interface MinOs {
   os: string | null;

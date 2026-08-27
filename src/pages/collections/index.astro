@@ -2,7 +2,7 @@
 import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
-import { cacheGet, cacheSet } from '../../lib/cache';
+import { cached } from '../../lib/cache';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { appIconSrc } from '../../lib/icons';
@@ -16,18 +16,14 @@ let dbError = false;
 // whole table is editorial-scale (dozens of rows), so one round trip covers
 // the row strips and counts without an RPC.
 type CollectionRow = { slug: string; title: string; subtitle: string | null; series: string | null; count: number; icons: string[] };
-const cacheKey = 'collections_index_v2';
-let collections = cacheGet<CollectionRow[]>(cacheKey);
-if (!collections) {
+const { data: collections, error: colErr } = await cached<CollectionRow[]>('collections_index_v2', 10 * 60 * 1000, async () => {
   const { data, error } = await supabase
     .from('collections')
     .select('slug, title, subtitle, series, sort_order, collection_members(position, apps!collection_members_app_id_fkey(oldest_icon_sha256, icon_url:live_icon_url, excluded))')
     .order('sort_order', { ascending: true, nullsFirst: false });
-  if (error) {
-    console.error('collections query failed:', error.message);
-    dbError = true;
-  } else {
-    collections = (data || []).map((c: any) => {
+  if (error) return { data: null, error };
+  return {
+    data: (data || []).map((c: any) => {
       const members = (c.collection_members || [])
         .filter((m: any) => m.apps && !m.apps.excluded)
         .sort((x: any, y: any) => x.position - y.position);
@@ -42,10 +38,11 @@ if (!collections) {
           .filter(Boolean)
           .slice(0, 4),
       };
-    });
-    cacheSet(cacheKey, collections, 10 * 60 * 1000);
-  }
-}
+    }),
+    error: null,
+  };
+});
+if (colErr) dbError = true;
 
 // Flatten into a render list that inserts a subhead each time a new series
 // begins (collections without a series render standalone, no header).

@@ -113,7 +113,7 @@ function bracketOf(anchors: { x: number; e: number }[], x: number): { lo: number
 // against the dated versions — first by Apple's monotonic external_identifier,
 // then by version number — so nothing that has *any* ordering signal falls to
 // the bottom. Versions with no date, no ext id, and no version number get no key.
-export function buildChronoKeys<T extends Record<string, any>>(
+function buildChronoKeys<T extends Record<string, any>>(
   list: T[],
   dateOf?: (v: T) => string | null | undefined
 ): Map<T, number> {

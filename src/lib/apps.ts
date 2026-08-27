@@ -1,4 +1,51 @@
-import { cacheGet, cacheSet } from './cache';
+import { cacheGet, cacheSet, cached } from './cache';
+
+// The list-row column set shared by every app-list page (search, categories,
+// most-archived, home, collections, recent, emulator API). Kept to what
+// AppList.astro renders — add here, not per-page.
+export const APP_LIST_COLS =
+  'id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, version_count, excluded, developers!apps_developer_id_fkey(artist_name)';
+
+// Flatten the developers embed the way every list page does.
+export function flattenAppRow(a: any) {
+  return { ...a, developer_artist_name: a.developers?.artist_name };
+}
+
+// One page of the ranked-by-version-count list plus its total, fetched
+// concurrently via the RPC pair (get_apps_sorted_by_version_count /
+// get_apps_count). Shared by most-archived and category pages; search keeps
+// its own block (its RPC choice is sort-dependent).
+export async function loadRankedAppPage(
+  supabase: any,
+  opts: { page: number; pageSize: number; genreId?: number | null; cachePrefix: string }
+): Promise<{ apps: any[]; total: number; totalPages: number; dbError: boolean }> {
+  const { page, pageSize, genreId = null, cachePrefix } = opts;
+  const [list, count] = await Promise.all([
+    cached<any[]>(`${cachePrefix}:list:${page}:${pageSize}`, 5 * 60 * 1000, () =>
+      supabase.rpc('get_apps_sorted_by_version_count', {
+        p_limit: pageSize,
+        p_offset: (page - 1) * pageSize,
+        p_genre_id: genreId,
+        p_ascending: false,
+        p_search_query: null,
+      })
+    ),
+    cached<number>(`${cachePrefix}:count`, 10 * 60 * 1000, async () => {
+      const { data, error } = await supabase.rpc('get_apps_count', {
+        p_genre_id: genreId,
+        p_search_query: null,
+      });
+      return { data: Number(Array.isArray(data) ? data[0] : data) || 0, error };
+    }),
+  ]);
+  const total = Number(count.data) || 0;
+  return {
+    apps: list.data || [],
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    dbError: !!(list.error || count.error),
+  };
+}
 
 // Everything the app page needs from an apps row, with the developer/genre
 // names embedded.

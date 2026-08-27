@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 type RuntimeEnv = Record<string, string | undefined> | undefined;
 
-function readEnv(candidates: string[], runtimeEnv?: RuntimeEnv): string | undefined {
+export function readEnv(candidates: string[], runtimeEnv?: RuntimeEnv): string | undefined {
   const meta = (import.meta as any).env || {};
   for (const key of candidates) {
     if (runtimeEnv && runtimeEnv[key] && typeof runtimeEnv[key] === 'string') return runtimeEnv[key] as string;
@@ -12,22 +12,8 @@ function readEnv(candidates: string[], runtimeEnv?: RuntimeEnv): string | undefi
   return undefined;
 }
 
-const SUPABASE_URL_KEYS = [
-  'SUPABASE_URL',
-  'NEXT_PUBLIC_SUPABASE_URL',
-  'VITE_SUPABASE_URL',
-  'SUPABASE_PROJECT_URL',
-];
-
-const SUPABASE_ANON_KEYS = [
-  'SUPABASE_ANON_KEY',
-  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-  'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY',
-  'VITE_SUPABASE_ANON_KEY',
-  'SUPABASE_PUBLIC_ANON_KEY',
-  'SUPABASE_PUBLISHABLE_KEY',
-  'SUPABASE_KEY',
-];
+const SUPABASE_URL_KEYS = ['SUPABASE_URL', 'SUPABASE_PROJECT_URL'];
+const SUPABASE_ANON_KEYS = ['SUPABASE_ANON_KEY', 'SUPABASE_PUBLISHABLE_KEY'];
 
 interface SupabaseClientOptions {
   // Per-request abort deadline (ms). Defaults to 8s; raise it only for the rare
@@ -36,7 +22,7 @@ interface SupabaseClientOptions {
   timeoutMs?: number;
 }
 
-export function getSupabaseClient(runtimeEnv?: RuntimeEnv, options?: SupabaseClientOptions) {
+function getSupabaseClient(runtimeEnv?: RuntimeEnv, options?: SupabaseClientOptions) {
   const supabaseUrl = readEnv(SUPABASE_URL_KEYS, runtimeEnv);
   const supabaseAnonKey = readEnv(SUPABASE_ANON_KEYS, runtimeEnv);
   if (!supabaseUrl || !supabaseAnonKey) {

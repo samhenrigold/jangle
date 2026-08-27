@@ -4,7 +4,7 @@ import { json, fail, CORS } from '../../../lib/coverage';
 import { buildPrefixTsquery, clampPageSize } from '../../../lib/search';
 import { dedupeFilesByHash, sortGroupsByPreference } from '../../../lib/files';
 import { emulatorCompatible, emulatorMinOs } from '../../../lib/emulator';
-import { appTitleOf } from '../../../lib/apps';
+import { appTitleOf, APP_LIST_COLS, flattenAppRow } from '../../../lib/apps';
 
 // Catalog search for the LightTouch emulator (iPod touch 2G / iOS 3.1.3).
 //
@@ -99,7 +99,7 @@ export const GET: APIRoute = async (ctx) => {
       if (!version) return fail(404, 'not_found', 'no such archived copy');
       const { data: app, error: ae } = await supabase
         .from('apps')
-        .select('id, app_store_id, bundle_id, app_store_name, display_name, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)')
+        .select(APP_LIST_COLS)
         .eq('id', version.app_id)
         .maybeSingle();
       if (ae) throw new Error(ae.message);
@@ -108,8 +108,7 @@ export const GET: APIRoute = async (ctx) => {
       if (!emulatorCompatible(version, file, bin)) {
         return fail(404, 'not_compatible', 'this copy is not compatible with the emulator');
       }
-      (app as any).developer_artist_name = (app as any).developers?.artist_name ?? null;
-      return json({ apps: [record(origin, app, version, file, bin)] }, 200, 'public, max-age=300');
+      return json({ apps: [record(origin, flattenAppRow(app), version, file, bin)] }, 200, 'public, max-age=300');
     }
 
     // ---- search / suggestions ----
@@ -138,14 +137,11 @@ export const GET: APIRoute = async (ctx) => {
     // (not in the vector at all). Both are separate lookups, appended after
     // the FTS hits and deduped. Same patterns as the site's own search page.
     if (q) {
-      const APP_FIELDS = 'id, app_store_id, bundle_id, app_store_name, display_name, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)';
-      const flatten = (rows: any[] | null) => (rows || []).map((a: any) => ({
-        ...a, developer_artist_name: a.developers?.artist_name ?? null,
-      }));
+      const flatten = (rows: any[] | null) => (rows || []).map(flattenAppRow);
       const pattern = `%${q.replace(/[%_]/g, (ch) => '\\' + ch)}%`;
       if (q.includes('.')) {
         const { data } = await supabase
-          .from('apps').select(APP_FIELDS)
+          .from('apps').select(APP_LIST_COLS)
           .ilike('bundle_id', pattern).not('excluded', 'is', true).limit(25);
         apps.push(...flatten(data));
       }
@@ -153,7 +149,7 @@ export const GET: APIRoute = async (ctx) => {
         .from('developers').select('id').ilike('artist_name', pattern).limit(5);
       if (devs?.length) {
         const { data } = await supabase
-          .from('apps').select(APP_FIELDS)
+          .from('apps').select(APP_LIST_COLS)
           .in('developer_id', devs.map((d: any) => d.id))
           .not('excluded', 'is', true).limit(50);
         apps.push(...flatten(data));

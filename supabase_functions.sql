@@ -1,184 +1,11 @@
 -- SQL functions to add to Supabase for efficient app sorting
 -- These should be run in the Supabase SQL editor
-
--- Function to get apps sorted by version count.
--- Reads precomputed apps.version_count (maintained by trg_app_version_stats)
--- instead of aggregating all of app_versions on every call. Return type no
--- longer includes search_vector (was pure egress waste). Return-type change
--- requires DROP+CREATE rather than CREATE OR REPLACE.
 --
--- app_store_id is BIGINT: apps.app_store_id is bigint and 19 modern apps
--- (Fortnite, GTA III/SA, ...) exceed the int4 max, so an INTEGER return column
--- threw "integer out of range" for any page containing one (audit item 1).
---
--- The ORDER BY is split into two static branches rather than CASE-wrapping the
--- sort keys: a CASE-based ORDER BY is opaque to the planner and cannot use
--- idx_apps_version_count_name (it sorted the whole filtered set, ~330ms mean);
--- the static DESC branch does an index top-N (~1ms) (audit item 2).
-DROP FUNCTION IF EXISTS get_apps_sorted_by_version_count(integer,integer,bigint,boolean,text);
-CREATE FUNCTION get_apps_sorted_by_version_count(
-  p_limit INTEGER DEFAULT 20, p_offset INTEGER DEFAULT 0,
-  p_genre_id BIGINT DEFAULT NULL, p_ascending BOOLEAN DEFAULT TRUE,
-  p_search_query TEXT DEFAULT NULL
-)
-RETURNS TABLE (
-  id BIGINT, bundle_id TEXT, app_store_id BIGINT, app_store_name TEXT,
-  developer_id BIGINT, genre_id BIGINT, copyright TEXT, icon_url TEXT,
-  display_name TEXT, executable_name TEXT, created_at TIMESTAMPTZ,
-  developer_artist_name TEXT, genre_genre_name TEXT,
-  version_count BIGINT, first_version_date TIMESTAMPTZ
-)
-LANGUAGE plpgsql STABLE
-SET search_path = public, pg_temp
-AS $$
-BEGIN
-  IF p_ascending THEN
-    RETURN QUERY
-      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
-             a.developer_id, a.genre_id, a.copyright, a.icon_url,
-             a.display_name, a.executable_name, a.created_at,
-             d.artist_name, g.genre_name,
-             a.version_count::bigint, a.first_version_date
-      FROM apps a
-      LEFT JOIN developers d ON a.developer_id = d.id
-      LEFT JOIN genres g ON a.genre_id = g.id
-      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
-        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
-      ORDER BY a.version_count ASC, a.display_name ASC
-      LIMIT p_limit OFFSET p_offset;
-  ELSE
-    RETURN QUERY
-      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
-             a.developer_id, a.genre_id, a.copyright, a.icon_url,
-             a.display_name, a.executable_name, a.created_at,
-             d.artist_name, g.genre_name,
-             a.version_count::bigint, a.first_version_date
-      FROM apps a
-      LEFT JOIN developers d ON a.developer_id = d.id
-      LEFT JOIN genres g ON a.genre_id = g.id
-      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
-        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
-      ORDER BY a.version_count DESC, a.display_name ASC
-      LIMIT p_limit OFFSET p_offset;
-  END IF;
-END;
-$$;
-GRANT EXECUTE ON FUNCTION get_apps_sorted_by_version_count(integer,integer,bigint,boolean,text) TO anon, authenticated;
-
--- Function to get apps sorted by first version date (precomputed column).
--- Same bigint + branched-ORDER-BY treatment as above. Default null placement
--- (ASC -> NULLS LAST, DESC -> NULLS FIRST) reproduces the old CASE-based null
--- handling exactly (nulls behave as +infinity). NOTE: the descending path here
--- still lacks a matching index (there is no index on first_version_date) and
--- falls back to a sort; add apps(first_version_date) to make it an index top-N.
-DROP FUNCTION IF EXISTS get_apps_sorted_by_first_version_date(integer,integer,bigint,boolean,text);
-CREATE FUNCTION get_apps_sorted_by_first_version_date(
-  p_limit INTEGER DEFAULT 20, p_offset INTEGER DEFAULT 0,
-  p_genre_id BIGINT DEFAULT NULL, p_ascending BOOLEAN DEFAULT TRUE,
-  p_search_query TEXT DEFAULT NULL
-)
-RETURNS TABLE (
-  id BIGINT, bundle_id TEXT, app_store_id BIGINT, app_store_name TEXT,
-  developer_id BIGINT, genre_id BIGINT, copyright TEXT, icon_url TEXT,
-  display_name TEXT, executable_name TEXT, created_at TIMESTAMPTZ,
-  developer_artist_name TEXT, genre_genre_name TEXT,
-  version_count BIGINT, first_version_date TIMESTAMPTZ
-)
-LANGUAGE plpgsql STABLE
-SET search_path = public, pg_temp
-AS $$
-BEGIN
-  IF p_ascending THEN
-    RETURN QUERY
-      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
-             a.developer_id, a.genre_id, a.copyright, a.icon_url,
-             a.display_name, a.executable_name, a.created_at,
-             d.artist_name, g.genre_name,
-             a.version_count::bigint, a.first_version_date
-      FROM apps a
-      LEFT JOIN developers d ON a.developer_id = d.id
-      LEFT JOIN genres g ON a.genre_id = g.id
-      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
-        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
-      ORDER BY a.first_version_date ASC, a.display_name ASC
-      LIMIT p_limit OFFSET p_offset;
-  ELSE
-    RETURN QUERY
-      SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name,
-             a.developer_id, a.genre_id, a.copyright, a.icon_url,
-             a.display_name, a.executable_name, a.created_at,
-             d.artist_name, g.genre_name,
-             a.version_count::bigint, a.first_version_date
-      FROM apps a
-      LEFT JOIN developers d ON a.developer_id = d.id
-      LEFT JOIN genres g ON a.genre_id = g.id
-      WHERE (p_genre_id IS NULL OR a.genre_id = p_genre_id)
-        AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query))
-      ORDER BY a.first_version_date DESC, a.display_name ASC
-      LIMIT p_limit OFFSET p_offset;
-  END IF;
-END;
-$$;
-GRANT EXECUTE ON FUNCTION get_apps_sorted_by_first_version_date(integer,integer,bigint,boolean,text) TO anon, authenticated;
-
--- Function to get total count for pagination (with optional filters)
-CREATE OR REPLACE FUNCTION get_apps_count(
-  p_genre_id BIGINT DEFAULT NULL,
-  p_search_query TEXT DEFAULT NULL
-)
-RETURNS BIGINT
-LANGUAGE SQL
-STABLE
-AS $$
-  SELECT COUNT(*)
-  FROM apps a
-  WHERE 
-    (p_genre_id IS NULL OR a.genre_id = p_genre_id)
-    AND (p_search_query IS NULL OR a.search_vector @@ to_tsquery('english', p_search_query));
-$$;
-
--- Grant execute permissions to authenticated users
-GRANT EXECUTE ON FUNCTION get_apps_sorted_by_version_count TO authenticated;
-GRANT EXECUTE ON FUNCTION get_apps_sorted_by_first_version_date TO authenticated;
-GRANT EXECUTE ON FUNCTION get_apps_count TO authenticated;
-
--- Grant execute permissions to anonymous users (if needed)
-GRANT EXECUTE ON FUNCTION get_apps_sorted_by_version_count TO anon;
-GRANT EXECUTE ON FUNCTION get_apps_sorted_by_first_version_date TO anon;
-GRANT EXECUTE ON FUNCTION get_apps_count TO anon;
-
-CREATE OR REPLACE FUNCTION get_genres_with_counts()
-RETURNS TABLE (
-  id BIGINT,
-  genre_id BIGINT,
-  genre_name TEXT,
-  created_at TIMESTAMPTZ,
-  app_count BIGINT,
-  total_apps BIGINT
-) 
-LANGUAGE SQL
-STABLE
-AS $$
-  WITH total_count AS (
-    SELECT COUNT(*) as total FROM apps
-  )
-  SELECT 
-    g.id,
-    g.genre_id,
-    g.genre_name,
-    g.created_at,
-    COALESCE(COUNT(a.id), 0) as app_count,
-    tc.total as total_apps
-  FROM genres g
-  LEFT JOIN apps a ON g.id = a.genre_id
-  CROSS JOIN total_count tc
-  GROUP BY g.id, g.genre_id, g.genre_name, g.created_at, tc.total
-  ORDER BY g.genre_name ASC;
-$$;
-
--- Grant execute permissions
-GRANT EXECUTE ON FUNCTION get_genres_with_counts TO authenticated;
-GRANT EXECUTE ON FUNCTION get_genres_with_counts TO anon;
+-- NOTE: this file is a chronological journal. Superseded early definitions of
+-- get_apps_sorted_by_version_count / get_apps_sorted_by_first_version_date /
+-- get_apps_count / get_genres_with_counts / refresh_app_version_stats were
+-- deleted 2026-08-27 (they were dead text — the later, live-verified
+-- definitions below always won on re-apply). See git history for the originals.
 
 -- ── Precomputed per-app version stats (perf) — applied 2026-07 in production ──
 -- Backing columns for the sort functions above; kept correct by a trigger.
@@ -191,29 +18,8 @@ ALTER TABLE public.apps
 -- FROM (SELECT app_id, COUNT(*) cnt, MIN(release_date) first_date FROM public.app_versions GROUP BY app_id) s
 -- WHERE a.id = s.app_id;
 
-CREATE OR REPLACE FUNCTION public.refresh_app_version_stats()
-RETURNS trigger LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
-DECLARE target bigint;
-BEGIN
-  target := COALESCE(NEW.app_id, OLD.app_id);
-  IF target IS NOT NULL THEN
-    UPDATE public.apps a SET version_count = COALESCE(s.cnt,0), first_version_date = s.first_date
-    FROM (SELECT COUNT(*) cnt, MIN(release_date) first_date FROM public.app_versions WHERE app_id = target) s
-    WHERE a.id = target;
-  END IF;
-  IF TG_OP = 'UPDATE' AND NEW.app_id IS DISTINCT FROM OLD.app_id AND OLD.app_id IS NOT NULL THEN
-    UPDATE public.apps a SET version_count = COALESCE(s.cnt,0), first_version_date = s.first_date
-    FROM (SELECT COUNT(*) cnt, MIN(release_date) first_date FROM public.app_versions WHERE app_id = OLD.app_id) s
-    WHERE a.id = OLD.app_id;
-  END IF;
-  RETURN NULL;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_app_version_stats ON public.app_versions;
-CREATE TRIGGER trg_app_version_stats
-AFTER INSERT OR UPDATE OF app_id, release_date OR DELETE
-ON public.app_versions FOR EACH ROW EXECUTE FUNCTION public.refresh_app_version_stats();
+-- (refresh_app_version_stats + its row-level trigger lived here; superseded by
+-- the statement-level F8 version below.)
 
 CREATE INDEX IF NOT EXISTS idx_apps_version_count_name
   ON public.apps (version_count DESC, display_name ASC);
@@ -352,10 +158,14 @@ SELECT jsonb_build_object(
                           FROM apps a JOIN genres g ON g.id = a.genre_id
                           GROUP BY g.genre_name, g.id ORDER BY count(*) DESC LIMIT 10) s),
   'apps_with_genre',   (SELECT count(*) FROM apps WHERE genre_id IS NOT NULL),
-  -- Last day new apps were ingested, and how many landed that day — apps.created_at
-  -- is the closest thing to a scrape-run log we have (no dedicated run table).
-  'last_ingest_at',        (SELECT max(created_at) FROM apps),
-  'apps_added_last_ingest', (SELECT count(*) FROM apps WHERE created_at::date = (SELECT max(created_at::date) FROM apps))
+  -- Real ingest activity: ipa_files.created_at is when the pipeline last archived
+  -- a copy (the frequent event). We report that timestamp plus what landed that
+  -- day — copies, newly-seen versions, and newly-seen apps — so the stats line
+  -- reflects the continuously-running pipeline, not just rare net-new-app days.
+  'last_ingest_at',           (SELECT max(created_at) FROM ipa_files),
+  'copies_added_last_ingest', (SELECT count(*) FROM ipa_files WHERE created_at::date = (SELECT max(created_at::date) FROM ipa_files)),
+  'versions_added_last_ingest',(SELECT count(*) FROM app_versions WHERE created_at::date = (SELECT max(created_at::date) FROM ipa_files)),
+  'apps_added_last_ingest',   (SELECT count(*) FROM apps WHERE created_at::date = (SELECT max(created_at::date) FROM ipa_files))
 )
 FROM av, ipf;
 $$;
@@ -1011,3 +821,19 @@ AS $function$
   from limited l
   order by l.captured_at asc;
 $function$;
+
+-- ============================================================================
+-- Screenshot-set precompute (2026-08-27). get_app_screenshots recomputed a
+-- ~500ms pipeline per call (591k calls/yr) over frozen data. Now:
+--   compute_app_screenshots  = the old pipeline (renamed; + lowest-id tiebreak
+--                              fix for duplicate app_store_id rows, which made
+--                              the old bare subquery THROW for those apps)
+--   app_screenshot_sets(_state) = cache tables, per-app watermark = max
+--                              app_listing_snapshots.id
+--   refresh_app_screenshots  = incremental refresher, pg_cron '47 4 * * *'
+--   get_app_screenshots      = reads cache, falls back to live compute for
+--                              apps the refresher hasn't reached
+-- 517ms -> 2ms measured. Definitions live in migrations
+-- app_screenshot_sets_cache + compute_app_screenshots_dup_appid_fix; run
+-- select pg_get_functiondef against the live DB for current bodies.
+-- ============================================================================

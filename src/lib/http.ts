@@ -73,3 +73,37 @@ export function blankGif(status: number, cacheControl: string): Response {
     headers: { 'Content-Type': 'image/gif', 'Cache-Control': cacheControl },
   });
 }
+
+// Serve a content-addressed image from the public R2 bucket, probing each
+// candidate extension (the extension isn't recorded in the DB). Shared by
+// /icon and /screen. Only a durable miss (every extension cleanly 404s) may
+// cache as a 404 blank: a transient R2/network blip must return an uncacheable
+// 503 or a day-cached blank turns one blip into a persistently "missing" image
+// in that browser (seen live: Infinity Blade's icon stuck blank).
+export async function serveR2Image(
+  base: string,
+  sha: string,
+  exts: readonly (readonly [string, string])[] // [ext, content-type]
+): Promise<Response> {
+  let transient = false;
+  for (const [ext, ct] of exts) {
+    try {
+      const upstream = await fetch(`${base}/${sha}.${ext}`, { headers: { Accept: 'image/*' } });
+      if (!upstream.ok) {
+        if (upstream.status !== 404) transient = true;
+        continue;
+      }
+      return new Response(upstream.body, {
+        status: 200,
+        headers: {
+          'Content-Type': ct,
+          // Content-addressed → truly immutable; cache as hard as possible.
+          'Cache-Control': 'public, max-age=604800, s-maxage=31536000, immutable',
+        },
+      });
+    } catch {
+      transient = true;
+    }
+  }
+  return transient ? blankGif(503, 'no-store') : blankGif(404, 'public, max-age=86400, s-maxage=86400');
+}

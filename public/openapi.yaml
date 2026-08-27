@@ -104,6 +104,41 @@ paths:
       summary: CORS preflight
       responses:
         "204": { description: No content }
+  /api/emulator/apps:
+    get:
+      summary: Emulator catalog search (LightTouch — iPod touch 2G / iOS 3.1.3)
+      description: >
+        Each record is one app with its single best emulator-compatible archived copy
+        (newest compatible version, best copy within it). With q, searches app names,
+        bundle ids (if q contains a dot), and developer names; with no q, returns the
+        most-archived compatible apps. With ipa_id, returns the one record for a known
+        copy (404 if unknown or not compatible). download_url 302s to archive.org —
+        a link, not a proxy.
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+        - { name: ipa_id, in: query, required: false, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        "200":
+          description: Matching records (possibly empty).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apps]
+                properties:
+                  apps:
+                    type: array
+                    items: { $ref: "#/components/schemas/EmulatorRecord" }
+          headers:
+            Cache-Control: { schema: { type: string }, description: "public, max-age=300" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    options:
+      summary: CORS preflight
+      responses:
+        "204": { description: No content }
 components:
   schemas:
     Probe:
@@ -138,6 +173,21 @@ components:
             key set is open-ended; treat unrecognized keys gracefully. Quarantined/tampered
             copies are never counted.
           additionalProperties: { type: integer, minimum: 0 }
+    EmulatorRecord:
+      type: object
+      required: [ipa_id, download_url, app_url]
+      properties:
+        bundle_id: { type: string, nullable: true }
+        name: { type: string }
+        developer: { type: string, nullable: true }
+        version: { type: string, nullable: true }
+        min_os: { type: string, nullable: true, description: Effective minimum iOS version }
+        min_os_source: { type: string, description: Where min_os came from (metadata or the binary itself) }
+        size: { type: integer, format: int64, nullable: true, description: File size in bytes }
+        ipa_id: { type: integer, format: int64 }
+        icon_url: { type: string, nullable: true }
+        download_url: { type: string, description: 302s to the archived copy on archive.org }
+        app_url: { type: string }
     Error:
       type: object
       required: [error]

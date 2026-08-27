@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { blankGif } from '../../lib/http';
+import { blankGif, serveR2Image } from '../../lib/http';
 import { supabaseFor } from '../../lib/supabase';
 
 // Content-addressed icon serving from the public R2 bucket (shas come from
@@ -56,30 +56,5 @@ export const GET: APIRoute = async (ctx) => {
     } catch { /* serve directly */ }
   }
 
-  let transient = false;
-  for (const ext of ['jpg', 'png']) {
-    try {
-      const upstream = await fetch(`${R2_ICON_BASE}/${sha}.${ext}`, { headers: { Accept: 'image/*' } });
-      if (!upstream.ok) {
-        if (upstream.status !== 404) transient = true;
-        continue;
-      }
-      return new Response(upstream.body, {
-        status: 200,
-        headers: {
-          'Content-Type': ext === 'png' ? 'image/png' : 'image/jpeg',
-          // Content-addressed → truly immutable; cache as hard as possible.
-          'Cache-Control': 'public, max-age=604800, s-maxage=31536000, immutable',
-        },
-      });
-    } catch {
-      transient = true;
-    }
-  }
-  // Only a durable miss (both extensions cleanly 404 in R2) may cache: the
-  // object is content-addressed, so absence is stable until a backfill. A
-  // transient failure (R2/network blip) must NOT — a day-cached blank turns
-  // one blip into a persistently "missing" icon in that browser (seen live:
-  // Infinity Blade's icon, present in R2 since Jul 10, stuck blank).
-  return transient ? blankGif(503, 'no-store') : blank(404);
+  return serveR2Image(R2_ICON_BASE, sha, [['jpg', 'image/jpeg'], ['png', 'image/png']]);
 };

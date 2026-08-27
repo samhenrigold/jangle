@@ -117,8 +117,11 @@ export const GET: APIRoute = async (ctx) => {
       headers: {
         'Content-Type': 'text/xml',
         // Manifest content only changes when a row is edited (icon backfills,
-        // availability flips) — let the edge absorb repeat installs.
-        'Cache-Control': 'public, max-age=600, s-maxage=3600',
+        // availability flips) — let the edge absorb repeat installs. Split
+        // headers (not s-maxage) so stale-if-error keeps OTA installs working
+        // through a DB blip (s-maxage disables it; see lib/http.ts).
+        'Cache-Control': 'public, max-age=600, stale-while-revalidate=86400, stale-if-error=604800',
+        'Cloudflare-CDN-Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400, stale-if-error=604800',
       },
     });
   } catch (err) {

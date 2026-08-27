@@ -2,7 +2,7 @@
 import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
-import { cacheGet, cacheSet } from '../../lib/cache';
+import { cacheGet, cacheSet, cached } from '../../lib/cache';
 import { sortVersions, coerceDir } from '../../lib/sorting';
 import { generateIpaDownloadUrl } from '../../lib/urls';
 import { iconSrc, appIconSrc } from '../../lib/icons';
@@ -93,12 +93,8 @@ let moreFromIcons: Map<number, string> | undefined;
 
 // A. versions → archived copies → binary enrichment (each stage needs the last).
 const loadCore = async () => {
-  const versionsCacheKey = `versions:${appData.id}`;
-  const cachedVersions = cacheGet<any[]>(versionsCacheKey);
-  if (cachedVersions) {
-    versions = cachedVersions;
-  } else {
-    const { data, error } = await supabase
+  const { data: vData, error: vError } = await cached<any[]>(`versions:${appData.id}`, 5 * 60 * 1000, () =>
+    supabase
       .from('app_versions')
       .select('id, version_string, build_number, minimum_os_version, release_date, estimated_release_date, external_identifier, device_family')
       .eq('app_id', appData.id)
@@ -108,15 +104,13 @@ const loadCore = async () => {
       // original Polaroid icon vanished from the page while the sidebar,
       // computed DB-side over ALL versions, still showed it). Corpus max is
       // ~307; 1000 is PostgREST's hard cap anyway.
-      .limit(1000);
-    versions = data || [];
-    if (error) {
-      console.error('versions query failed:', error.message);
-      dbError = true;
-      setDegraded(Astro.response);
-      return;
-    }
-    cacheSet(versionsCacheKey, versions, 5 * 60 * 1000);
+      .limit(1000)
+  );
+  versions = vData || [];
+  if (vError) {
+    dbError = true;
+    setDegraded(Astro.response);
+    return;
   }
 
   const versionIds = versions.map((v: any) => v.id);
@@ -124,27 +118,32 @@ const loadCore = async () => {
   // Bounded key (version sets change only at ingest); a cached empty array is a
   // hit, not a perpetual refetch.
   const ipaCacheKey = `ipa_files_b:${appData.id}:${versionIds.length}`;
-  const cachedIpa = cacheGet<any[]>(ipaCacheKey);
-  if (cachedIpa) {
-    ipaFiles = cachedIpa;
-  } else {
+  const { data: iData, error: iError } = await cached<any[]>(ipaCacheKey, 5 * 60 * 1000, async () => {
     // Binary enrichment (plan 009) rides along as a PostgREST embed via the
     // ipa_files.binary_sha1 FK — install_status, architectures, and the icon
     // extracted from the IPA itself, keyed by content hash (many mirrored
     // files share one binaries row). This used to be a second serial chunked
     // lookup (ceil(shas/150) extra round trips) before the FK existed.
-    const { data, error } = await supabase
-      .from('ipa_files')
-      .select('id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, info_plist_path, binary_sha1, available, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id), binaries!ipa_files_binary_sha1_fkey(sha1, install_status, architectures, macho_min_os, itunes_artwork_sha256, bundle_icon_sha256, has_watch_app, has_extensions, hidden, retina_iphone, retina_ipad, retina_iphone_plus, device_family_macho)')
-      .in('app_version_id', versionIds);
-    ipaFiles = data || [];
-    if (error) {
-      console.error('ipa files query failed:', error.message);
-      dbError = true;
-      setDegraded(Astro.response);
-      return;
-    }
-    cacheSet(ipaCacheKey, ipaFiles, 5 * 60 * 1000);
+    // Chunked at 150 ids per request: one un-chunked .in() over up to 1000
+    // version ids both risks a 414 and silently truncates at PostgREST's
+    // 1000-row cap once copies-per-version exceed ~1 (same tail-loss bug as
+    // the versions .limit above). Chunks are independent → fetched concurrently.
+    const results = await Promise.all(
+      Array.from({ length: Math.ceil(versionIds.length / 150) }, (_, i) =>
+        supabase
+          .from('ipa_files')
+          .select('id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, info_plist_path, binary_sha1, available, archive_item_id, archive_items!ipa_files_archive_item_id_fkey(ia_item_id), binaries!ipa_files_binary_sha1_fkey(sha1, install_status, architectures, macho_min_os, itunes_artwork_sha256, bundle_icon_sha256, has_watch_app, has_extensions, hidden, retina_iphone, retina_ipad, retina_iphone_plus, device_family_macho)')
+          .in('app_version_id', versionIds.slice(i * 150, i * 150 + 150))
+      )
+    );
+    const failed = results.find((r: any) => r.error);
+    return { data: results.flatMap((r: any) => r.data || []), error: failed?.error ?? null };
+  });
+  ipaFiles = iData || [];
+  if (iError) {
+    dbError = true;
+    setDegraded(Astro.response);
+    return;
   }
   if (!ipaFiles.length) return;
 
@@ -238,10 +237,7 @@ const loadSubgenre = async () => {
 const loadMoreFromDev = async () => {
   if (!appData.developer_id) return;
   const key = `morefrom:${appData.developer_id}:${appData.id}`;
-  const cached = cacheGet<any[]>(key);
-  if (cached) {
-    moreFromDev = cached;
-  } else {
+  moreFromDev = (await cached<any[]>(key, 10 * 60 * 1000, async () => {
     const { data } = await supabase
       .from('apps')
       .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url:live_icon_url, version_count')
@@ -250,9 +246,9 @@ const loadMoreFromDev = async () => {
       .not('excluded', 'is', true)
       .order('version_count', { ascending: false })
       .limit(12);
-    moreFromDev = data || [];
-    cacheSet(key, moreFromDev, 10 * 60 * 1000);
-  }
+    // Best-effort: an error just caches/renders an empty list, as before.
+    return { data: data || [], error: null };
+  })).data || [];
   if (moreFromDev.length) moreFromIcons = await getOldestIcons(supabase, moreFromDev.map((a: any) => Number(a.id)));
 };
 
@@ -260,23 +256,22 @@ const loadMoreFromDev = async () => {
 // unpublished collections out. Decorative — a failure just drops the line.
 let inCollections: { slug: string; title: string }[] = [];
 const loadInCollections = async () => {
-  const key = `app_collections:${appData.id}`;
-  const cached = cacheGet<{ slug: string; title: string }[]>(key);
-  if (cached) {
-    inCollections = cached;
-    return;
-  }
-  const { data, error } = await supabase
-    .from('collection_members')
-    .select('collections!collection_members_collection_id_fkey(slug, title)')
-    .eq('app_id', appData.id);
-  if (error) return;
-  const seen = new Set<string>();
-  inCollections = (data || [])
-    .map((m: any) => m.collections)
-    .filter((c: any) => c && !seen.has(c.slug) && seen.add(c.slug))
-    .map((c: any) => ({ slug: c.slug, title: c.title }));
-  cacheSet(key, inCollections, 10 * 60 * 1000);
+  const { data } = await cached<{ slug: string; title: string }[]>(`app_collections:${appData.id}`, 10 * 60 * 1000, async () => {
+    const { data, error } = await supabase
+      .from('collection_members')
+      .select('collections!collection_members_collection_id_fkey(slug, title)')
+      .eq('app_id', appData.id);
+    if (error) return { data: null, error };
+    const seen = new Set<string>();
+    return {
+      data: (data || [])
+        .map((m: any) => m.collections)
+        .filter((c: any) => c && !seen.has(c.slug) && seen.add(c.slug))
+        .map((c: any) => ({ slug: c.slug, title: c.title })),
+      error: null,
+    };
+  });
+  inCollections = data || [];
 };
 
 // E. Period-authentic screenshots: the distinct screenshot SETS across the
@@ -296,30 +291,33 @@ type ShotSet = { date: string; label: string; version: string | null; shots: Sho
 let screenshotSets: ShotSet[] = [];
 const loadScreenshots = async () => {
   if (!appStoreId) return;
-  const key = `shotsets:v2:${appStoreId}`;   // v2: shots carry box width
-  const cached = cacheGet<ShotSet[]>(key);
-  if (cached) { screenshotSets = cached; return; }
-  const { data, error } = await supabase.rpc('get_app_screenshots', {
-    p_app_store_id: appStoreId,
-    p_max_sets: 40,
+  // v2: shots carry box width
+  const { data: sets } = await cached<ShotSet[]>(`shotsets:v2:${appStoreId}`, 30 * 60 * 1000, async () => {
+    const { data, error } = await supabase.rpc('get_app_screenshots', {
+      p_app_store_id: appStoreId,
+      p_max_sets: 40,
+    });
+    if (error) return { data: null, error };
+    return {
+      data: (data || [])
+        .map((row: any) => ({
+          date: row.captured_at,
+          label: formatMonthYear(row.captured_at),
+          version: row.version_string || null,
+          shots: (row.shots || [])
+            .map((s: any) => {
+              if (!s || !s.sha) return null;
+              const w = Number(s.w), h = Number(s.h);
+              const boxW = w > 0 && h > 0 ? Math.round(SHOT_H * w / h) : Math.round(SHOT_H * 0.5625);
+              return { src: `/screen/${s.sha}`, w: boxW };
+            })
+            .filter(Boolean) as Shot[],
+        }))
+        .filter((s: ShotSet) => s.shots.length > 0),
+      error: null,
+    };
   });
-  if (error) { console.error('screenshots rpc failed:', error.message); return; }
-  screenshotSets = (data || [])
-    .map((row: any) => ({
-      date: row.captured_at,
-      label: formatMonthYear(row.captured_at),
-      version: row.version_string || null,
-      shots: (row.shots || [])
-        .map((s: any) => {
-          if (!s || !s.sha) return null;
-          const w = Number(s.w), h = Number(s.h);
-          const boxW = w > 0 && h > 0 ? Math.round(SHOT_H * w / h) : Math.round(SHOT_H * 0.5625);
-          return { src: `/screen/${s.sha}`, w: boxW };
-        })
-        .filter(Boolean) as Shot[],
-    }))
-    .filter((s: ShotSet) => s.shots.length > 0);
-  cacheSet(key, screenshotSets, 30 * 60 * 1000);
+  screenshotSets = sets || [];
 };
 const setLabel = (s: ShotSet) => s.label + (s.version ? ` · v${s.version}` : '');
 

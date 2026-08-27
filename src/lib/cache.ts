@@ -24,6 +24,22 @@ export function cacheGet<T>(key: string): T | undefined {
   return entry.value as T;
 }
 
+// Memoized DB call. Wraps the `cacheGet → run → log error / cacheSet` block
+// that every page repeated: a hit returns {data, error: null}; a miss runs fn,
+// logs and passes through the error, and caches only success.
+export async function cached<T>(
+  key: string,
+  ttlMs: number,
+  fn: () => PromiseLike<{ data: T | null; error: any }>
+): Promise<{ data: T | null; error: any }> {
+  const hit = cacheGet<T>(key);
+  if (hit !== undefined) return { data: hit, error: null };
+  const { data, error } = await fn();
+  if (error) console.error(`${key} failed:`, error.message ?? error);
+  else cacheSet(key, data as T, ttlMs);
+  return { data, error };
+}
+
 export function cacheSet<T>(key: string, value: T, ttlMs: number): void {
   // Re-insert at the newest position, then evict from the oldest end if over cap.
   store.delete(key);

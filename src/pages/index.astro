@@ -4,7 +4,7 @@ import Layout from '../components/Layout.astro';
 import DbError from '../components/DbError.astro';
 import AppList from '../components/AppList.astro';
 import SectionHeader from '../components/SectionHeader.astro';
-import { cacheGet, cacheSet } from '../lib/cache';
+import { cached } from '../lib/cache';
 import { setCacheHeaders, setDegraded } from '../lib/http';
 import { appIconSrc } from '../lib/icons';
 import { formatDate } from '../lib/format';
@@ -42,29 +42,28 @@ let heroYearsAgo = 0;
 // hand-picked list that used to live in src/lib/featured.ts. The only chain
 // allowed to set dbError; peak badges chain onto it since they need the ids.
 const loadFeatured = async () => {
-  const featuredCacheKey = 'featured_apps_v3';
-  featuredApps = cacheGet<any[]>(featuredCacheKey);
-  if (!featuredApps) {
+  const { data: featured, error } = await cached<any[]>('featured_apps_v3', 10 * 60 * 1000, async () => {
     const { data, error } = await supabase
       .from('collections')
       .select('collection_members(position, apps!collection_members_app_id_fkey(id, app_store_id, bundle_id, app_store_name, display_name, version_count, oldest_icon_sha256, excluded, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)))')
       .eq('slug', 'featured')
       .maybeSingle();
-    if (error) {
-      console.error('featured query failed:', error.message);
-      featuredApps = [];
-      dbError = true;
-      return;
-    }
+    if (error) return { data: null, error };
     // An unpublished/missing 'featured' collection is an empty section, not
     // an outage.
-    featuredApps = (data?.collection_members || [])
+    const apps = (data?.collection_members || [])
       .sort((x: any, y: any) => x.position - y.position)
       .map((m: any) => m.apps)
       .filter((a: any) => a && !a.excluded)
       .map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
-    cacheSet(featuredCacheKey, featuredApps, 10 * 60 * 1000);
+    return { data: apps, error: null };
+  });
+  if (error) {
+    featuredApps = [];
+    dbError = true;
+    return;
   }
+  featuredApps = featured || [];
   // Period-authentic (oldest) icons ride the embed — no second query.
   iconShas = new Map(
     featuredApps
@@ -122,31 +121,30 @@ const loadHero = async () => {
 type HomeCollection = { slug: string; title: string; subtitle: string | null; icons: string[] };
 let homeCollections: HomeCollection[] = [];
 const loadCollections = async () => {
-  const key = 'home_collections_v1';
-  const cached = cacheGet<HomeCollection[]>(key);
-  if (cached) {
-    homeCollections = cached;
-    return;
-  }
-  const { data, error } = await supabase
-    .from('collections')
-    .select('slug, title, subtitle, featured_rank, collection_members(position, apps!collection_members_app_id_fkey(oldest_icon_sha256, icon_url:live_icon_url, excluded))')
-    .not('featured_rank', 'is', null)
-    .order('featured_rank', { ascending: true })
-    .limit(3);
-  if (error || !data) return;
-  homeCollections = data.map((c: any) => ({
-    slug: c.slug,
-    title: c.title,
-    subtitle: c.subtitle,
-    icons: (c.collection_members || [])
-      .filter((m: any) => m.apps && !m.apps.excluded)
-      .sort((x: any, y: any) => x.position - y.position)
-      .map((m: any) => appIconSrc(m.apps.oldest_icon_sha256, m.apps.icon_url))
-      .filter(Boolean)
-      .slice(0, 4),
-  }));
-  cacheSet(key, homeCollections, 10 * 60 * 1000);
+  const { data: cols } = await cached<HomeCollection[]>('home_collections_v1', 10 * 60 * 1000, async () => {
+    const { data, error } = await supabase
+      .from('collections')
+      .select('slug, title, subtitle, featured_rank, collection_members(position, apps!collection_members_app_id_fkey(oldest_icon_sha256, icon_url:live_icon_url, excluded))')
+      .not('featured_rank', 'is', null)
+      .order('featured_rank', { ascending: true })
+      .limit(3);
+    if (error || !data) return { data: null, error };
+    return {
+      data: data.map((c: any) => ({
+        slug: c.slug,
+        title: c.title,
+        subtitle: c.subtitle,
+        icons: (c.collection_members || [])
+          .filter((m: any) => m.apps && !m.apps.excluded)
+          .sort((x: any, y: any) => x.position - y.position)
+          .map((m: any) => appIconSrc(m.apps.oldest_icon_sha256, m.apps.icon_url))
+          .filter(Boolean)
+          .slice(0, 4),
+      })),
+      error: null,
+    };
+  });
+  homeCollections = cols || [];
 };
 
 await Promise.all([loadFeatured(), loadHero(), loadCollections()]);

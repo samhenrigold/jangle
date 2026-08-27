@@ -2,7 +2,7 @@
 // the historical charts browser (/charts) and the app-page history
 // sections (chart trajectory, rating history, archived reviews).
 
-import { cacheGet, cacheSet } from './cache';
+import { cacheGet, cacheSet, cached } from './cache';
 import { iconSrc, appIconSrc } from './icons';
 
 export type ChartType = { id: number; name: string; slug: string };
@@ -33,31 +33,23 @@ export function waybackUrl(ts: string | null, sourceUrl: string): string {
 // chart_types is a 5-row lookup table; null means the query failed (degrade,
 // don't cache).
 export async function getChartTypes(supabase: any): Promise<ChartType[] | null> {
-  const cached = cacheGet<ChartType[]>('tm:chart_types');
-  if (cached) return cached;
-  const { data, error } = await supabase.from('chart_types').select('id, name, slug').order('id');
-  if (error) {
-    console.error('chart_types query failed:', error.message);
-    return null;
-  }
-  const types = data || [];
-  cacheSet('tm:chart_types', types, 60 * 60 * 1000);
-  return types;
+  const { data } = await cached<ChartType[]>('tm:chart_types', 60 * 60 * 1000, async () => {
+    const { data, error } = await supabase.from('chart_types').select('id, name, slug').order('id');
+    return { data: error ? null : data || [], error };
+  });
+  return data;
 }
 
 // genres.id doubles as the App Store genre id (chart_snapshots.genre_id FK).
 export async function getGenreNames(supabase: any): Promise<Map<number, string> | null> {
-  const cached = cacheGet<Map<number, string>>('tm:genre_names');
-  if (cached) return cached;
-  const { data, error } = await supabase.from('genres').select('id, genre_name');
-  if (error) {
-    console.error('genres query failed:', error.message);
-    return null;
-  }
-  const map = new Map<number, string>();
-  for (const g of data || []) map.set(Number(g.id), g.genre_name);
-  cacheSet('tm:genre_names', map, 60 * 60 * 1000);
-  return map;
+  const { data } = await cached<Map<number, string>>('tm:genre_names', 60 * 60 * 1000, async () => {
+    const { data, error } = await supabase.from('genres').select('id, genre_name');
+    if (error) return { data: null, error };
+    const map = new Map<number, string>();
+    for (const g of data || []) map.set(Number(g.id), g.genre_name);
+    return { data: map, error: null };
+  });
+  return data;
 }
 
 // Chart depth from the feed URL (…/limit=100/xml). Cheaper than counting
@@ -70,44 +62,41 @@ function limitOf(sourceUrl: string): number {
 // The full snapshot index (~1.3k rows) in one query; every navigation control
 // on /charts derives from it, so it's cached as a unit.
 export async function getSnapshotIndex(supabase: any): Promise<SnapshotMeta[] | null> {
-  const cached = cacheGet<SnapshotMeta[]>('tm:snapshot_index');
-  if (cached) return cached;
-  // PostgREST caps responses at max-rows (1000) regardless of .limit(), so
-  // page through; the index is ~1.3k rows and growing.
-  const CHUNK = 1000;
-  const MAX_CHUNKS = 20;
-  const rows: any[] = [];
-  for (let i = 0; i < MAX_CHUNKS; i++) {
-    const { data, error } = await supabase
-      .from('chart_snapshots')
-      .select('id, snapshot_date, chart_type_id, genre_id, source_url, captured_ts, position_count')
-      // Hide sparse captures (<=3 apps): those are noise to page through, and a
-      // chart_type/device/genre combo whose captures are all sparse drops out of
-      // the filter options entirely. position_count is a maintained column, so
-      // this is an indexed filter, not a per-request aggregate over chart_positions.
-      .gt('position_count', 3)
-      .order('snapshot_date', { ascending: true })
-      .order('id', { ascending: true })
-      .range(i * CHUNK, i * CHUNK + CHUNK - 1);
-    if (error) {
-      console.error('chart_snapshots index query failed:', error.message);
-      return null;
+  const { data: index } = await cached<SnapshotMeta[]>('tm:snapshot_index', 10 * 60 * 1000, async () => {
+    // PostgREST caps responses at max-rows (1000) regardless of .limit(), so
+    // page through; the index is ~1.3k rows and growing.
+    const CHUNK = 1000;
+    const MAX_CHUNKS = 20;
+    const rows: any[] = [];
+    for (let i = 0; i < MAX_CHUNKS; i++) {
+      const { data, error } = await supabase
+        .from('chart_snapshots')
+        .select('id, snapshot_date, chart_type_id, genre_id, source_url, captured_ts, position_count')
+        // Hide sparse captures (<=3 apps): those are noise to page through, and a
+        // chart_type/device/genre combo whose captures are all sparse drops out of
+        // the filter options entirely. position_count is a maintained column, so
+        // this is an indexed filter, not a per-request aggregate over chart_positions.
+        .gt('position_count', 3)
+        .order('snapshot_date', { ascending: true })
+        .order('id', { ascending: true })
+        .range(i * CHUNK, i * CHUNK + CHUNK - 1);
+      if (error) return { data: null, error };
+      rows.push(...(data || []));
+      if ((data || []).length < CHUNK) break;
     }
-    rows.push(...(data || []));
-    if ((data || []).length < CHUNK) break;
-  }
-  const index: SnapshotMeta[] = rows.map((s: any) => ({
-    id: Number(s.id),
-    snapshot_date: s.snapshot_date,
-    chart_type_id: Number(s.chart_type_id),
-    genre_id: s.genre_id == null ? null : Number(s.genre_id),
-    source_url: s.source_url || '',
-    captured_ts: s.captured_ts || null,
-    // Actual archived depth (maintained count), falling back to the URL's declared
-    // limit; used for "densest capture wins" dedupe and the sparse-capture filter.
-    positions: s.position_count != null ? Number(s.position_count) : limitOf(s.source_url),
-  }));
-  cacheSet('tm:snapshot_index', index, 10 * 60 * 1000);
+    const index: SnapshotMeta[] = rows.map((s: any) => ({
+      id: Number(s.id),
+      snapshot_date: s.snapshot_date,
+      chart_type_id: Number(s.chart_type_id),
+      genre_id: s.genre_id == null ? null : Number(s.genre_id),
+      source_url: s.source_url || '',
+      captured_ts: s.captured_ts || null,
+      // Actual archived depth (maintained count), falling back to the URL's declared
+      // limit; used for "densest capture wins" dedupe and the sparse-capture filter.
+      positions: s.position_count != null ? Number(s.position_count) : limitOf(s.source_url),
+    }));
+    return { data: index, error: null };
+  });
   return index;
 }
 
@@ -191,19 +180,14 @@ export function chartRowIcon(
 // Chart entries for one capture, ranked. Shared by /charts and the
 // Featured page's "years ago this week" module.
 export async function getSnapshotPositions(supabase: any, snapshotId: number): Promise<any[] | null> {
-  const key = `tm:positions:${snapshotId}`;
-  const cached = cacheGet<any[]>(key);
-  if (cached) return cached;
+  const { data: rows } = await cached<any[]>(`tm:positions:${snapshotId}`, 10 * 60 * 1000, async () => {
   const { data, error } = await supabase
     .from('chart_positions')
     .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, bundle_id, app_store_name, icon_url:live_icon_url, oldest_icon_sha256, excluded)')
     .eq('chart_snapshot_id', snapshotId)
     .order('position', { ascending: true })
     .limit(300);
-  if (error) {
-    console.error('chart_positions query failed:', error.message);
-    return null;
-  }
+  if (error) return { data: null, error };
   // A chart entry's identity is its app_store_id — the authoritative App Store id
   // from the feed. chart_positions.app_id, by contrast, was resolved by a NAME
   // match at ingest, which can bind a charted title to the wrong app in our
@@ -235,7 +219,8 @@ export async function getSnapshotPositions(supabase: any, snapshotId: number): P
       !r.developer_name && app?.app_store_name ? app.app_store_name : r.display_name;
     return { ...r, apps: app, display_name };
   });
-  cacheSet(key, rows, 10 * 60 * 1000);
+  return { data: rows, error: null };
+  });
   return rows;
 }
 
@@ -256,26 +241,22 @@ async function getPeaks(
 ): Promise<Map<number, Peak> | null> {
   const ids = appStoreIds.filter((n) => Number.isFinite(n) && n > 0);
   if (!ids.length) return new Map();
-  const key = `tm:peaks:${cacheKey}`;
-  const cached = cacheGet<Map<number, Peak>>(key);
-  if (cached) return cached;
-  // get_app_peaks returns the single best all-genre placement per app (DISTINCT
-  // ON, index-backed) — no blanket row cap that could truncate an app's true peak.
-  const { data, error } = await supabase.rpc('get_app_peaks', { p_app_store_ids: ids });
-  if (error) {
-    console.error('chart peaks query failed:', error.message);
-    return null;
-  }
-  const peaks = new Map<number, Peak>();
-  for (const row of data || []) {
-    peaks.set(Number(row.app_store_id), {
-      position: Number(row.peak_position),
-      typeId: Number(row.chart_type_id),
-      date: row.snapshot_date,
-      device: deviceOf(row.source_url || ''),
-    });
-  }
-  cacheSet(key, peaks, 10 * 60 * 1000);
+  const { data: peaks } = await cached<Map<number, Peak>>(`tm:peaks:${cacheKey}`, 10 * 60 * 1000, async () => {
+    // get_app_peaks returns the single best all-genre placement per app (DISTINCT
+    // ON, index-backed) — no blanket row cap that could truncate an app's true peak.
+    const { data, error } = await supabase.rpc('get_app_peaks', { p_app_store_ids: ids });
+    if (error) return { data: null, error };
+    const peaks = new Map<number, Peak>();
+    for (const row of data || []) {
+      peaks.set(Number(row.app_store_id), {
+        position: Number(row.peak_position),
+        typeId: Number(row.chart_type_id),
+        date: row.snapshot_date,
+        device: deviceOf(row.source_url || ''),
+      });
+    }
+    return { data: peaks, error: null };
+  });
   return peaks;
 }
 
@@ -311,39 +292,29 @@ export async function getPeakLines(
 
 // Raw chart placements for one app, joined to their snapshot's date/genre/feed.
 export async function getAppChartHistory(supabase: any, appStoreId: number): Promise<any[] | null> {
-  const key = `tm:apphist:${appStoreId}`;
-  const cached = cacheGet<any[]>(key);
-  if (cached) return cached;
-  const { data, error } = await supabase
-    .from('chart_positions')
-    .select('position, chart_snapshots(snapshot_date, genre_id, chart_type_id, source_url)')
-    .eq('app_store_id', appStoreId)
-    .limit(1000);
-  if (error) {
-    console.error('chart history query failed:', error.message);
-    return null;
-  }
-  cacheSet(key, data || [], 10 * 60 * 1000);
-  return data || [];
+  const { data } = await cached<any[]>(`tm:apphist:${appStoreId}`, 10 * 60 * 1000, async () => {
+    const { data, error } = await supabase
+      .from('chart_positions')
+      .select('position, chart_snapshots(snapshot_date, genre_id, chart_type_id, source_url)')
+      .eq('app_store_id', appStoreId)
+      .limit(1000);
+    return { data: error ? null : data || [], error };
+  });
+  return data;
 }
 
 // Listing-snapshot trail (rating avg/count, version, price), oldest first.
 export async function getAppRatingHistory(supabase: any, appStoreId: number): Promise<any[] | null> {
-  const key = `tm:ratings:${appStoreId}`;
-  const cached = cacheGet<any[]>(key);
-  if (cached) return cached;
-  const { data, error } = await supabase
-    .from('app_listing_snapshots')
-    .select('captured_at, rating_avg, rating_count, version, price_amount, price_currency')
-    .eq('app_store_id', appStoreId)
-    .order('captured_at', { ascending: true })
-    .limit(1000);
-  if (error) {
-    console.error('rating history query failed:', error.message);
-    return null;
-  }
-  cacheSet(key, data || [], 10 * 60 * 1000);
-  return data || [];
+  const { data } = await cached<any[]>(`tm:ratings:${appStoreId}`, 10 * 60 * 1000, async () => {
+    const { data, error } = await supabase
+      .from('app_listing_snapshots')
+      .select('captured_at, rating_avg, rating_count, version, price_amount, price_currency')
+      .eq('app_store_id', appStoreId)
+      .order('captured_at', { ascending: true })
+      .limit(1000);
+    return { data: error ? null : data || [], error };
+  });
+  return data;
 }
 
 // The most-helpful archived reviews plus the app's total review count.
@@ -352,28 +323,23 @@ export async function getAppReviews(
   appStoreId: number,
   limit: number
 ): Promise<{ rows: any[]; total: number } | null> {
-  const key = `tm:reviews:${appStoreId}`;
-  const cached = cacheGet<{ rows: any[]; total: number }>(key);
-  if (cached) return cached;
-  // Chronological, oldest first. Ordering by vote_sum surfaced the handful of
-  // recently live-fetched reviews (stamped with today's fetch date) over the
-  // hundreds of genuine period reviews recovered from archived feeds — which
-  // carry app_version + the capture timestamp (first_seen_ts) but no vote_sum.
-  // first_seen_ts (14-digit Wayback ts) sorts lexically = chronologically; the
-  // few live rows (first_seen_ts NULL) fall to the end.
-  const { data, error, count } = await supabase
-    .from('app_reviews')
-    .select('review_id, stars, title, body, author, app_version, vote_sum, vote_count, reviewed_at, first_seen_ts', { count: 'exact' })
-    .eq('app_store_id', appStoreId)
-    .order('first_seen_ts', { ascending: true, nullsFirst: false })
-    .order('review_id', { ascending: true })
-    .limit(limit);
-  if (error) {
-    console.error('archived reviews query failed:', error.message);
-    return null;
-  }
-  const result = { rows: data || [], total: count || (data || []).length };
-  cacheSet(key, result, 10 * 60 * 1000);
+  const { data: result } = await cached<{ rows: any[]; total: number }>(`tm:reviews:${appStoreId}`, 10 * 60 * 1000, async () => {
+    // Chronological, oldest first. Ordering by vote_sum surfaced the handful of
+    // recently live-fetched reviews (stamped with today's fetch date) over the
+    // hundreds of genuine period reviews recovered from archived feeds — which
+    // carry app_version + the capture timestamp (first_seen_ts) but no vote_sum.
+    // first_seen_ts (14-digit Wayback ts) sorts lexically = chronologically; the
+    // few live rows (first_seen_ts NULL) fall to the end.
+    const { data, error, count } = await supabase
+      .from('app_reviews')
+      .select('review_id, stars, title, body, author, app_version, vote_sum, vote_count, reviewed_at, first_seen_ts', { count: 'exact' })
+      .eq('app_store_id', appStoreId)
+      .order('first_seen_ts', { ascending: true, nullsFirst: false })
+      .order('review_id', { ascending: true })
+      .limit(limit);
+    if (error) return { data: null, error };
+    return { data: { rows: data || [], total: count || (data || []).length }, error: null };
+  });
   return result;
 }
 

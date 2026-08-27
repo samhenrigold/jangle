@@ -1,4 +1,4 @@
-export function baseName(path: unknown): string {
+function baseName(path: unknown): string {
   return String(path || '').split('/').pop() || '';
 }
 

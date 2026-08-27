@@ -6,8 +6,9 @@ import Pagination from '../../components/Pagination.astro';
 import SearchForm from '../../components/SearchForm.astro';
 import AppList from '../../components/AppList.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
-import { cacheGet, cacheSet } from '../../lib/cache';
+import { cached } from '../../lib/cache';
 import { buildPrefixTsquery, clampPage, clampPageSize } from '../../lib/search';
+import { APP_LIST_COLS, flattenAppRow } from '../../lib/apps';
 import { sortGenres, fetchGenresWithCounts } from '../../lib/genres';
 import { getOldestIcons } from '../../lib/appicons';
 import { formatNumber } from '../../lib/format';
@@ -38,6 +39,15 @@ const offset = (page - 1) * pageSize;
 
 const supabase = supabaseFor(Astro);
 let dbError = false;
+
+// The one sort switch for the query-builder branches (dev / bundle). The
+// keyword branch sorts via the RPCs instead.
+function applySort(listQ: any) {
+  if (sort === 'name') return listQ.order('display_name', { ascending: true });
+  if (sort === 'first_date') return listQ.order('first_version_date', { ascending: true, nullsFirst: false });
+  if (sort === 'newest') return listQ.order('first_version_date', { ascending: false, nullsFirst: false });
+  return listQ.order('version_count', { ascending: false });
+}
 
 // Identifier search. search_vector tokenization mangles reverse-DNS bundle ids
 // (buildPrefixTsquery strips the dots) and never indexes the numeric App Store
@@ -136,18 +146,10 @@ if (q || genreId || dev) {
       if (cErr) { console.error('dev count failed:', cErr.message); dbError = true; }
       else total = count || 0;
 
-      let listQ = applyFilters(
-        supabase
-          .from('apps')
-          .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
-      );
-      if (sort === 'name') listQ = listQ.order('display_name', { ascending: true });
-      else if (sort === 'first_date') listQ = listQ.order('first_version_date', { ascending: true, nullsFirst: false });
-      else if (sort === 'newest') listQ = listQ.order('first_version_date', { ascending: false, nullsFirst: false });
-      else listQ = listQ.order('version_count', { ascending: false });
+      const listQ = applySort(applyFilters(supabase.from('apps').select(APP_LIST_COLS)));
       const { data, error: lErr } = await listQ.range(offset, offset + pageSize - 1);
       if (lErr) { console.error('dev list failed:', lErr.message); dbError = true; }
-      else searchResults = (data || []).map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
+      else searchResults = (data || []).map(flattenAppRow);
     }
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   } else if (looksLikeBundle) {
@@ -169,92 +171,60 @@ if (q || genreId || dev) {
     if (cErr) { console.error('bundle count failed:', cErr.message); dbError = true; }
     else total = count || 0;
 
-    let listQ = applyBundle(
-      supabase
-        .from('apps')
-        .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, version_count, developers!apps_developer_id_fkey(artist_name)')
-    );
-    if (sort === 'name') listQ = listQ.order('display_name', { ascending: true });
-    else if (sort === 'first_date') listQ = listQ.order('first_version_date', { ascending: true, nullsFirst: false });
-    else if (sort === 'newest') listQ = listQ.order('first_version_date', { ascending: false, nullsFirst: false });
-    else listQ = listQ.order('version_count', { ascending: false, nullsFirst: false });
-    // Tie-break on bundle_id so pages are stable when version_count ties.
-    listQ = listQ.order('bundle_id', { ascending: true });
+    // Tie-break on bundle_id so pages are stable when the sort key ties.
+    const listQ = applySort(applyBundle(supabase.from('apps').select(APP_LIST_COLS)))
+      .order('bundle_id', { ascending: true });
     const { data, error: lErr } = await listQ.range(offset, offset + pageSize - 1);
     if (lErr) { console.error('bundle list failed:', lErr.message); dbError = true; }
-    else searchResults = (data || []).map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
+    else searchResults = (data || []).map(flattenAppRow);
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   } else {
     const pGenreId = genreId ? Number(genreId) : null;
 
-    const loadCount = async () => {
-      const countCacheKey = `search_count:${genreId||''}:${tsquery||''}`;
-      total = cacheGet<number>(countCacheKey);
-      if (typeof total === 'number') return;
-      const { data: totalCountArr, error: countError } = await supabase.rpc('get_apps_count', {
-        p_genre_id: pGenreId,
-        p_search_query: tsquery,
-      });
-      total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
-      if (countError) {
-        console.error('search count failed:', countError.message);
-        dbError = true;
-      } else {
-        cacheSet(countCacheKey, Number(total) || 0, 2 * 60 * 1000);
-      }
+    const rpcArgs = {
+      p_limit: pageSize,
+      p_offset: offset,
+      p_genre_id: pGenreId,
+      p_ascending: false,
+      p_search_query: tsquery,
     };
-
-    const loadList = async () => {
-      const listCacheKey = `search_list:${sort}:${genreId||''}:${tsquery||''}:${page}:${pageSize}`;
-      searchResults = cacheGet<any[]>(listCacheKey);
-      if (searchResults) return;
-      const rpcArgs = {
-        p_limit: pageSize,
-        p_offset: offset,
-        p_genre_id: pGenreId,
-        p_ascending: false,
-        p_search_query: tsquery,
-      };
-      let listError: { message: string } | null = null;
+    const runList = async (): Promise<{ data: any[] | null; error: any }> => {
       if (sort === 'first_date' || sort === 'newest') {
         // ascending = oldest first; descending = newest first.
-        const { data, error } = await supabase.rpc('get_apps_sorted_by_first_version_date', {
+        return supabase.rpc('get_apps_sorted_by_first_version_date', {
           ...rpcArgs,
           p_ascending: sort === 'first_date',
         });
-        listError = error;
-        searchResults = data || [];
-      } else if (sort === 'name') {
+      }
+      if (sort === 'name') {
         let query = supabase
           .from('apps')
-          .select('id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, developers!apps_developer_id_fkey(artist_name)')
+          .select(APP_LIST_COLS)
           .not('excluded', 'is', true)
           .order('display_name', { ascending: true })
           .range(offset, offset + pageSize - 1);
         if (tsquery) query = query.textSearch('search_vector', tsquery);
         if (genreId) query = query.eq('genre_id', Number(genreId));
         const { data, error } = await query;
-        listError = error;
-        searchResults = (data || []).map((a: any) => ({
-          ...a,
-          developer_artist_name: (a as any).developers?.artist_name,
-          version_count: undefined,
-        }));
-      } else {
-        const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
-        listError = error;
-        searchResults = data || [];
+        return { data: (data || []).map(flattenAppRow), error };
       }
-      if (listError) {
-        console.error(`search sort=${sort} failed:`, listError.message);
-        dbError = true;
-      } else {
-        cacheSet(listCacheKey, searchResults, 60 * 1000);
-      }
+      return supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
     };
 
     // Count and page are independent — one round trip of latency, not two.
-    await Promise.all([loadCount(), loadList()]);
+    const [countRes, listRes] = await Promise.all([
+      cached<number>(`search_count:${genreId||''}:${tsquery||''}`, 2 * 60 * 1000, async () => {
+        const { data, error } = await supabase.rpc('get_apps_count', {
+          p_genre_id: pGenreId,
+          p_search_query: tsquery,
+        });
+        return { data: Number(Array.isArray(data) ? data[0] : data) || 0, error };
+      }),
+      cached<any[]>(`search_list:${sort}:${genreId||''}:${tsquery||''}:${page}:${pageSize}`, 60 * 1000, runList),
+    ]);
+    total = countRes.data ?? 0;
+    searchResults = listRes.data || [];
+    if (countRes.error || listRes.error) dbError = true;
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   }
 
@@ -268,7 +238,7 @@ if (q || genreId || dev) {
   if (page === 1 && !(q && !tsquery) && !looksLikeBundle) {
     let cq: any = supabase
       .from('apps')
-      .select('id, app_store_id, bundle_id, app_store_name, display_name, developer_id, genre_id, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)', { count: 'exact' })
+      .select(APP_LIST_COLS, { count: 'exact' })
       .not('excluded', 'is', true)
       .or('version_count.is.null,version_count.eq.0')
       .order('app_store_name', { ascending: true, nullsFirst: false })
@@ -281,7 +251,7 @@ if (q || genreId || dev) {
       const { data, count, error } = await cq;
       if (error) console.error('catalog-only lookup failed:', error.message);
       else {
-        catalogOnly = (data || []).map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
+        catalogOnly = (data || []).map(flattenAppRow);
         catalogTotal = count || 0;
       }
     }
@@ -297,7 +267,7 @@ if (q || genreId || dev) {
   if (page === 1 && !(q && !tsquery)) {
     let sq: any = supabase
       .from('apps')
-      .select('id, app_store_id, bundle_id, app_store_name, display_name, developer_id, genre_id, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)', { count: 'exact' })
+      .select(APP_LIST_COLS, { count: 'exact' })
       .like('excluded_reason', 'catalog-seed:%')
       .order('app_store_name', { ascending: true, nullsFirst: false })
       .limit(30);
@@ -311,7 +281,8 @@ if (q || genreId || dev) {
       const { data, count, error } = await sq;
       if (error) console.error('catalog-seed lookup failed:', error.message);
       else {
-        const seeds = (data || []).map((a: any) => ({ ...a, developer_artist_name: a.developers?.artist_name }));
+        // ghost: true = non-linked row (their /app pages are intentionally 404).
+        const seeds = (data || []).map((a: any) => ({ ...flattenAppRow(a), ghost: true }));
         catalogOnly = catalogOnly.concat(seeds);
         catalogTotal += count || 0;
       }

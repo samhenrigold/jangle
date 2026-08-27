@@ -36,16 +36,6 @@ let stats: any = null;
   }
 }
 
-// "9.5 TB" — sizes on this page get big enough that format.ts's GB ceiling
-// reads awkwardly.
-function formatBigSize(bytes: unknown): string {
-  const b = Number(bytes);
-  if (!Number.isFinite(b) || b <= 0) return '';
-  const tib = 1024 * 1024 * 1024 * 1024;
-  if (b >= tib) return `${(b / tib).toFixed(1)} TB`;
-  return formatFileSize(b);
-}
-
 const bar = (label: string, value: number, extra: Partial<BarDatum> = {}): BarDatum => ({
   label,
   value: Number(value) || 0,
@@ -74,7 +64,13 @@ if (stats) {
   asOfIso = computedAt && !isNaN(computedAt.getTime()) ? computedAt.toISOString() : '';
 
   if (stats.last_ingest_at) {
-    lastIngest = `The last archive.org crawl added ${formatNumber(stats.apps_added_last_ingest)} new app${Number(stats.apps_added_last_ingest) === 1 ? '' : 's'} on ${formatDate(stats.last_ingest_at)}.`;
+    const copies = Number(stats.copies_added_last_ingest);
+    const versions = Number(stats.versions_added_last_ingest);
+    const apps = Number(stats.apps_added_last_ingest);
+    const parts = [`${formatNumber(copies)} archived ${copies === 1 ? 'copy' : 'copies'}`];
+    if (versions) parts.push(`${formatNumber(versions)} new version${versions === 1 ? '' : 's'}`);
+    if (apps) parts.push(`${formatNumber(apps)} newly discovered app${apps === 1 ? '' : 's'}`);
+    lastIngest = `Last ingest on ${formatDate(stats.last_ingest_at)} added ${parts.join(', ')}.`;
   }
 
   tiles = [
@@ -82,7 +78,7 @@ if (stats) {
     { n: formatNumber(stats.versions), label: 'versions' },
     { n: formatNumber(stats.binaries), label: 'distinct binaries' },
     { n: formatNumber(stats.copies), label: 'archived copies' },
-    { n: formatBigSize(stats.total_bytes), label: 'of apps indexed' },
+    { n: formatFileSize(stats.total_bytes), label: 'of apps indexed' },
     { n: formatNumber(stats.developers), label: 'developers' },
     { n: formatNumber(stats.distinct_icons), label: 'unique icons' },
     { n: formatNumber(stats.wayback_captures), label: 'archived pages read' },

@@ -4,7 +4,7 @@ import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
 import AppList from '../../components/AppList.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
-import { cacheGet, cacheSet } from '../../lib/cache';
+import { cacheGet, cacheSet, cached } from '../../lib/cache';
 import { formatDate } from '../../lib/format';
 import { setCacheHeaders, setDegraded, SITE_ORIGIN } from '../../lib/http';
 
@@ -43,24 +43,16 @@ setCacheHeaders(Astro.response, 3600);
 // so the period-authentic icons need no second query.
 let members: any[] = [];
 if (collection) {
-  const memCacheKey = `collection_members:v2:${collection.id}`;
-  const cached = cacheGet<any[]>(memCacheKey);
-  if (cached) {
-    members = cached;
-  } else {
+  const { data, error } = await cached<any[]>(`collection_members:v2:${collection.id}`, 10 * 60 * 1000, async () => {
     const { data, error } = await supabase
       .from('collection_members')
       .select('position, group_label, label, blurb, metadata, app_versions!collection_members_app_version_id_fkey(version_string, release_date, estimated_release_date), apps!collection_members_app_id_fkey(id, app_store_id, bundle_id, app_store_name, display_name, version_count, oldest_icon_sha256, excluded, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name))')
       .eq('collection_id', collection.id)
       .order('position', { ascending: true });
-    if (error) {
-      console.error('collection members failed:', error.message);
-      dbError = true;
-    } else {
-      members = (data || []).filter((m: any) => !m.apps || !m.apps.excluded);
-      cacheSet(memCacheKey, members, 10 * 60 * 1000);
-    }
-  }
+    return { data: error ? null : (data || []).filter((m: any) => !m.apps || !m.apps.excluded), error };
+  });
+  if (error) dbError = true;
+  else members = data || [];
 }
 
 // Ghost members (curator listed the app, but we hold no linked archive row)

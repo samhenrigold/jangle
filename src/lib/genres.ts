@@ -1,20 +1,13 @@
-import { cacheGet, cacheSet } from './cache';
+import { cached } from './cache';
 
 // Cache-first genre+count fetch shared by /search and /categories (both had an
 // identical inline copy of this block). Returns { genres, error } so each caller
 // keeps its own degraded handling.
 export async function fetchGenresWithCounts(supabase: any): Promise<{ genres: any[]; error: boolean }> {
-  const cacheKey = 'genres_with_counts';
-  const cached = cacheGet<any[]>(cacheKey);
-  if (cached) return { genres: cached, error: false };
-  const { data, error } = await supabase.rpc('get_genres_with_counts');
-  if (error) {
-    console.error('genres query failed:', error.message);
-    return { genres: [], error: true };
-  }
-  const genres = data || [];
-  cacheSet(cacheKey, genres, 10 * 60 * 1000);
-  return { genres, error: false };
+  const { data, error } = await cached<any[]>('genres_with_counts', 10 * 60 * 1000, () =>
+    supabase.rpc('get_genres_with_counts')
+  );
+  return { genres: data || [], error: !!error };
 }
 
 // Apple's game categories (Arcade, Puzzle, …) are the App Store genre_id 70xx

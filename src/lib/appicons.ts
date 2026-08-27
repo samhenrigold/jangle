@@ -8,7 +8,7 @@
 // binaries), joined in JS. Never throws: on any error it returns an empty map
 // and callers fall back to apps.icon_url.
 
-import { cacheGet, cacheSet } from './cache';
+import { cached } from './cache';
 import { compareVersionLike } from './sorting';
 
 export type IconCandidate = {
@@ -66,25 +66,21 @@ export async function getIconsNearDate(
   const empty = new Map<number, string>();
   if (!ids.length || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return empty;
   const cacheKey = `icons:near:${isoDate}:${[...ids].sort((a, b) => a - b).join(',')}`;
-  const cached = cacheGet<Map<number, string>>(cacheKey);
-  if (cached) return cached;
-  try {
-    const { data, error } = await supabase.rpc('get_icons_near_date', {
-      p_app_ids: ids,
-      p_target: isoDate,
-    });
-    if (error) {
-      console.error('get_icons_near_date failed:', error.message);
-      return empty;
+  const { data: out } = await cached<Map<number, string>>(cacheKey, 10 * 60 * 1000, async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_icons_near_date', {
+        p_app_ids: ids,
+        p_target: isoDate,
+      });
+      if (error) return { data: null, error };
+      const out = new Map<number, string>();
+      for (const r of data || []) if (r.icon_sha256) out.set(Number(r.app_id), r.icon_sha256);
+      return { data: out, error: null };
+    } catch (err) {
+      return { data: null, error: err };
     }
-    const out = new Map<number, string>();
-    for (const r of data || []) if (r.icon_sha256) out.set(Number(r.app_id), r.icon_sha256);
-    cacheSet(cacheKey, out, 10 * 60 * 1000);
-    return out;
-  } catch (err) {
-    console.error('getIconsNearDate failed:', (err as any)?.message);
-    return empty;
-  }
+  });
+  return out || empty;
 }
 
 // Map<internal app id → oldest icon sha256> for a set of apps.
@@ -92,31 +88,28 @@ export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise
   const ids = Array.from(new Set(appDbIds.filter((n) => Number.isFinite(n) && n > 0)));
   if (!ids.length) return new Map();
   const cacheKey = `icons:oldest:${[...ids].sort((a, b) => a - b).join(',')}`;
-  const cached = cacheGet<Map<number, string>>(cacheKey);
-  if (cached) return cached;
-
-  const empty = new Map<number, string>();
-  try {
-    // Read the precomputed apps.oldest_icon_sha256 (maintained by the
-    // refresh_oldest_icons() pg_cron job — the SQL port of pickOldestIcon below).
-    // This replaced a per-request 3-query fan-out (versions → files → binaries)
-    // that also had to page past PostgREST's 1000-row cap; now it's one indexed
-    // column read, chunked only to bound the .in() list length.
-    const out = new Map<number, string>();
-    const CHUNK = 300;
-    for (let i = 0; i < ids.length; i += CHUNK) {
-      const { data, error } = await supabase
-        .from('apps')
-        .select('id, oldest_icon_sha256')
-        .in('id', ids.slice(i, i + CHUNK))
-        .not('oldest_icon_sha256', 'is', null);
-      if (error) return empty;
-      for (const a of data || []) out.set(Number(a.id), a.oldest_icon_sha256);
+  const { data: hit } = await cached<Map<number, string>>(cacheKey, 10 * 60 * 1000, async () => {
+    try {
+      // Read the precomputed apps.oldest_icon_sha256 (maintained by the
+      // refresh_oldest_icons() pg_cron job — the SQL port of pickOldestIcon below).
+      // This replaced a per-request 3-query fan-out (versions → files → binaries)
+      // that also had to page past PostgREST's 1000-row cap; now it's one indexed
+      // column read, chunked only to bound the .in() list length.
+      const out = new Map<number, string>();
+      const CHUNK = 300;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const { data, error } = await supabase
+          .from('apps')
+          .select('id, oldest_icon_sha256')
+          .in('id', ids.slice(i, i + CHUNK))
+          .not('oldest_icon_sha256', 'is', null);
+        if (error) return { data: null, error };
+        for (const a of data || []) out.set(Number(a.id), a.oldest_icon_sha256);
+      }
+      return { data: out, error: null };
+    } catch (err) {
+      return { data: null, error: err };
     }
-    cacheSet(cacheKey, out, 10 * 60 * 1000);
-    return out;
-  } catch (err) {
-    console.error('getOldestIcons failed:', (err as any)?.message);
-    return empty;
-  }
+  });
+  return hit || new Map<number, string>();
 }

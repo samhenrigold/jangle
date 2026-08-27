@@ -3,7 +3,7 @@ import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
-import { cacheGet, cacheSet } from '../../lib/cache';
+import { cacheGet, cacheSet, cached } from '../../lib/cache';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getOldestIcons } from '../../lib/appicons';
@@ -75,24 +75,20 @@ setCacheHeaders(Astro.response, 3600);
 
 // All apps by this developer, most-preserved first. Keyed by the internal id so
 // the artist_id and internal-id URLs share one cache entry.
-const listCacheKey = `developer_apps:${developer.id}`;
-let list = cacheGet<any[]>(listCacheKey);
-if (!dbError && !list) {
-  const { data, error } = await supabase
-    .from('apps')
-    .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url:live_icon_url, version_count')
-    .eq('developer_id', developer.id)
-    .not('excluded', 'is', true)
-    .order('version_count', { ascending: false })
-    .order('app_store_name', { ascending: true })
-    .limit(300);
+let list: any[] | undefined;
+if (!dbError) {
+  const { data, error } = await cached<any[]>(`developer_apps:${developer.id}`, 10 * 60 * 1000, () =>
+    supabase
+      .from('apps')
+      .select('id, app_store_id, app_store_name, display_name, bundle_id, icon_url:live_icon_url, version_count')
+      .eq('developer_id', developer.id)
+      .not('excluded', 'is', true)
+      .order('version_count', { ascending: false })
+      .order('app_store_name', { ascending: true })
+      .limit(300)
+  );
   list = data || [];
-  if (error) {
-    console.error('developer apps failed:', error.message);
-    dbError = true;
-  } else {
-    cacheSet(listCacheKey, list, 10 * 60 * 1000);
-  }
+  if (error) dbError = true;
 }
 
 // Period-authentic (oldest) icons for the list.

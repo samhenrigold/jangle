@@ -8,37 +8,15 @@
 // grows, and small enough that each child is quick to generate and cache.
 export const SITEMAP_CHUNK = 10000;
 
-// PostgREST caps responses at 1000 rows; the fallback pager costs one round trip
-// per 1000 apps.
-const PAGE = 1000;
-const MAX_PAGES = 100; // runaway guard: 100k rows, well above the catalog
-
 // Every app's public URL slug: app_store_id when real (what /app/ links prefer),
-// else the internal id. The 0 sentinel is not a real store id. Returned sorted
-// so chunk boundaries are stable between the index and each child within a
-// deploy (the RPC already sorts; the fallback sorts here).
+// else the internal id. The 0 sentinel is not a real store id. One RPC round
+// trip returning the whole sorted list as a single json array (a one-row
+// response, so the max-rows cap doesn't apply). A failure throws — the edge
+// serves the last good copy via stale-if-error rather than a wrong sitemap.
 export async function fetchSitemapSlugs(supabase: any): Promise<string[]> {
-  // Preferred path: one RPC round trip returning the whole list as a single
-  // json array (a one-row response, so the max-rows cap doesn't apply).
-  const { data: slugs, error: rpcError } = await supabase.rpc('get_sitemap_slugs');
-  if (!rpcError && Array.isArray(slugs)) return slugs;
-  console.error('get_sitemap_slugs rpc failed, falling back to paging:', rpcError?.message);
-
-  const seen = new Set<string>();
-  for (let i = 0; i < MAX_PAGES; i++) {
-    const from = i * PAGE;
-    const { data, error } = await supabase
-      .from('apps')
-      .select('id, app_store_id')
-      .not('excluded', 'is', true)
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(`sitemap query failed: ${error.message}`);
-    const rows = data || [];
-    for (const a of rows) seen.add(String(a.app_store_id || a.id));
-    if (rows.length < PAGE) break;
-  }
-  return Array.from(seen).sort();
+  const { data: slugs, error } = await supabase.rpc('get_sitemap_slugs');
+  if (error || !Array.isArray(slugs)) throw new Error(`get_sitemap_slugs failed: ${error?.message}`);
+  return slugs;
 }
 
 // Published collections (RLS hides drafts under the anon key). Best-effort: a
@@ -55,7 +33,12 @@ export async function fetchCollectionSlugs(supabase: any): Promise<string[]> {
 }
 
 // Shared cache headers for every sitemap response (browser-short, edge-long).
+// Split headers, not s-maxage — s-maxage disables stale-while-revalidate /
+// stale-if-error at the shared cache (RFC 9111 §4.2.4; see lib/http.ts), and
+// the sitemap relies on stale-if-error to survive an RPC blip.
+const STALE = 'stale-while-revalidate=86400, stale-if-error=604800';
 export const SITEMAP_HEADERS = {
   'Content-Type': 'application/xml',
-  'Cache-Control': 'public, max-age=3600, s-maxage=86400',
+  'Cache-Control': `public, max-age=3600, ${STALE}`,
+  'Cloudflare-CDN-Cache-Control': `public, max-age=86400, ${STALE}`,
 };

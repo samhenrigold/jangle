@@ -7,6 +7,7 @@ import AppList from '../../components/AppList.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
+import { loadRankedAppPage } from '../../lib/apps';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getChartTypes, getSnapshotIndex, deviceOf } from '../../lib/timemachine';
@@ -47,51 +48,24 @@ if (!genre && !dbError) {
 
 setCacheHeaders(Astro.response, 3600);
 
-// Count, list (+ its era icons), and the charts teaser are independent —
-// run the three chains concurrently instead of stacking four round trips.
+// Count+list (+ era icons) and the charts teaser are independent — run the
+// chains concurrently instead of stacking four round trips.
 let total: number | undefined;
+let totalPages = 1;
 let list: any[] | undefined;
 let iconShas: Map<number, string> | undefined;
 type GenreChartRow = { slug: string; name: string; years: { year: string; date: string }[] };
 let genreCharts: GenreChartRow[] = [];
 
-const loadCount = async () => {
-  const countCacheKey = `genre_count:${genreId}`;
-  total = cacheGet<number>(countCacheKey);
-  if (typeof total === 'number') return;
-  const { data: totalCountArr, error } = await supabase.rpc('get_apps_count', {
-    p_genre_id: Number(genreId),
-    p_search_query: null,
-  });
-  total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
-  if (error) {
-    console.error('genre count failed:', error.message);
-    dbError = true;
-  } else {
-    cacheSet(countCacheKey, Number(total) || 0, 5 * 60 * 1000);
-  }
-};
-
-// Apps in this genre, then their period-authentic (oldest) icons.
+// Apps in this genre + total, then their period-authentic (oldest) icons.
 const loadList = async () => {
-  const listCacheKey = `genre_apps:${genreId}:${page}:${pageSize}`;
-  list = cacheGet<any[]>(listCacheKey);
-  if (!list) {
-    const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', {
-      p_limit: pageSize,
-      p_offset: offset,
-      p_genre_id: Number(genreId),
-      p_ascending: false,
-      p_search_query: null,
-    });
-    list = data || [];
-    if (error) {
-      console.error('genre list failed:', error.message);
-      dbError = true;
-      return;
-    }
-    cacheSet(listCacheKey, list, 5 * 60 * 1000);
-  }
+  const res = await loadRankedAppPage(supabase, {
+    page, pageSize, genreId: Number(genreId), cachePrefix: `genre:${genreId}`,
+  });
+  list = res.apps;
+  total = res.total;
+  totalPages = res.totalPages;
+  if (res.dbError) { dbError = true; return; }
   if (list.length) iconShas = await getOldestIcons(supabase, list.map((a: any) => Number(a.id)));
 };
 
@@ -120,8 +94,7 @@ const loadGenreCharts = async () => {
   }
 };
 
-await Promise.all([loadCount(), loadList(), loadGenreCharts()]);
-const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
+await Promise.all([loadList(), loadGenreCharts()]);
 
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);

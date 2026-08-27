@@ -5,8 +5,8 @@ import DbError from '../../components/DbError.astro';
 import Pagination from '../../components/Pagination.astro';
 import AppList from '../../components/AppList.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
-import { cacheGet, cacheSet } from '../../lib/cache';
 import { clampPage, clampPageSize } from '../../lib/search';
+import { loadRankedAppPage } from '../../lib/apps';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getPeakLines } from '../../lib/timemachine';
 import { getOldestIcons } from '../../lib/appicons';
@@ -20,48 +20,10 @@ const pageSize = clampPageSize(url.searchParams.get('per_page'), 25);
 const offset = (page - 1) * pageSize;
 
 const supabase = supabaseFor(Astro);
-let dbError = false;
 
-// The ranked list and the total count are independent — fetch concurrently.
-let topChartsApps: any[] | undefined;
-let total: number | undefined;
-
-const loadList = async () => {
-  const topChartsCacheKey = `topcharts:${page}:${pageSize}`;
-  topChartsApps = cacheGet<any[]>(topChartsCacheKey);
-  if (topChartsApps) return;
-  const { data, error } = await supabase.rpc('get_apps_sorted_by_version_count', {
-    p_limit: pageSize,
-    p_offset: offset,
-    p_genre_id: null,
-    p_ascending: false,
-    p_search_query: null,
-  });
-  topChartsApps = data || [];
-  if (error) {
-    console.error('charts list failed:', error.message);
-    dbError = true;
-  } else {
-    cacheSet(topChartsCacheKey, topChartsApps, 5 * 60 * 1000);
-  }
-};
-
-const loadCount = async () => {
-  const countCacheKey = 'topcharts_count';
-  total = cacheGet<number>(countCacheKey);
-  if (typeof total === 'number') return;
-  const { data: totalCountArr, error } = await supabase.rpc('get_apps_count', { p_genre_id: null, p_search_query: null });
-  total = Array.isArray(totalCountArr) ? totalCountArr[0] : totalCountArr;
-  if (error) {
-    console.error('charts count failed:', error.message);
-    dbError = true;
-  } else {
-    cacheSet(countCacheKey, Number(total) || 0, 10 * 60 * 1000);
-  }
-};
-
-await Promise.all([loadList(), loadCount()]);
-const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
+const { apps: topChartsApps, totalPages, dbError } = await loadRankedAppPage(supabase, {
+  page, pageSize, cachePrefix: 'topcharts',
+});
 
 // Historical peak badges + period-authentic icons — both decorative (a
 // failure just drops badges/icons rather than 503-ing) and independent.
