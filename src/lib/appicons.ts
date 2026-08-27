@@ -83,11 +83,12 @@ export async function getIconsNearDate(
   return out || empty;
 }
 
-// Map<internal app id → oldest icon sha256> for a set of apps.
-export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise<Map<number, string>> {
+// Map<internal app id → representative icon sha256> for a set of apps
+// (rep_icon_sha256 = longest-worn/recognizable design, oldest as fallback).
+export async function getAppIcons(supabase: any, appDbIds: number[]): Promise<Map<number, string>> {
   const ids = Array.from(new Set(appDbIds.filter((n) => Number.isFinite(n) && n > 0)));
   if (!ids.length) return new Map();
-  const cacheKey = `icons:oldest:${[...ids].sort((a, b) => a - b).join(',')}`;
+  const cacheKey = `icons:rep:${[...ids].sort((a, b) => a - b).join(',')}`;
   const { data: hit } = await cached<Map<number, string>>(cacheKey, 10 * 60 * 1000, async () => {
     try {
       // Read the precomputed representative icon (rep_icon_sha256 = the icon

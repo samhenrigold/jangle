@@ -188,7 +188,7 @@ export async function getSnapshotPositions(supabase: any, snapshotId: number): P
   const { data: rows } = await cached<any[]>(`tm:positions:${snapshotId}`, 10 * 60 * 1000, async () => {
   const { data, error } = await supabase
     .from('chart_positions')
-    .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, bundle_id, app_store_name, icon_url:live_icon_url, oldest_icon_sha256, excluded)')
+    .select('position, app_store_id, display_name, developer_name, price_amount, price_currency, artwork_url, apps(id, app_store_id, bundle_id, app_store_name, rep_icon_sha256, oldest_icon_sha256, icon_url:live_icon_url, excluded)')
     .eq('chart_snapshot_id', snapshotId)
     .order('position', { ascending: true })
     .limit(300);

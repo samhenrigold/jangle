@@ -6,7 +6,7 @@ import { sortGenres, fetchGenresWithCounts, isGameSubgenre } from '../../lib/gen
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { iconSrc, appIconSrc } from '../../lib/icons';
-import { getOldestIcons } from '../../lib/appicons';
+import { getAppIcons } from '../../lib/appicons';
 
 setCacheHeaders(Astro.response, 86400);
 
@@ -20,7 +20,7 @@ const genreIcon = new Map<number, string>();
 const loadGenreIcons = async () => {
   const { data: tops, error } = await supabase.rpc('get_genre_top_apps');
   if (error || !tops) return;
-  const iconShas = await getOldestIcons(supabase, tops.map((t: any) => Number(t.app_id)));
+  const iconShas = await getAppIcons(supabase, tops.map((t: any) => Number(t.app_id)));
   for (const t of tops) {
     const sha = iconShas?.get(Number(t.app_id));
     const src = appIconSrc(sha, t.icon_url);

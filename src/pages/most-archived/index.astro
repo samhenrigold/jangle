@@ -9,7 +9,7 @@ import { clampPage, clampPageSize } from '../../lib/search';
 import { loadRankedAppPage } from '../../lib/apps';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getPeakLines } from '../../lib/timemachine';
-import { getOldestIcons } from '../../lib/appicons';
+import { getAppIcons } from '../../lib/appicons';
 
 setCacheHeaders(Astro.response, 3600);
 
@@ -33,7 +33,7 @@ if (!dbError && (topChartsApps || []).length) {
   const ids = (topChartsApps || []).map((a: any) => Number(a.app_store_id)).filter(Boolean);
   [peakLines, iconShas] = await Promise.all([
     getPeakLines(supabase, ids, `top25:${page}:${pageSize}`).then((p) => p || undefined),
-    getOldestIcons(supabase, (topChartsApps || []).map((a: any) => Number(a.id))),
+    getAppIcons(supabase, (topChartsApps || []).map((a: any) => Number(a.id))),
   ]);
 }
 

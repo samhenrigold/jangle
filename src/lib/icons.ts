@@ -24,6 +24,27 @@ export function iconSrc(rawUrl: string | null | undefined): string {
   return u.protocol === 'https:' ? rawUrl : '';
 }
 
+// The content-addressed icon sha for an app row: representative (longest-worn,
+// recognizable) design first, period-authentic oldest as fallback. One place —
+// the pair was hand-repeated across ~8 surfaces after the rep-icon rollout.
+// Requires rep_icon_sha256 + oldest_icon_sha256 on the row (APP_LIST_COLS and
+// APP_ICON_COLS both carry them).
+export function iconShaOf(a: any): string | null {
+  return a?.rep_icon_sha256 || a?.oldest_icon_sha256 || null;
+}
+
+// The icon columns any list/grid embed needs, for use inside a PostgREST
+// select string (e.g. `apps(${APP_ICON_COLS})`).
+export const APP_ICON_COLS = 'rep_icon_sha256, oldest_icon_sha256, icon_url:live_icon_url';
+
+// Public/canonical slug for an app: the App Store ID when real (not the 0
+// sentinel), else the internal id. Public links and API urls use this; it was
+// copy-pasted ~9 times, once (AppList) in an unguarded form that only worked by
+// accident of the 0 sentinel arriving as a JS number.
+export function appSlug(a: any): string | number {
+  return a?.app_store_id && Number(a.app_store_id) !== 0 ? a.app_store_id : a.id;
+}
+
 // THE app-icon selection chain, one place: the archive's own content-addressed
 // icon when we have one, else the app's live listing icon (era-wrong, last
 // resort) via iconSrc. Every list/grid surface uses this — inlining the chain

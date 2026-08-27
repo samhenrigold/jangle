@@ -5,7 +5,7 @@ import DbError from '../../components/DbError.astro';
 import { fetchCollectionsWithMembers } from '../../lib/collections';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
-import { appIconSrc } from '../../lib/icons';
+import { appIconSrc, iconShaOf } from '../../lib/icons';
 
 setCacheHeaders(Astro.response, 3600);
 
@@ -25,7 +25,7 @@ const collections: CollectionRow[] = (rawCollections || []).map((c: any) => ({
   series: c.series,
   count: c.collection_members.length,
   icons: c.collection_members
-    .map((m: any) => appIconSrc(m.apps.rep_icon_sha256 || m.apps.oldest_icon_sha256, m.apps.icon_url))
+    .map((m: any) => appIconSrc(iconShaOf(m.apps), m.apps.icon_url))
     .filter(Boolean)
     .slice(0, 4),
 }));

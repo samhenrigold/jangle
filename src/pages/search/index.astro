@@ -10,7 +10,7 @@ import { cached } from '../../lib/cache';
 import { buildPrefixTsquery, clampPage, clampPageSize, looksLikeBundleId, escapeLike } from '../../lib/search';
 import { APP_LIST_COLS, flattenAppRow } from '../../lib/apps';
 import { sortGenres, fetchGenresWithCounts } from '../../lib/genres';
-import { getOldestIcons } from '../../lib/appicons';
+import { getAppIcons } from '../../lib/appicons';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 
@@ -269,11 +269,11 @@ if (genresError) dbError = true;
 // Group Game subgenres after the parent Games genre (returns a copy)
 const sortedGenres = sortGenres(genres);
 
-// Period-authentic (oldest extracted) icons for the results — same source the
+// Representative (longest-worn) icons for the results — same source the
 // rest of the site uses, so search rows aren't stuck on the (often-dead) CDN url.
 let iconShas: Map<number, string> | undefined;
 if (!dbError && searchResults.length) {
-  iconShas = await getOldestIcons(supabase, searchResults.map((a: any) => Number(a.id)).filter(Boolean));
+  iconShas = await getAppIcons(supabase, searchResults.map((a: any) => Number(a.id)).filter(Boolean));
 }
 
 // A transient DB failure must not render as a cacheable "no results" page.

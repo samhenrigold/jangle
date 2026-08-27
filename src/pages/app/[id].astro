@@ -17,7 +17,7 @@ import {
   getChartTypes, getGenreNames, getAppChartHistory, getAppRatingHistory, getAppReviews,
   starString, formatMonthYear, formatPrice, formatApproxMonthYear,
 } from '../../lib/timemachine';
-import { pickOldestIcon, getOldestIcons } from '../../lib/appicons';
+import { pickOldestIcon, getAppIcons } from '../../lib/appicons';
 import SectionHeader from '../../components/SectionHeader.astro';
 import { osShortLabel } from '../../lib/devices';
 import { lineChartSVG } from '../../lib/charts';
@@ -246,7 +246,7 @@ const loadMoreFromDev = async () => {
     // Best-effort: an error just caches/renders an empty list, as before.
     return { data: data || [], error: null };
   })).data || [];
-  if (moreFromDev.length) moreFromIcons = await getOldestIcons(supabase, moreFromDev.map((a: any) => Number(a.id)));
+  if (moreFromDev.length) moreFromIcons = await getAppIcons(supabase, moreFromDev.map((a: any) => Number(a.id)));
 };
 
 // D2. Editorial collections featuring this app ("Appears in" line). RLS keeps

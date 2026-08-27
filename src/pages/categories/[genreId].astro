@@ -11,7 +11,7 @@ import { loadRankedAppPage } from '../../lib/apps';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { getChartTypes, getSnapshotIndex, deviceOf } from '../../lib/timemachine';
-import { getOldestIcons } from '../../lib/appicons';
+import { getAppIcons } from '../../lib/appicons';
 
 const { genreId } = Astro.params;
 const url = new URL(Astro.request.url);
@@ -66,7 +66,7 @@ const loadList = async () => {
   total = res.total;
   totalPages = res.totalPages;
   if (res.dbError) { dbError = true; return; }
-  if (list.length) iconShas = await getOldestIcons(supabase, list.map((a: any) => Number(a.id)));
+  if (list.length) iconShas = await getAppIcons(supabase, list.map((a: any) => Number(a.id)));
 };
 
 // Time Machine module: archived chart captures exist for ~30 genres

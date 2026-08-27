@@ -6,7 +6,7 @@ import AppList from '../components/AppList.astro';
 import SectionHeader from '../components/SectionHeader.astro';
 import { cached } from '../lib/cache';
 import { setCacheHeaders, setDegraded } from '../lib/http';
-import { appIconSrc } from '../lib/icons';
+import { appIconSrc, iconShaOf, appSlug } from '../lib/icons';
 import { formatDate } from '../lib/format';
 import {
   getChartTypes,
@@ -68,8 +68,8 @@ const loadFeatured = async () => {
   // no second query.
   iconShas = new Map(
     featuredApps
-      .filter((a: any) => a.rep_icon_sha256 || a.oldest_icon_sha256)
-      .map((a: any) => [Number(a.id), a.rep_icon_sha256 || a.oldest_icon_sha256] as [number, string])
+      .filter((a: any) => iconShaOf(a))
+      .map((a: any) => [Number(a.id), iconShaOf(a)!] as [number, string])
   );
   // Peak-chart badges — best-effort decoration on top of the list.
   const ids = featuredApps.map((a: any) => Number(a.app_store_id)).filter((n: number) => n > 0);
@@ -138,7 +138,7 @@ const loadCollections = async () => {
         icons: (c.collection_members || [])
           .filter((m: any) => m.apps && !m.apps.excluded)
           .sort((x: any, y: any) => x.position - y.position)
-          .map((m: any) => appIconSrc(m.apps.rep_icon_sha256 || m.apps.oldest_icon_sha256, m.apps.icon_url))
+          .map((m: any) => appIconSrc(iconShaOf(m.apps), m.apps.icon_url))
           .filter(Boolean)
           .slice(0, 4),
       })),
@@ -204,7 +204,7 @@ if (dbError) setDegraded(Astro.response);
                   const icon = chartRowIcon(
                     p.artwork_url,
                     p.artwork_url ? heroArtFates?.get(p.artwork_url) : undefined,
-                    heroIconShas?.get(Number(p.apps?.id)) || p.apps?.oldest_icon_sha256,
+                    heroIconShas?.get(Number(p.apps?.id)) || iconShaOf(p.apps),
                     p.apps?.icon_url);
                   const price = formatPrice(p.price_amount, p.price_currency);
                   const href = p.apps ? `/app/${p.apps.app_store_id || p.apps.id}` : null;

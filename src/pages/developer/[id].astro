@@ -6,7 +6,7 @@ import SectionHeader from '../../components/SectionHeader.astro';
 import { cacheGet, cacheSet, cached } from '../../lib/cache';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
-import { getOldestIcons } from '../../lib/appicons';
+import { getAppIcons } from '../../lib/appicons';
 import { iconSrc, appIconSrc } from '../../lib/icons';
 import { appTitleOf } from '../../lib/apps';
 
@@ -94,7 +94,7 @@ if (!dbError) {
 // Period-authentic (oldest) icons for the list.
 let iconShas: Map<number, string> | undefined;
 if (!dbError && (list || []).length) {
-  iconShas = await getOldestIcons(supabase, (list || []).map((a: any) => Number(a.id)));
+  iconShas = await getAppIcons(supabase, (list || []).map((a: any) => Number(a.id)));
 }
 
 if (dbError) setDegraded(Astro.response);

@@ -33,7 +33,7 @@ export const GET: APIRoute = async (ctx) => {
   if (looksLikeBundleId(qBundle)) {
     const { data } = await supabase
       .from('apps')
-      .select(`${APP_LIST_COLS}, rep_icon_sha256, oldest_icon_sha256`)
+      .select(APP_LIST_COLS)
       .eq('bundle_id', qBundle)
       .not('excluded', 'is', true)
       .order('id', { ascending: true })
@@ -45,7 +45,7 @@ export const GET: APIRoute = async (ctx) => {
     // so a stray * can't turn into an unanchored scan.
     const { data: pfx } = await supabase
       .from('apps')
-      .select(`${APP_LIST_COLS}, rep_icon_sha256, oldest_icon_sha256`)
+      .select(APP_LIST_COLS)
       .ilike('bundle_id', escapeLike(qBundle) + '%')
       .not('excluded', 'is', true)
       .order('version_count', { ascending: false, nullsFirst: false })

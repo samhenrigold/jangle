@@ -4,7 +4,7 @@ import { cacheGet, cacheSet, cached } from './cache';
 // most-archived, home, collections, recent, emulator API). Kept to what
 // AppList.astro renders — add here, not per-page.
 export const APP_LIST_COLS =
-  'id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, display_name, version_count, excluded, developers!apps_developer_id_fkey(artist_name)';
+  'id, app_store_id, bundle_id, app_store_name, developer_id, genre_id, icon_url:live_icon_url, rep_icon_sha256, oldest_icon_sha256, display_name, version_count, excluded, developers!apps_developer_id_fkey(artist_name)';
 
 // Flatten the developers embed the way every list page does.
 export function flattenAppRow(a: any) {

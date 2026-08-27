@@ -22,7 +22,7 @@ import {
   type Device,
   type ArtworkFate,
 } from '../../lib/timemachine';
-import { getOldestIcons, getIconsNearDate } from '../../lib/appicons';
+import { getAppIcons, getIconsNearDate } from '../../lib/appicons';
 
 setCacheHeaders(Astro.response, 3600);
 
@@ -185,7 +185,7 @@ const loadChartIcons = async (): Promise<ChartIcons> => {
   const artworkUrls = positions.map((p: any) => p.artwork_url).filter(Boolean);
   const [near, oldest, fates] = await Promise.all([
     ids.length ? getIconsNearDate(supabase, ids, snapshot.snapshot_date) : Promise.resolve(undefined),
-    ids.length ? getOldestIcons(supabase, ids) : Promise.resolve(undefined),
+    ids.length ? getAppIcons(supabase, ids) : Promise.resolve(undefined),
     getArtworkFates(supabase, artworkUrls),
   ]);
   return { near, oldest, fates };

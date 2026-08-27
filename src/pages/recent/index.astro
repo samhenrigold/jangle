@@ -8,7 +8,7 @@ import { appIconSrc } from '../../lib/icons';
 import { appTitleOf } from '../../lib/apps';
 import { clampPage, clampPageSize } from '../../lib/search';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
-import { getOldestIcons } from '../../lib/appicons';
+import { getAppIcons } from '../../lib/appicons';
 
 // Freshness is the point of this page — much shorter edge TTL than the rest.
 setCacheHeaders(Astro.response, 300);
@@ -44,7 +44,7 @@ const rows: any[] = versions || [];
 
 let iconShas: Map<number, string> = new Map();
 if (!dbError && rows.length) {
-  iconShas = (await getOldestIcons(supabase, rows.map((v: any) => Number(v.apps?.id)).filter(Boolean))) || new Map();
+  iconShas = (await getAppIcons(supabase, rows.map((v: any) => Number(v.apps?.id)).filter(Boolean))) || new Map();
 }
 
 const fmtAbs = (iso: string) =>
