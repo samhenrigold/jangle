@@ -49,7 +49,7 @@ paths:
           in: query
           required: false
           schema: { type: string }
-          description: Keyword query, or bundle-id substring when it contains a dot.
+          description: Keyword query (matches app names, developer names, and bundle-id words; typo-tolerant), or bundle-id substring when it contains a dot.
         - name: genre
           in: query
           required: false
@@ -58,8 +58,8 @@ paths:
         - name: sort
           in: query
           required: false
-          schema: { type: string, enum: [versions, first_date, newest, name], default: versions }
-          description: versions = most-archived first; first_date = oldest first; newest = newest first; name = alphabetical.
+          schema: { type: string, enum: [versions, relevance, first_date, newest, name], default: versions }
+          description: versions = most-archived first; relevance = best match for q (exact and prefix name matches first, typo-tolerant); first_date = oldest first; newest = newest first; name = alphabetical.
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
       responses:

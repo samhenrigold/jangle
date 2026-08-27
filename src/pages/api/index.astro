@@ -118,7 +118,7 @@ const jsonLd = {
     <ul>
       <li><code>q</code> — search app names by keyword. If it contains a dot (<code>com.rovio</code>), it matches against bundle ids instead</li>
       <li><code>genre</code> — genre id from <a class="dev-link" href="/api/v1/genres"><code>/api/v1/genres</code></a></li>
-      <li><code>sort</code> — <code>versions</code> (default) | <code>first_date</code> | <code>newest</code> | <code>name</code></li>
+      <li><code>sort</code> — <code>versions</code> (default) | <code>relevance</code> (best match for <code>q</code>, typo-tolerant) | <code>first_date</code> | <code>newest</code> | <code>name</code></li>
       <li><code>limit</code> — 1–200, default 50</li>
     </ul>
     <pre class="dev-pre">curl 'https://legacystore.app/api/v1/apps?q=doodle&amp;limit=2'</pre>

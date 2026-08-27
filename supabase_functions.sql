@@ -837,3 +837,34 @@ $function$;
 -- app_screenshot_sets_cache + compute_app_screenshots_dup_appid_fix; run
 -- select pg_get_functiondef against the live DB for current bodies.
 -- ============================================================================
+
+-- ============================================================================
+-- Search overhaul (2026-08-27). One ranked search path for every surface:
+--   apps.search_vector2      = weighted, trigger-maintained tsvector
+--                              (A: display/app_store name, B: developer
+--                              artist_name, C: bundle-id words + app_store_id;
+--                              all f_unaccent-folded). A generated column
+--                              can't reference developers, hence the trigger
+--                              (trg_apps_search_vector2 on apps; developer
+--                              renames re-fill via trg_developers_search_vector2).
+--   search_apps()            = the one search RPC used by /search, /api/v1/apps,
+--                              /api/emulator/apps, and /api/suggest. FTS arm
+--                              over search_vector2 + trigram/prefix fallback
+--                              (fires when FTS <5 hits, or 1-2 char query);
+--                              relevance = exact-name*2 + name-prefix*3 +
+--                              word-match*1 (+ fuzzy similarity) +
+--                              ln(1+version_count) — popularity is continuous
+--                              so giants beat 1-version name-squatters, while
+--                              the exact nudge keeps the original above its
+--                              sequels. LIKE metachars in p_raw escaped;
+--                              fuzzy cap ordered by sim + version_count.
+--                              Returns rank + total (count(*) OVER ()) so no
+--                              separate count call; filters excluded (which
+--                              get_apps_count/get_apps_sorted_* never did).
+--   Indexes: idx_apps_search_vector2 (gin), idx_apps_name_trgm
+--            (gin_trgm_ops over f_unaccent(coalesce(display_name,
+--            app_store_name, ''))).
+-- Old search_vector column + get_apps_sorted_* stay for non-search list pages.
+-- Definitions live in migration search_overhaul_vector2_and_search_apps; run
+-- select pg_get_functiondef against the live DB for current bodies.
+-- ============================================================================

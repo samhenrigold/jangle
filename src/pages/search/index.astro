@@ -7,7 +7,7 @@ import SearchForm from '../../components/SearchForm.astro';
 import AppList from '../../components/AppList.astro';
 import SectionHeader from '../../components/SectionHeader.astro';
 import { cached } from '../../lib/cache';
-import { buildPrefixTsquery, clampPage, clampPageSize } from '../../lib/search';
+import { buildPrefixTsquery, clampPage, clampPageSize, looksLikeBundleId, escapeLike } from '../../lib/search';
 import { APP_LIST_COLS, flattenAppRow } from '../../lib/apps';
 import { sortGenres, fetchGenresWithCounts } from '../../lib/genres';
 import { getOldestIcons } from '../../lib/appicons';
@@ -24,15 +24,18 @@ const dev = (url.searchParams.get('dev')?.trim() || '').slice(0, 80);
 // Escape LIKE wildcards so a literal % or _ in the developer name matches
 // itself rather than acting as a pattern. (The ilike value is parameterized by
 // supabase-js, so this is about matching semantics, not SQL injection.)
-const devLike = dev.replace(/[\\%_]/g, (m) => `\\${m}`);
+const devLike = escapeLike(dev);
 // genre must be a positive integer or it's ignored (no injection, no junk keys).
 const rawGenre = url.searchParams.get('genre');
 const genreId = rawGenre && /^\d{1,7}$/.test(rawGenre) ? rawGenre : null;
 // Coerce to a known sort so a junk ?sort= value can't mint a distinct cache key
 // (all falling through to the same list) or silently pick the wrong branch.
-const SORTS = ['versions', 'newest', 'first_date', 'name'];
-const sortParam = url.searchParams.get('sort') || 'versions';
-const sort = SORTS.indexOf(sortParam) >= 0 ? sortParam : 'versions';
+// A text query defaults to relevance (best match first); browsing defaults to
+// most-archived, the closest thing the archive has to popularity.
+const SORTS = ['relevance', 'versions', 'newest', 'first_date', 'name'];
+const defaultSort = q ? 'relevance' : 'versions';
+const sortParam = url.searchParams.get('sort') || defaultSort;
+const sort = SORTS.indexOf(sortParam) >= 0 ? sortParam : defaultSort;
 const page = clampPage(url.searchParams.get('page'));
 const pageSize = clampPageSize(url.searchParams.get('per_page'));
 const offset = (page - 1) * pageSize;
@@ -59,7 +62,7 @@ function applySort(listQ: any) {
 // A pure number is only treated as an App Store ID when it's long enough to
 // plausibly be one (>=6 digits) AND actually matches a row — otherwise it falls
 // through to normal search, so a numeric app name like "2048" still works.
-const looksLikeBundle = !!q && /^[A-Za-z0-9][\w.\-]*\.[\w.\-]+$/.test(q) && /[A-Za-z]/.test(q);
+const looksLikeBundle = looksLikeBundleId(q);
 const looksLikeStoreId = !!q && /^\d{6,10}$/.test(q) && q !== '0';
 
 // Exact-match jump: only when the search is a bare identifier (no developer or
@@ -107,6 +110,26 @@ let devIds: number[] | null = null;
 if (q || genreId || dev) {
   const tsquery = q ? buildPrefixTsquery(q) : null;
 
+  // The one ranked-search call (search_apps RPC): list + total in a single
+  // round trip. The function filters excluded, matches names + developer
+  // names + bundle-id words (search_vector2), ranks exact > prefix > word >
+  // fuzzy, and falls back to trigram matching for typos/short queries.
+  const runSearch = (devScope: number[] | null) =>
+    cached<any[]>(
+      `search_list:${sort}:${genreId || ''}:${tsquery || ''}:${q}:${devScope ? devScope.join(',') : ''}:${page}:${pageSize}`,
+      60 * 1000,
+      () =>
+        supabase.rpc('search_apps', {
+          p_query: tsquery,
+          p_raw: q || null,
+          p_genre_id: genreId ? Number(genreId) : null,
+          p_sort: sort,
+          p_limit: pageSize,
+          p_offset: offset,
+          p_dev_ids: devScope,
+        })
+    );
+
   // If the user typed something but it sanitized to nothing (all punctuation),
   // there is no valid tsquery to run — render the empty state instead.
   if (q && !tsquery) {
@@ -134,22 +157,12 @@ if (q || genreId || dev) {
       total = 0;
       searchResults = [];
     } else {
-      const applyFilters = (query: any) => {
-        let out = query.in('developer_id', devIds);
-        if (tsquery) out = out.textSearch('search_vector', tsquery);
-        if (genreId) out = out.eq('genre_id', Number(genreId));
-        return out;
-      };
-      const { count, error: cErr } = await applyFilters(
-        supabase.from('apps').select('id', { count: 'exact', head: true })
-      );
-      if (cErr) { console.error('dev count failed:', cErr.message); dbError = true; }
-      else total = count || 0;
-
-      const listQ = applySort(applyFilters(supabase.from('apps').select(APP_LIST_COLS)));
-      const { data, error: lErr } = await listQ.range(offset, offset + pageSize - 1);
+      const { data, error: lErr } = await runSearch(devIds);
       if (lErr) { console.error('dev list failed:', lErr.message); dbError = true; }
-      else searchResults = (data || []).map(flattenAppRow);
+      else {
+        searchResults = data || [];
+        total = Number(searchResults[0]?.total) || 0;
+      }
     }
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   } else if (looksLikeBundle) {
@@ -159,7 +172,7 @@ if (q || genreId || dev) {
     // directly with ilike. Escape LIKE wildcards so a literal % or _ is matched
     // as itself. Includes catalog-only apps (version_count 0) — no separate
     // supplement needed, they're in the same list.
-    const bundleLike = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const bundleLike = escapeLike(q);
     const applyBundle = (query: any) => {
       let out = query.not('excluded', 'is', true).ilike('bundle_id', `%${bundleLike}%`);
       if (genreId) out = out.eq('genre_id', Number(genreId));
@@ -179,52 +192,12 @@ if (q || genreId || dev) {
     else searchResults = (data || []).map(flattenAppRow);
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   } else {
-    const pGenreId = genreId ? Number(genreId) : null;
-
-    const rpcArgs = {
-      p_limit: pageSize,
-      p_offset: offset,
-      p_genre_id: pGenreId,
-      p_ascending: false,
-      p_search_query: tsquery,
-    };
-    const runList = async (): Promise<{ data: any[] | null; error: any }> => {
-      if (sort === 'first_date' || sort === 'newest') {
-        // ascending = oldest first; descending = newest first.
-        return supabase.rpc('get_apps_sorted_by_first_version_date', {
-          ...rpcArgs,
-          p_ascending: sort === 'first_date',
-        });
-      }
-      if (sort === 'name') {
-        let query = supabase
-          .from('apps')
-          .select(APP_LIST_COLS)
-          .not('excluded', 'is', true)
-          .order('display_name', { ascending: true })
-          .range(offset, offset + pageSize - 1);
-        if (tsquery) query = query.textSearch('search_vector', tsquery);
-        if (genreId) query = query.eq('genre_id', Number(genreId));
-        const { data, error } = await query;
-        return { data: (data || []).map(flattenAppRow), error };
-      }
-      return supabase.rpc('get_apps_sorted_by_version_count', rpcArgs);
-    };
-
-    // Count and page are independent — one round trip of latency, not two.
-    const [countRes, listRes] = await Promise.all([
-      cached<number>(`search_count:${genreId||''}:${tsquery||''}`, 2 * 60 * 1000, async () => {
-        const { data, error } = await supabase.rpc('get_apps_count', {
-          p_genre_id: pGenreId,
-          p_search_query: tsquery,
-        });
-        return { data: Number(Array.isArray(data) ? data[0] : data) || 0, error };
-      }),
-      cached<any[]>(`search_list:${sort}:${genreId||''}:${tsquery||''}:${page}:${pageSize}`, 60 * 1000, runList),
-    ]);
-    total = countRes.data ?? 0;
-    searchResults = listRes.data || [];
-    if (countRes.error || listRes.error) dbError = true;
+    const { data, error: lErr } = await runSearch(null);
+    if (lErr) { console.error('search failed:', lErr.message); dbError = true; }
+    else {
+      searchResults = data || [];
+      total = Number(searchResults[0]?.total) || 0;
+    }
     totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
   }
 
@@ -243,7 +216,7 @@ if (q || genreId || dev) {
       .or('version_count.is.null,version_count.eq.0')
       .order('app_store_name', { ascending: true, nullsFirst: false })
       .limit(30);
-    if (tsquery) cq = cq.textSearch('search_vector', tsquery);
+    if (tsquery) cq = cq.textSearch('search_vector2', tsquery);
     if (genreId) cq = cq.eq('genre_id', Number(genreId));
     // Developer-name branch: only apps by the matched developers (none → empty).
     if (dev) cq = (devIds && devIds.length) ? cq.in('developer_id', devIds) : null;
@@ -272,8 +245,8 @@ if (q || genreId || dev) {
       .order('app_store_name', { ascending: true, nullsFirst: false })
       .limit(30);
     if (looksLikeStoreId) sq = sq.eq('app_store_id', q);
-    else if (looksLikeBundle) sq = sq.ilike('bundle_id', `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
-    else if (tsquery) sq = sq.textSearch('search_vector', tsquery);
+    else if (looksLikeBundle) sq = sq.ilike('bundle_id', `%${escapeLike(q)}%`);
+    else if (tsquery) sq = sq.textSearch('search_vector2', tsquery);
     if (genreId) sq = sq.eq('genre_id', Number(genreId));
     // Developer-name branch: only seeds by the matched developers (none → empty).
     if (dev) sq = (devIds && devIds.length) ? sq.in('developer_id', devIds) : null;
@@ -321,7 +294,7 @@ function pageHref(p: number) {
   if (q) sp.set('q', q);
   if (dev) sp.set('dev', dev);
   if (genreId) sp.set('genre', String(genreId));
-  if (sort !== 'versions') sp.set('sort', sort);
+  if (sort !== defaultSort) sp.set('sort', sort);
   if (p !== 1) sp.set('page', String(p));
   if (pageSize !== 20) sp.set('per_page', String(pageSize));
   const s = sp.toString();

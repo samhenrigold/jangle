@@ -5,12 +5,13 @@ import {
   clampLimit, encodeCursor, decodeCursor, listBody,
 } from '../../../../lib/api';
 import { APP_LIST_COLS, flattenAppRow } from '../../../../lib/apps';
-import { buildPrefixTsquery } from '../../../../lib/search';
+import { buildPrefixTsquery, looksLikeBundleId, escapeLike } from '../../../../lib/search';
 
 // GET /api/v1/apps — search / list the catalog.
 //   ?q=       keyword (FTS, prefix-matched) or bundle-id substring (q contains a dot)
 //   ?genre=   internal genre id (see /api/v1/genres)
-//   ?sort=    versions (default, most-archived first) | first_date | newest | name
+//   ?sort=    versions (default, most-archived first) | relevance (best match,
+//             needs q) | first_date | newest | name
 //   ?limit=   1-200 (default 50)
 //   ?cursor=  opaque, from a previous response's next_url
 //
@@ -18,7 +19,7 @@ import { buildPrefixTsquery } from '../../../../lib/search';
 // two presentations.
 // ponytail: the cursor wraps an offset (the backing RPCs are offset-based);
 // swap to true keyset inside the same opaque token if deep pages ever matter.
-const SORTS = ['versions', 'first_date', 'newest', 'name'];
+const SORTS = ['versions', 'relevance', 'first_date', 'newest', 'name'];
 
 export const GET: APIRoute = async (ctx) => {
   const bad = checkParams(ctx.url, ['q', 'genre', 'sort', 'limit', 'cursor']);
@@ -36,7 +37,7 @@ export const GET: APIRoute = async (ctx) => {
   const offset = cur && Number.isInteger(cur[0]) && (cur[0] as number) >= 0 ? (cur[0] as number) : 0;
 
   const supabase = supabaseFor(ctx);
-  const looksLikeBundle = !!q && /^[A-Za-z0-9][\w.\-]*\.[\w.\-]+$/.test(q) && /[A-Za-z]/.test(q);
+  const looksLikeBundle = looksLikeBundleId(q);
   const tsquery = q && !looksLikeBundle ? buildPrefixTsquery(q) : null;
   if (q && !looksLikeBundle && !tsquery) return json(listBody(ctx.url, [], 0, null), 200, 300);
 
@@ -46,7 +47,7 @@ export const GET: APIRoute = async (ctx) => {
 
     if (looksLikeBundle) {
       // Bundle-id substring branch (FTS strips dots, so this is its own path).
-      const like = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+      const like = `%${escapeLike(q)}%`;
       const applyFilters = (query: any) => {
         let out = query.not('excluded', 'is', true).ilike('bundle_id', like);
         if (genreId) out = out.eq('genre_id', genreId);
@@ -66,35 +67,23 @@ export const GET: APIRoute = async (ctx) => {
       if (cErr || lErr) throw new Error((cErr || lErr)!.message);
       rows = (data || []).map(flattenAppRow);
       total = count ?? null;
-    } else if (sort === 'name') {
-      let query = supabase
-        .from('apps')
-        .select(APP_LIST_COLS, { count: 'exact' })
-        .not('excluded', 'is', true)
-        .order('display_name', { ascending: true })
-        .range(offset, offset + limit - 1);
-      if (tsquery) query = query.textSearch('search_vector', tsquery);
-      if (genreId) query = query.eq('genre_id', genreId);
-      const { data, count, error } = await query;
-      if (error) throw new Error(error.message);
-      rows = (data || []).map(flattenAppRow);
-      total = count ?? null;
     } else {
-      const rpc = sort === 'versions' ? 'get_apps_sorted_by_version_count' : 'get_apps_sorted_by_first_version_date';
-      const [{ data, error: lErr }, { data: countData, error: cErr }] = await Promise.all([
-        supabase.rpc(rpc, {
-          p_limit: limit,
-          p_offset: offset,
-          p_genre_id: genreId,
-          // versions: most-archived first; first_date: oldest first; newest: newest first.
-          p_ascending: sort === 'first_date',
-          p_search_query: tsquery,
-        }),
-        supabase.rpc('get_apps_count', { p_genre_id: genreId, p_search_query: tsquery }),
-      ]);
-      if (lErr || cErr) throw new Error((lErr || cErr)!.message);
+      // One ranked-search RPC: list + total in one round trip, ranking and
+      // typo-tolerant fallback inside the function (see search_apps in
+      // supabase_functions.sql). Matches names, developer names, and
+      // bundle-id words.
+      const { data, error } = await supabase.rpc('search_apps', {
+        p_query: tsquery,
+        p_raw: q || null,
+        p_genre_id: genreId,
+        p_sort: sort,
+        p_limit: limit,
+        p_offset: offset,
+        p_dev_ids: null,
+      });
+      if (error) throw new Error(error.message);
       rows = data || [];
-      total = Number(Array.isArray(countData) ? countData[0] : countData) || 0;
+      total = Number(rows[0]?.total) || 0;
     }
 
     const data = rows.map(appSummary);

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { supabaseFor } from '../../../lib/supabase';
 import { json, fail, CORS } from '../../../lib/coverage';
-import { buildPrefixTsquery, clampPageSize } from '../../../lib/search';
+import { buildPrefixTsquery, clampPageSize, looksLikeBundleId, escapeLike } from '../../../lib/search';
 import { dedupeFilesByHash, sortGroupsByPreference } from '../../../lib/files';
 import { emulatorCompatible, emulatorMinOs } from '../../../lib/emulator';
 import { appTitleOf, APP_LIST_COLS, flattenAppRow } from '../../../lib/apps';
@@ -122,39 +122,29 @@ export const GET: APIRoute = async (ctx) => {
     // Overfetch: many hits have no armv6/installable copy and are dropped
     // below. The suggested list needs the deepest pool — the most-archived
     // apps skew late-iOS, so the survival rate down to iOS 3 is low.
-    const { data: hits, error: se } = await supabase.rpc('get_apps_sorted_by_version_count', {
+    // search_apps ranks by relevance (typo-tolerant, matches developer names
+    // and bundle-id words via search_vector2) so the old dev/bundle-append
+    // lookups are gone; a dotted query still gets a bundle_id substring
+    // append below, since the tsquery folds dots away.
+    const { data: hits, error: se } = await supabase.rpc('search_apps', {
+      p_query: tsquery,
+      p_raw: q || null,
+      p_genre_id: null,
+      p_sort: q ? 'relevance' : 'versions',
       p_limit: q ? 50 : 300,
       p_offset: 0,
-      p_genre_id: null,
-      p_ascending: false,
-      p_search_query: tsquery,
+      p_dev_ids: null,
     });
     if (se) throw new Error(se.message);
     const apps: any[] = hits || [];
 
-    // The FTS vector misses two things people paste into an emulator's search
-    // box: bundle ids (the tsquery folds the dots away) and developer names
-    // (not in the vector at all). Both are separate lookups, appended after
-    // the FTS hits and deduped. Same patterns as the site's own search page.
-    if (q) {
-      const flatten = (rows: any[] | null) => (rows || []).map(flattenAppRow);
-      const pattern = `%${q.replace(/[%_]/g, (ch) => '\\' + ch)}%`;
-      if (q.includes('.')) {
-        const { data } = await supabase
-          .from('apps').select(APP_LIST_COLS)
-          .ilike('bundle_id', pattern).not('excluded', 'is', true).limit(25);
-        apps.push(...flatten(data));
-      }
-      const { data: devs } = await supabase
-        .from('developers').select('id').ilike('artist_name', pattern).limit(5);
-      if (devs?.length) {
-        const { data } = await supabase
-          .from('apps').select(APP_LIST_COLS)
-          .in('developer_id', devs.map((d: any) => d.id))
-          .not('excluded', 'is', true).limit(50);
-        apps.push(...flatten(data));
-      }
-      // First occurrence wins, so FTS ranking stays on top.
+    if (looksLikeBundleId(q)) {
+      const pattern = `%${escapeLike(q)}%`;
+      const { data } = await supabase
+        .from('apps').select(APP_LIST_COLS)
+        .ilike('bundle_id', pattern).not('excluded', 'is', true).limit(25);
+      apps.push(...(data || []).map(flattenAppRow));
+      // First occurrence wins, so relevance ranking stays on top.
       const seen = new Set<any>();
       const unique = apps.filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)));
       apps.length = 0;

@@ -13,9 +13,28 @@ export function buildPrefixTsquery(q: string): string | null {
   return tokens.map((t) => `${t}:*`).join(' & ');
 }
 
+// Reverse-DNS-shaped query (has a dot and a letter): the FTS tokenizer folds
+// dots away, so bundle ids get their own exact/substring branches everywhere.
+// Shared by the search page, /api/v1/apps, the emulator API, and /api/suggest.
+export function looksLikeBundleId(q: string): boolean {
+  return !!q && /^[A-Za-z0-9][\w.\-]*\.[\w.\-]+$/.test(q) && /[A-Za-z]/.test(q);
+}
+
+// Escape LIKE/ILIKE metachars so a literal %, _ or \ in user input matches
+// itself rather than acting as a pattern. (Values are parameterized by
+// supabase-js — this is about matching semantics, not SQL injection.)
+export function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+// Deep OFFSET pagination is O(offset) in Postgres; crawlers paging to
+// page 2000+ were the DB's single biggest CPU cost. 400 pages covers
+// every real reader (10k rows at the default page size).
+export const MAX_PAGE = 400;
+
 export function clampPage(input: unknown): number {
   const n = Math.floor(Number(input));
-  return Number.isFinite(n) && n >= 1 ? n : 1;
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, MAX_PAGE) : 1;
 }
 
 export function clampPageSize(input: unknown, def = 20, max = 50): number {

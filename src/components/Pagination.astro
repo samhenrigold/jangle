@@ -7,7 +7,10 @@ interface Props {
   hrefFor: (p: number) => string;
   nextLabel?: string;
 }
-const { page, totalPages, hrefFor, nextLabel = 'Next' } = Astro.props;
+import { MAX_PAGE } from '../lib/search';
+const { page, totalPages: rawTotal, hrefFor, nextLabel = 'Next' } = Astro.props;
+// Deep OFFSET pages are the DB's biggest cost; never link past the cap.
+const totalPages = Math.min(rawTotal, MAX_PAGE);
 ---
 
 {totalPages > 1 && (

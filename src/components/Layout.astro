@@ -138,6 +138,155 @@ const NAV = [
       })();
     </script>
 
+    <!-- Search autocomplete: debounced fetch of /api/suggest under whichever
+         header search box is in use. Progressive enhancement — no fetch (old
+         WebKit) means the plain GET form works exactly as before. -->
+    <script is:inline>
+      (function () {
+        try {
+          if (typeof window.fetch !== 'function' || !document.querySelectorAll) return;
+          var timer = null;
+          var open = null; // the currently-shown list, if any
+          function close() {
+            if (open && open.parentNode) open.parentNode.removeChild(open);
+            open = null;
+          }
+          function show(input, items) {
+            close();
+            if (!items.length) return;
+            var ul = document.createElement('ul');
+            ul.className = 'search-suggest';
+            ul.setAttribute('role', 'listbox');
+            for (var i = 0; i < items.length; i++) {
+              var it = items[i];
+              var li = document.createElement('li');
+              var a = document.createElement('a');
+              a.href = it.href;
+              if (it.icon) {
+                var img = document.createElement('img');
+                img.src = it.icon;
+                img.alt = '';
+                img.width = 24; img.height = 24;
+                a.appendChild(img);
+              }
+              var name = document.createElement('span');
+              name.className = 'ss-name';
+              name.textContent = it.name;
+              a.appendChild(name);
+              if (it.dev) {
+                var dev = document.createElement('span');
+                dev.className = 'ss-dev';
+                dev.textContent = it.dev;
+                a.appendChild(dev);
+              }
+              if (it.type && it.type !== 'app') {
+                var tag = document.createElement('span');
+                tag.className = 'ss-type';
+                tag.textContent = it.type;
+                a.appendChild(tag);
+              }
+              li.appendChild(a);
+              ul.appendChild(li);
+            }
+            // Fixed-position on <body>, anchored to the input's viewport rect.
+            // The header is overflow:hidden (float clearfix), so anything
+            // absolutely positioned inside it gets clipped — fixed on body
+            // escapes every ancestor's clipping and stacking context.
+            var rect = input.getBoundingClientRect();
+            ul.style.left = rect.left + 'px';
+            ul.style.top = (rect.bottom + 2) + 'px';
+            ul.style.width = Math.max(rect.width, 220) + 'px';
+            document.body.appendChild(ul);
+            open = ul;
+          }
+          function onInput(e) {
+            var input = e.target;
+            var q = input.value.replace(/^\s+|\s+$/g, '');
+            if (timer) clearTimeout(timer);
+            if (q.length < 2) { close(); return; }
+            timer = setTimeout(function () {
+              fetch('/api/suggest?q=' + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (body) {
+                  // Stale response guard: only render if the box still says q.
+                  if (input.value.replace(/^\s+|\s+$/g, '') === q) show(input, body.suggestions || []);
+                })
+                .catch(function () {});
+            }, 200);
+          }
+          var inputs = document.querySelectorAll('input[type="search"][name="q"]');
+          for (var i = 0; i < inputs.length; i++) {
+            inputs[i].setAttribute('aria-expanded', 'false');
+            inputs[i].addEventListener('input', onInput);
+          }
+          // Click-away / Escape close. mousedown fires before the click's blur,
+          // so suggestion links still navigate.
+          document.addEventListener('mousedown', function (e) {
+            if (open && !open.contains(e.target)) close();
+          });
+          document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' || e.keyCode === 27) close();
+          });
+          // Fixed positioning doesn't track the page — just close on scroll.
+          window.addEventListener('scroll', close, true);
+        } catch (e) {}
+      })();
+    </script>
+    <style is:global>
+      /* Autocomplete dropdown (built by the script above, so is:global —
+         Astro's scoped attributes never land on JS-created nodes). */
+      .search-suggest {
+        /* Appended to <body>; left/top/width set inline from the input's
+           viewport rect (fixed = immune to the header's overflow:hidden). */
+        position: fixed;
+        z-index: 1000;
+        margin: 2px 0 0;
+        padding: 4px 0;
+        list-style: none;
+        background: #fff;
+        border: 1px solid #b3b3b3;
+        border-radius: 5px;
+        -webkit-border-radius: 5px;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+        -webkit-box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+        text-align: left;
+      }
+      .search-suggest li { margin: 0; padding: 0; }
+      .search-suggest a {
+        display: block;
+        overflow: hidden;
+        padding: 4px 8px;
+        font-size: 12px;
+        color: #333;
+        text-decoration: none;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .search-suggest a:hover { background: #298cda; color: #fff; }
+      .search-suggest a:hover .ss-dev { color: #d8eafd; }
+      .search-suggest img {
+        vertical-align: middle;
+        margin-right: 6px;
+        border-radius: 4px;
+        -webkit-border-radius: 4px;
+      }
+      .search-suggest .ss-name { font-weight: bold; }
+      .search-suggest .ss-dev { margin-left: 6px; font-size: 11px; color: #898989; }
+      .search-suggest .ss-type {
+        float: right;
+        margin-left: 8px;
+        font-size: 10px;
+        color: #898989;
+        text-transform: capitalize;
+        border: 1px solid #d0d0d0;
+        border-radius: 3px;
+        -webkit-border-radius: 3px;
+        padding: 0 4px;
+        line-height: 15px;
+      }
+      .search-suggest a:hover .ss-type { color: #d8eafd; border-color: #7db8e8; }
+    </style>
+
     <div id="globalfooter">
       <p class="gf-buy">A metadata-only preservation archive by <a href="https://samhenri.gold/">Sam&nbsp;Henri&nbsp;Gold</a>. App binaries are hosted by the <a href="https://archive.org/" rel="noopener">Internet&nbsp;Archive</a>, not here.</p>
       <ul class="gf-links piped">

@@ -27,6 +27,7 @@ const { q = '', dev = '', genreId = '', sort = 'versions', genres = [] } = Astro
   <div class="ps-field">
     <label class="ps-label" for="ps-sort">Sort By</label>
     <select id="ps-sort" name="sort">
+      <option value="relevance" selected={sort === 'relevance'}>Best match</option>
       <option value="versions" selected={sort === 'versions'}>Most versions</option>
       <option value="newest" selected={sort === 'newest'}>Newest first release</option>
       <option value="first_date" selected={sort === 'first_date'}>Oldest first release</option>

@@ -27,6 +27,15 @@ import { getOldestIcons, getIconsNearDate } from '../../lib/appicons';
 setCacheHeaders(Astro.response, 3600);
 
 const url = new URL(Astro.request.url);
+// The default (no-params) view is the zone's hottest SSR page and its data
+// only changes on pipeline ingest — hold it at the edge for a day. Filtered
+// variants keep the standard 1h TTL. Set after setCacheHeaders so this wins.
+if (!url.search) {
+  Astro.response.headers.set(
+    'Cloudflare-CDN-Cache-Control',
+    'public, max-age=86400, stale-while-revalidate=86400, stale-if-error=604800'
+  );
+}
 const supabase = supabaseFor(Astro);
 let dbError = false;
 
