@@ -868,3 +868,19 @@ $function$;
 -- Definitions live in migration search_overhaul_vector2_and_search_apps; run
 -- select pg_get_functiondef against the live DB for current bodies.
 -- ============================================================================
+
+-- ============================================================================
+-- Chart genre-fallback flag (2026-08-27). Sam spotted two impossible charts;
+-- content-hashing every snapshot (md5 of position-ordered app ids) found
+-- 2,152 genre-labeled snapshots byte-identical to a differently-labeled
+-- same-day chart — the upstream feed silently ignored the genre param:
+--   2,099 dump-era "new*" feeds 2021-06-20..2021-09-04 (Apple's new-apps RSS
+--         dead by then: same alphabetical list for every genre),
+--   45 rss new-noteworthy genre fallbacks 2010-2013,
+--   1 rss top-paid 2013-05-27 genre=6026, 7 scattered dump t1/t2.
+-- chart_snapshots.genre_fallback = DERIVED boolean, recomputed by
+-- refresh_chart_genre_fallback() (run after chart ingests). Raw positions
+-- untouched. Consumers: getSnapshotIndex + getAppChartHistory filter it.
+-- get_app_peaks was already safe (genre_id IS NULL only). Definition in
+-- migration chart_snapshots_genre_fallback_flag.
+-- ============================================================================
