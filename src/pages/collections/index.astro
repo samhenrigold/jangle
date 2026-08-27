@@ -25,7 +25,7 @@ const collections: CollectionRow[] = (rawCollections || []).map((c: any) => ({
   series: c.series,
   count: c.collection_members.length,
   icons: c.collection_members
-    .map((m: any) => appIconSrc(m.apps.oldest_icon_sha256, m.apps.icon_url))
+    .map((m: any) => appIconSrc(m.apps.rep_icon_sha256 || m.apps.oldest_icon_sha256, m.apps.icon_url))
     .filter(Boolean)
     .slice(0, 4),
 }));

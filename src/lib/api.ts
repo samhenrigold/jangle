@@ -74,7 +74,7 @@ import { appTitleOf } from './apps';
 // From an APP_LIST_COLS-shaped row (flattened or with developers embed).
 export function appSummary(a: any): Record<string, unknown> {
   const slug = a.app_store_id && Number(a.app_store_id) !== 0 ? a.app_store_id : a.id;
-  const iconSha = a.oldest_icon_sha256 || null;
+  const iconSha = a.rep_icon_sha256 || a.oldest_icon_sha256 || null;
   return {
     app_store_id: idStr(a.app_store_id && Number(a.app_store_id) !== 0 ? a.app_store_id : null),
     bundle_id: a.bundle_id ?? null,

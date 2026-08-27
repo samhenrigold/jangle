@@ -90,21 +90,24 @@ export async function getOldestIcons(supabase: any, appDbIds: number[]): Promise
   const cacheKey = `icons:oldest:${[...ids].sort((a, b) => a - b).join(',')}`;
   const { data: hit } = await cached<Map<number, string>>(cacheKey, 10 * 60 * 1000, async () => {
     try {
-      // Read the precomputed apps.oldest_icon_sha256 (maintained by the
-      // refresh_oldest_icons() pg_cron job — the SQL port of pickOldestIcon below).
-      // This replaced a per-request 3-query fan-out (versions → files → binaries)
-      // that also had to page past PostgREST's 1000-row cap; now it's one indexed
-      // column read, chunked only to bound the .in() list length.
+      // Read the precomputed representative icon (rep_icon_sha256 = the icon
+      // identity the app wore longest — its recognizable icon, maintained by
+      // refresh_rep_icons()), falling back to the period-authentic oldest
+      // (refresh_oldest_icons()). One indexed column read, chunked only to
+      // bound the .in() list length.
       const out = new Map<number, string>();
       const CHUNK = 300;
       for (let i = 0; i < ids.length; i += CHUNK) {
         const { data, error } = await supabase
           .from('apps')
-          .select('id, oldest_icon_sha256')
+          .select('id, rep_icon_sha256, oldest_icon_sha256')
           .in('id', ids.slice(i, i + CHUNK))
-          .not('oldest_icon_sha256', 'is', null);
+          .or('rep_icon_sha256.not.is.null,oldest_icon_sha256.not.is.null');
         if (error) return { data: null, error };
-        for (const a of data || []) out.set(Number(a.id), a.oldest_icon_sha256);
+        for (const a of data || []) {
+          const sha = a.rep_icon_sha256 || a.oldest_icon_sha256;
+          if (sha) out.set(Number(a.id), sha);
+        }
       }
       return { data: out, error: null };
     } catch (err) {

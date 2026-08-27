@@ -42,10 +42,10 @@ let heroYearsAgo = 0;
 // hand-picked list that used to live in src/lib/featured.ts. The only chain
 // allowed to set dbError; peak badges chain onto it since they need the ids.
 const loadFeatured = async () => {
-  const { data: featured, error } = await cached<any[]>('featured_apps_v3', 10 * 60 * 1000, async () => {
+  const { data: featured, error } = await cached<any[]>('featured_apps_v4', 10 * 60 * 1000, async () => {
     const { data, error } = await supabase
       .from('collections')
-      .select('collection_members(position, apps!collection_members_app_id_fkey(id, app_store_id, bundle_id, app_store_name, display_name, version_count, oldest_icon_sha256, excluded, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)))')
+      .select('collection_members(position, apps!collection_members_app_id_fkey(id, app_store_id, bundle_id, app_store_name, display_name, version_count, rep_icon_sha256, oldest_icon_sha256, excluded, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name)))')
       .eq('slug', 'featured')
       .maybeSingle();
     if (error) return { data: null, error };
@@ -64,11 +64,12 @@ const loadFeatured = async () => {
     return;
   }
   featuredApps = featured || [];
-  // Period-authentic (oldest) icons ride the embed — no second query.
+  // Representative (longest-worn) icons ride the embed, oldest as fallback —
+  // no second query.
   iconShas = new Map(
     featuredApps
-      .filter((a: any) => a.oldest_icon_sha256)
-      .map((a: any) => [Number(a.id), a.oldest_icon_sha256] as [number, string])
+      .filter((a: any) => a.rep_icon_sha256 || a.oldest_icon_sha256)
+      .map((a: any) => [Number(a.id), a.rep_icon_sha256 || a.oldest_icon_sha256] as [number, string])
   );
   // Peak-chart badges — best-effort decoration on top of the list.
   const ids = featuredApps.map((a: any) => Number(a.app_store_id)).filter((n: number) => n > 0);
@@ -121,10 +122,10 @@ const loadHero = async () => {
 type HomeCollection = { slug: string; title: string; subtitle: string | null; icons: string[] };
 let homeCollections: HomeCollection[] = [];
 const loadCollections = async () => {
-  const { data: cols } = await cached<HomeCollection[]>('home_collections_v1', 10 * 60 * 1000, async () => {
+  const { data: cols } = await cached<HomeCollection[]>('home_collections_v2', 10 * 60 * 1000, async () => {
     const { data, error } = await supabase
       .from('collections')
-      .select('slug, title, subtitle, featured_rank, collection_members(position, apps!collection_members_app_id_fkey(oldest_icon_sha256, icon_url:live_icon_url, excluded))')
+      .select('slug, title, subtitle, featured_rank, collection_members(position, apps!collection_members_app_id_fkey(rep_icon_sha256, oldest_icon_sha256, icon_url:live_icon_url, excluded))')
       .not('featured_rank', 'is', null)
       .order('featured_rank', { ascending: true })
       .limit(3);
@@ -137,7 +138,7 @@ const loadCollections = async () => {
         icons: (c.collection_members || [])
           .filter((m: any) => m.apps && !m.apps.excluded)
           .sort((x: any, y: any) => x.position - y.position)
-          .map((m: any) => appIconSrc(m.apps.oldest_icon_sha256, m.apps.icon_url))
+          .map((m: any) => appIconSrc(m.apps.rep_icon_sha256 || m.apps.oldest_icon_sha256, m.apps.icon_url))
           .filter(Boolean)
           .slice(0, 4),
       })),

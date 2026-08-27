@@ -446,13 +446,22 @@ const appTitle = appData ? appTitleOf(appData) : 'App';
 // membership = same-design proof) or a verified icon_upgrades master; ?exact
 // stops /icon from bouncing a non-canonical member back to the small
 // canonical. Version rows keep strict bundle-origin shas.
+// Representative (longest-worn) design wins when it differs from the oldest
+// design; large_icon_sha256 only upgrades the OLDEST cluster, so using it for
+// a redesigned app would show the wrong (early) icon. rep_icon_sha256 is the
+// largest same-design copy of the rep cluster (alias-canonical), so it's
+// already the best archived copy of that design.
+const repIconSha = appData?.rep_icon_sha256;
 const largeIconSha = appData?.large_icon_sha256;
-const appIcon = largeIconSha ? `/icon/${largeIconSha}?exact`
+const repDiffers = !!repIconSha && repIconSha !== oldestIconSha;
+const appIcon = repDiffers ? `/icon/${repIconSha}?exact`
+  : largeIconSha ? `/icon/${largeIconSha}?exact`
   : oldestIconSha ? `/icon/${oldestIconSha}`
   : (appData ? iconSrc(appData.icon_url) : '');
 // A small source blown up to 175px smears; at ≥2× integer-ish scale, honest
 // pixels read as deliberately retro instead. 90px ≈ the 2× cutoff.
-const appIconPixelated = !!appIcon && (appData?.large_icon_px ?? 175) <= 90;
+const appIconPixelated = !!appIcon &&
+  (repDiffers ? (appData?.rep_icon_px ?? 175) : (appData?.large_icon_px ?? 175)) <= 90;
 const developerName = appData?.developers?.artist_name;
 // Link developers by Apple's artist_id (canonical) when we have it, else our
 // internal developer_id (which 301s to the artist_id URL anyway).

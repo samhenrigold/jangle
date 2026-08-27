@@ -87,7 +87,8 @@ const items: Item[] = members.map((m: any) => {
     };
   }
   const appId = Number(m.apps.id);
-  if (m.apps.oldest_icon_sha256) iconShas.set(appId, m.apps.oldest_icon_sha256);
+  const repSha = m.apps.rep_icon_sha256 || m.apps.oldest_icon_sha256;
+  if (repSha) iconShas.set(appId, repSha);
   let note = '';
   const v = m.app_versions;
   if (v?.version_string) {

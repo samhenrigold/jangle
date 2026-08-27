@@ -50,7 +50,7 @@ export async function loadRankedAppPage(
 // Everything the app page needs from an apps row, with the developer/genre
 // names embedded.
 const APP_COLS =
-  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url:live_icon_url, oldest_icon_sha256, large_icon_sha256, large_icon_px, genre_id, developer_id, original_release_date, original_release_date_source, excluded, developers!apps_developer_id_fkey(artist_name, artist_id), genres!apps_genre_id_fkey(genre_name)';
+  'id, app_store_id, bundle_id, app_store_name, display_name, copyright, icon_url:live_icon_url, oldest_icon_sha256, rep_icon_sha256, rep_icon_px, large_icon_sha256, large_icon_px, genre_id, developer_id, original_release_date, original_release_date_source, excluded, developers!apps_developer_id_fkey(artist_name, artist_id), genres!apps_genre_id_fkey(genre_name)';
 
 // The app page's core data chain, shared with /api/v1/apps/{key}: versions →
 // archived copies (chunked at 150 — one .in() over ≤1000 version ids both

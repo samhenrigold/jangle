@@ -10,7 +10,7 @@ export async function fetchCollectionsWithMembers(supabase: any): Promise<{ data
   return cached<any[]>('collections_index_v2', 10 * 60 * 1000, async () => {
     const { data, error } = await supabase
       .from('collections')
-      .select('slug, title, subtitle, series, sort_order, collection_members(position, apps!collection_members_app_id_fkey(oldest_icon_sha256, icon_url:live_icon_url, excluded))')
+      .select('slug, title, subtitle, series, sort_order, collection_members(position, apps!collection_members_app_id_fkey(rep_icon_sha256, oldest_icon_sha256, icon_url:live_icon_url, excluded))')
       .order('sort_order', { ascending: true, nullsFirst: false });
     if (error) return { data: null, error };
     return {
@@ -53,7 +53,7 @@ export async function fetchCollectionMembers(supabase: any, collectionId: number
   return cached<any[]>(`collection_members:v2:${collectionId}`, 10 * 60 * 1000, async () => {
     const { data, error } = await supabase
       .from('collection_members')
-      .select('position, group_label, label, blurb, metadata, app_versions!collection_members_app_version_id_fkey(version_string, release_date, estimated_release_date), apps!collection_members_app_id_fkey(id, app_store_id, bundle_id, app_store_name, display_name, version_count, oldest_icon_sha256, excluded, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name))')
+      .select('position, group_label, label, blurb, metadata, app_versions!collection_members_app_version_id_fkey(version_string, release_date, estimated_release_date), apps!collection_members_app_id_fkey(id, app_store_id, bundle_id, app_store_name, display_name, version_count, rep_icon_sha256, oldest_icon_sha256, excluded, icon_url:live_icon_url, developers!apps_developer_id_fkey(artist_name))')
       .eq('collection_id', collectionId)
       .order('position', { ascending: true });
     return { data: error ? null : (data || []).filter((m: any) => !m.apps || !m.apps.excluded), error };

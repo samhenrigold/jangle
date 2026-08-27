@@ -884,3 +884,19 @@ $function$;
 -- get_app_peaks was already safe (genre_id IS NULL only). Definition in
 -- migration chart_snapshots_genre_fallback_flag.
 -- ============================================================================
+
+-- ============================================================================
+-- Representative icons (2026-08-27). apps.rep_icon_sha256 = DERIVED: the icon
+-- identity an app WORE LONGEST (per-version bundle icons folded through
+-- icon_aliases to canonical = largest same-design copy; clusters scored by
+-- calendar span of versions wearing them, tiebreak version count, then later
+-- era). The recognizable icon (Uber = dark-U badge, Instagram = classic
+-- camera, Twitter = bird) vs oldest_icon_sha256's period-authentic earliest
+-- (UC / Polaroid / Tweetie bubble). refresh_rep_icons(p_app_ids) recomputes
+-- (~seconds, full corpus); pg_cron 'refresh-rep-icons' hourly at :11.
+-- Consumers: getOldestIcons prefers rep→oldest; search_apps now returns
+-- coalesce(rep_icon_sha256, oldest_icon_sha256) in its oldest_icon_sha256
+-- column (updated live 2026-08-27, after migration search_apps_blended_
+-- popularity_score). Per-version icons, charts date-near icons, and the app
+-- header (large_icon_sha256) unchanged. Migration: rep_icon_sha256.
+-- ============================================================================
