@@ -55,6 +55,11 @@ paths:
           required: false
           schema: { type: integer }
           description: Internal genre id (genre_id from /api/v1/genres).
+        - name: developer
+          in: query
+          required: false
+          schema: { type: integer }
+          description: Scope to one developer's apps — the developer_artist_id from any app detail response.
         - name: sort
           in: query
           required: false
@@ -521,7 +526,7 @@ components:
         developer: { type: string, nullable: true }
         genre_id: { type: string, nullable: true, description: Internal genre id (see /api/v1/genres). }
         version_count: { type: integer, nullable: true }
-        icon_url: { type: string, nullable: true, description: The oldest archived build-time icon. }
+        icon_url: { type: string, nullable: true, description: The app's representative archived icon (its longest-worn design), or oldest as fallback. }
         url: { type: string, description: This app's API URL. }
         web_url: { type: string, description: This app's page on legacystore.app. }
     AppDetail:

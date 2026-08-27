@@ -24,6 +24,7 @@ export const GET: APIRoute = async (ctx) => {
       position: m.position,
       group: m.group_label ?? null,
       label: m.label ?? null,
+      blurb: m.blurb ?? null,
       pinned_version: m.app_versions?.version_string ?? null,
       pinned_version_date: iso(m.app_versions?.release_date || m.app_versions?.estimated_release_date),
       app: m.apps ? appSummary(flattenAppRow(m.apps)) : null,

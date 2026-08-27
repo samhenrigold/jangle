@@ -22,7 +22,7 @@ import { buildPrefixTsquery, looksLikeBundleId, escapeLike } from '../../../../l
 const SORTS = ['versions', 'relevance', 'first_date', 'newest', 'name'];
 
 export const GET: APIRoute = async (ctx) => {
-  const bad = checkParams(ctx.url, ['q', 'genre', 'sort', 'limit', 'cursor']);
+  const bad = checkParams(ctx.url, ['q', 'genre', 'developer', 'sort', 'limit', 'cursor']);
   if (bad) return bad;
   const p = ctx.url.searchParams;
 
@@ -30,6 +30,12 @@ export const GET: APIRoute = async (ctx) => {
   const rawGenre = p.get('genre');
   if (rawGenre && !/^\d{1,7}$/.test(rawGenre)) return fail(400, 'invalid_parameter', 'genre must be a numeric id from /api/v1/genres');
   const genreId = rawGenre ? Number(rawGenre) : null;
+  // ?developer=<artist_id from an AppSummary.developer_artist_id> scopes the
+  // list to that developer's apps (resolves artist_id → internal developer_id,
+  // fed to search_apps' p_dev_ids). Bundle-id branch ignores it (that path is
+  // an exact-namespace lookup, not a ranked list).
+  const rawDev = p.get('developer');
+  if (rawDev && !/^\d{1,12}$/.test(rawDev)) return fail(400, 'invalid_parameter', 'developer must be a numeric artist id (developer_artist_id from an app)');
   const sort = p.get('sort') || 'versions';
   if (!SORTS.includes(sort)) return fail(400, 'invalid_parameter', `sort must be one of ${SORTS.join(', ')}`);
   const limit = clampLimit(p.get('limit'), 50, 200);
@@ -68,6 +74,15 @@ export const GET: APIRoute = async (ctx) => {
       rows = (data || []).map(flattenAppRow);
       total = count ?? null;
     } else {
+      // Resolve ?developer=<artist_id> → internal developer_id(s) for scoping.
+      let devIds: number[] | null = null;
+      if (rawDev) {
+        const { data: devs, error: dErr } = await supabase
+          .from('developers').select('id').eq('artist_id', rawDev);
+        if (dErr) throw new Error(dErr.message);
+        devIds = (devs || []).map((d: any) => Number(d.id));
+        if (!devIds.length) return json(listBody(ctx.url, [], 0, null), 200, 300);
+      }
       // One ranked-search RPC: list + total in one round trip, ranking and
       // typo-tolerant fallback inside the function (see search_apps in
       // supabase_functions.sql). Matches names, developer names, and
@@ -79,7 +94,7 @@ export const GET: APIRoute = async (ctx) => {
         p_sort: sort,
         p_limit: limit,
         p_offset: offset,
-        p_dev_ids: null,
+        p_dev_ids: devIds,
       });
       if (error) throw new Error(error.message);
       rows = data || [];

@@ -21,6 +21,19 @@ export const CORS: Record<string, string> = {
 // cache). `cache` is the edge TTL in seconds; browser TTL stays short (60s).
 // Pass 0 (default) for no-store — errors and uncacheable answers.
 const STALE = 'stale-while-revalidate=86400, stale-if-error=604800';
+
+// Fast non-crypto hash (FNV-1a) over the serialized body — enough for a weak
+// ETag so the edge and clients can revalidate a large stable body (e.g.
+// /apps/ids, /stats) with a 304 instead of re-transferring it.
+function weakETag(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `W/"${s.length.toString(36)}-${(h >>> 0).toString(36)}"`;
+}
+
 export function json(body: unknown, status = 200, cacheSeconds = 0): Response {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json; charset=utf-8',
@@ -29,13 +42,16 @@ export function json(body: unknown, status = 200, cacheSeconds = 0): Response {
     'X-Robots-Tag': 'noindex',
     ...CORS,
   };
+  const payload = JSON.stringify(body);
   if (cacheSeconds > 0 && status < 500) {
     headers['Cache-Control'] = `public, max-age=60, ${STALE}`;
     headers['Cloudflare-CDN-Cache-Control'] = `public, max-age=${cacheSeconds}, ${STALE}`;
+    // Only cacheable responses get an ETag (the edge does the 304 negotiation).
+    headers['ETag'] = weakETag(payload);
   } else {
     headers['Cache-Control'] = 'no-store';
   }
-  return new Response(JSON.stringify(body), { status, headers });
+  return new Response(payload, { status, headers });
 }
 
 export function fail(status: number, code: string, message: string, extra?: Record<string, unknown>): Response {
