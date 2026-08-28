@@ -52,7 +52,14 @@ export const prerender = true;
       To contribute one, create a free
       <a class="col-link" href="https://archive.org/account/signup" rel="noopener">Internet&nbsp;Archive account</a>
       and upload the <code>.ipa</code>, ideally noting the app name, version, and where
-      it came from. It will be picked up by this index on the next pass.
+      it came from. How quickly it lands in this index depends on where it goes:
+      files added to an item the archive already tracks are picked up automatically
+      within about two weeks, and new items in the
+      <a class="col-link" href="https://archive.org/details/ipaarchive" rel="noopener">ipaarchive collection</a>
+      are discovered weekly. Uploads elsewhere on the Archive are found by a monthly
+      sweep and reviewed before ingest — to fast-track one, open a
+      <a class="col-link" href="https://github.com/samhenrigold/jangle/issues" rel="noopener">GitHub issue</a>
+      with the item link.
     </p>
     <p>
       Metadata corrections — a wrong date, a bad category, a mislabeled app — are also
@@ -111,12 +118,12 @@ export const prerender = true;
       which is the most precise identifier to match on. Pass whatever a file has to the
       coverage endpoint — the external id alone, or a bundle id and version:
     </p>
-    <pre class="col-pre"><code>curl https://legacystore.app/api/v1/coverage?external_id=723458015
-curl https://legacystore.app/api/v1/coverage/com.rovio.angrybirds/1.0</code></pre>
+    <pre class="col-pre"><code>curl https://legacystore.app/api/v1/coverage?external_id=2166661
+curl https://legacystore.app/api/v1/coverage/com.clickgamer.AngryBirds/1.0</code></pre>
     <p>
       It replies with a <code>copies</code> map counting the copies the archive holds
       for that version, by state — for example
-      <code>&#123;"installable":3,"encrypted":4&#125;</code>, or <code>&#123;&#125;</code>
+      <code>&#123;"installable":37,"encrypted":2&#125;</code>, or <code>&#123;&#125;</code>
       when nothing matches. An <code>installable</code> count above zero means a
       decrypted, runnable copy already exists; anything else is worth uploading. To
       check a whole library at once, <code>POST</code> a JSON array of probes — each

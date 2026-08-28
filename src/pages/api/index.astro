@@ -357,8 +357,15 @@ const jsonLd = {
       <code>.ipa</code> files stay readable — so you can ask which versions the
       archive already preserves without decrypting anything.
     </p>
-    <pre class="dev-pre">GET /api/v1/coverage/{'{bundle_id}'}/{'{version}'}</pre>
-    <p>Parameters: none. Batch: <code>POST /api/v1/coverage</code> with up to 500 probes.</p>
+    <pre class="dev-pre">GET /api/v1/coverage/{'{bundle_id}'}/{'{version}'}
+GET /api/v1/coverage?external_id={'{id}'}</pre>
+    <p>
+      <code>external_id</code> is <code>softwareVersionExternalIdentifier</code> from
+      <code>iTunesMetadata.plist</code> — the exact App Store build, the most precise
+      identifier to probe with. Batch: <code>POST /api/v1/coverage</code> with up to
+      500 probes, each carrying any of <code>bundle_id</code>,
+      <code>app_store_id</code>, <code>version</code>, or <code>external_id</code>.
+    </p>
     <pre class="dev-pre">curl 'https://legacystore.app/api/v1/coverage/com.limasky.doodlejumpfree/1.0'</pre>
     <pre class="dev-pre dev-out" set:html={hl(`{
   "bundle_id": "com.limasky.doodlejumpfree",
