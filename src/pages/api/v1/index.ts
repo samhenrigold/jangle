@@ -29,7 +29,7 @@ const INDEX = {
     collections: `${S}/api/v1/collections`,
     collection: `${S}/api/v1/collections/{slug}`,
     stats: `${S}/api/v1/stats`,
-    coverage: `${S}/api/coverage (see its own usage doc)`,
+    coverage: `${S}/api/v1/coverage (see its own usage doc)`,
   },
   schema: `${S}/openapi.yaml`,
   docs: `${S}/api`,

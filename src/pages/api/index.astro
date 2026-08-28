@@ -106,7 +106,7 @@ const jsonLd = {
           <tr><td><a class="dev-link" href="/api/v1/collections"><code>GET /api/v1/collections</code></a></td><td>Editorial collections</td></tr>
           <tr><td><code>GET /api/v1/collections/&#123;slug&#125;</code></td><td>One collection with its members</td></tr>
           <tr><td><a class="dev-link" href="/api/v1/stats"><code>GET /api/v1/stats</code></a></td><td>Archive-wide statistics</td></tr>
-          <tr><td><a class="dev-link" href="/api/coverage"><code>GET|POST /api/coverage</code></a></td><td>Which of your IPAs the archive holds</td></tr>
+          <tr><td><a class="dev-link" href="/api/v1/coverage"><code>GET|POST /api/v1/coverage</code></a></td><td>Which of your IPAs the archive holds</td></tr>
         </tbody>
       </table>
     </div>
@@ -357,14 +357,14 @@ const jsonLd = {
       <code>.ipa</code> files stay readable — so you can ask which versions the
       archive already preserves without decrypting anything.
     </p>
-    <pre class="dev-pre">GET /api/coverage/{'{bundle_id}'}/{'{version}'}</pre>
-    <p>Parameters: none. Batch: <code>POST /api/coverage</code> with up to 500 probes.</p>
-    <pre class="dev-pre">curl 'https://legacystore.app/api/coverage/com.limasky.doodlejumpfree/1.0'</pre>
+    <pre class="dev-pre">GET /api/v1/coverage/{'{bundle_id}'}/{'{version}'}</pre>
+    <p>Parameters: none. Batch: <code>POST /api/v1/coverage</code> with up to 500 probes.</p>
+    <pre class="dev-pre">curl 'https://legacystore.app/api/v1/coverage/com.limasky.doodlejumpfree/1.0'</pre>
     <pre class="dev-pre dev-out" set:html={hl(`{
   "bundle_id": "com.limasky.doodlejumpfree",
   "version": "1.0",
-  "external_id": 4033516,
-  "app_store_id": 456355158,
+  "external_id": "4033516",
+  "app_store_id": "456355158",
   "copies": {
     "encrypted": 6,
     "installable": 8

@@ -13,64 +13,61 @@ export const prerender = true;
 >
   <div class="content colophon">
     <h1 class="col-title">Contribute</h1>
-    <p class="col-lede">How to help preserve these apps — and how to run them yourself.</p>
+    <p class="col-lede">How to help preserve these apps, and how to run them yourself.</p>
 
     <p>
       Legacy Store is a metadata-only archive: the index, analysis, and history live
-      here, but the app binaries themselves live on the
+      here, but the app binaries live on the
       <a class="col-link" href="https://archive.org/" rel="noopener">Internet&nbsp;Archive</a>.
-      That means preservation is a shared effort — anyone can add a missing app, and
-      anyone with the right hardware can install what's already here.
+      Anyone can add a missing app, and anyone with the right hardware can install
+      what's already here.
     </p>
 
     <h2 class="col-h2">Adding a missing app</h2>
     <p>
-      Every greyed-out entry on this site — an Apple Design Award winner, an app that
-      flashed by in a 2009 commercial — is something the archive knows existed but
-      hasn't preserved. The single most useful thing you can contribute is a copy of
-      one of those apps: an original App Store <code>.ipa</code> file, uploaded to the
+      Every greyed-out entry on this site is an app the archive knows existed but
+      doesn't have a copy of. The most useful thing you can contribute is one of those
+      apps: an original App Store <code>.ipa</code> file, uploaded to the
       Internet&nbsp;Archive so it lives somewhere durable and public.
     </p>
     <p>Old <code>.ipa</code> files tend to survive in a few places:</p>
     <ul>
       <li>
-        An old <strong>iTunes library</strong>. Through iTunes 12.6.x (a build Apple
-        kept around specifically for this), the desktop App Store could still download
-        apps, leaving <code>.ipa</code> files under <em>iTunes Media / Mobile
-        Applications</em>. Those files are gold — many are the only surviving copy.
+        An old <strong>iTunes library</strong>. Through iTunes 12.6.x, the desktop App
+        Store could still download apps, leaving <code>.ipa</code> files under
+        <em>iTunes Media / Mobile Applications</em>. Many of these are the only
+        surviving copy of an app.
       </li>
       <li>
-        <strong>Local device backups</strong> from the era, which sometimes carry the
+        <strong>Local device backups</strong> from the era, which sometimes include the
         app payloads alongside their data.
       </li>
       <li>
-        Anything <strong>still in your purchase history</strong> — apps you bought years
-        ago can usually be re-downloaded from your account, though one pulled from the
-        App Store entirely disappears from there too.
+        Your <strong>purchase history</strong>. Apps you bought years ago can usually
+        be re-downloaded from your account, unless they were pulled from the App Store
+        entirely.
       </li>
     </ul>
     <p>
       To contribute one, create a free
       <a class="col-link" href="https://archive.org/account/signup" rel="noopener">Internet&nbsp;Archive account</a>
-      and upload the <code>.ipa</code> — ideally noting the app name, version, and where
-      it came from. Once it's on the Archive it becomes preservable, citable, and
-      installable, and it'll flow into this index on the next pass.
+      and upload the <code>.ipa</code>, ideally noting the app name, version, and where
+      it came from. It will be picked up by this index on the next pass.
     </p>
     <p>
-      Spotted a wrong date, a bad category, or a mislabeled app? Corrections to the
-      <em>metadata</em> are just as welcome — the whole project is open source, so open
-      an issue or a pull request on
+      Metadata corrections — a wrong date, a bad category, a mislabeled app — are also
+      welcome. The project is open source; open an issue or pull request on
       <a class="col-link" href="https://github.com/samhenrigold/jangle" rel="noopener">GitHub</a>.
     </p>
 
     <h2 class="col-h2">Dumping and decrypting apps</h2>
     <p>
-      There's a catch that shapes the whole archive: apps bought from the App Store are
-      wrapped in Apple's FairPlay DRM, and an encrypted binary only runs under the Apple
-      ID that obtained it. That's why so many copies here install but
-      won't run — they were preserved still encrypted. The copy actually worth keeping is
-      a <strong>decrypted</strong> dump, which runs anywhere. Producing one takes a
-      jailbroken device and a decryption tool matched to its iOS version:
+      Apps bought from the App Store are wrapped in Apple's FairPlay DRM, and an
+      encrypted binary only runs under the Apple ID that bought it. That's why many
+      copies here install but won't run — they were preserved still encrypted. The copy
+      worth keeping is a <strong>decrypted</strong> dump, which runs anywhere.
+      Producing one takes a jailbroken device and a decryption tool matched to its iOS
+      version:
     </p>
     <table class="tool-table">
       <thead>
@@ -87,97 +84,100 @@ export const prerender = true;
       </tbody>
     </table>
     <p>
-      The shape is the same across eras: install the tool from Cydia (or TrollStore on
-      modern iOS), decrypt an installed app to a <code>.ipa</code>, then copy it off the
-      device with something like iFunBox or Filza. The LegacyJailbreak community's
-      <a class="col-link" href="https://www.reddit.com/r/LegacyJailbreak/wiki/guides/crackingapps" rel="noopener">step-by-step cracking guide</a>
-      walks through every iOS version in full, tool sources and all, and runs its own
-      ongoing archival effort you can submit to as well.
+      The process is the same across eras: install the tool from Cydia (or TrollStore
+      on modern iOS), decrypt an installed app to a <code>.ipa</code>, then copy it off
+      the device with something like iFunBox or Filza. The LegacyJailbreak community's
+      <a class="col-link" href="https://www.reddit.com/r/LegacyJailbreak/wiki/guides/crackingapps" rel="noopener">step-by-step guide</a>
+      covers every iOS version in detail, including tool sources, and the community runs
+      its own archival effort you can submit to as well.
     </p>
     <p>
-      After a specific old <em>version</em> of an app you once bought?
+      To get a specific old <em>version</em> of an app you once bought,
       <a class="col-link" href="https://github.com/majd/ipatool" rel="noopener">ipatool</a>
-      can list every version Apple still keeps by its external version ID and download
-      the one you name from your purchase history — though, being a straight App Store
-      download, it arrives encrypted and still needs decrypting to run anywhere else.
+      can list every version Apple still keeps and download the one you name from your
+      purchase history. It arrives encrypted, like any App Store download, and still
+      needs decrypting to run anywhere else.
     </p>
 
     <h3 class="col-h3">Checking what's already here first</h3>
     <p>
-      Before you spend effort on a stack of old <code>.ipa</code> files, you can ask the
-      archive which versions it already holds a usable copy of, and only bother with the
-      gaps. FairPlay encrypts only an app's main executable, so the plists inside every
-      <code>.ipa</code> stay readable even while the binary is still encrypted — a plain
-      <code>unzip</code> gives you the identifiers the archive matches on. A file
+      Before you work through a stack of old <code>.ipa</code> files, you can ask the
+      archive which versions it already holds a usable copy of, and only bother with
+      the gaps. FairPlay encrypts only an app's main executable, so the plists inside
+      every <code>.ipa</code> stay readable even while the binary is encrypted — a
+      plain <code>unzip</code> gives you the identifiers the archive matches on. A file
       downloaded through iTunes also carries an <code>iTunesMetadata.plist</code> whose
-      <code>softwareVersionExternalIdentifier</code> pins the exact App Store build, which
-      is the most precise thing to match on. Pass whatever a file has to the public
+      <code>softwareVersionExternalIdentifier</code> pins the exact App Store build,
+      which is the most precise identifier to match on. Pass whatever a file has to the
       coverage endpoint — the external id alone, or a bundle id and version:
     </p>
-    <pre class="col-pre"><code>curl https://legacystore.app/api/coverage?external_id=723458015
-curl https://legacystore.app/api/coverage/com.rovio.angrybirds/1.0</code></pre>
+    <pre class="col-pre"><code>curl https://legacystore.app/api/v1/coverage?external_id=723458015
+curl https://legacystore.app/api/v1/coverage/com.rovio.angrybirds/1.0</code></pre>
     <p>
-      It replies with a <code>copies</code> map counting the copies the archive holds for
-      that version, by state — for example <code>&#123;"installable":3,"encrypted":4&#125;</code>,
-      or <code>&#123;&#125;</code> for a version nothing here matches. An
-      <code>installable</code> count above zero means a decrypted, runnable copy already
-      exists, so that one's covered; anything else is worth uploading. To sweep a whole
-      library at once, <code>POST</code> a JSON array of probes — each carrying any of
-      <code>bundle_id</code>, <code>app_store_id</code>, <code>version</code>, or
-      <code>external_id</code> — to <code>/api/coverage</code>, and you'll get one result
-      back per entry. Tampered or modified repackages never count toward these totals —
-      only genuine copies do, so a clean dump of something we only hold a modded version
-      of still reads as a gap.
+      It replies with a <code>copies</code> map counting the copies the archive holds
+      for that version, by state — for example
+      <code>&#123;"installable":3,"encrypted":4&#125;</code>, or <code>&#123;&#125;</code>
+      when nothing matches. An <code>installable</code> count above zero means a
+      decrypted, runnable copy already exists; anything else is worth uploading. To
+      check a whole library at once, <code>POST</code> a JSON array of probes — each
+      with any of <code>bundle_id</code>, <code>app_store_id</code>,
+      <code>version</code>, or <code>external_id</code> — to
+      <code>/api/v1/coverage</code>, and you get one result back per entry. Modified
+      repackages never count toward these totals, so a clean dump of an app we only
+      hold a modded copy of still reads as a gap.
+    </p>
+    <p>
+      The coverage endpoint is part of the site's public
+      <a class="col-link" href="/api">REST API</a>, which also exposes the full
+      catalog — apps, versions, archived copies, charts, reviews, and screenshots — as
+      JSON at <code>/api/v1</code>. If you're building tooling around your own
+      collection, start there.
     </p>
 
     <h2 class="col-h2">Installing an archived app</h2>
     <p>
-      These are original App Store binaries, so getting one onto a device is its own
-      small adventure. There are two honest paths, depending on the app and your
-      hardware.
+      There are two paths, depending on the app and your hardware.
     </p>
     <p>
       <strong>If the app is in your own purchase history</strong>, the simplest route
       needs no computer and no jailbreak: on a period iPhone or iPad, the built-in App
       Store can offer to download the <em>last version compatible with this device</em>
       for anything you've previously bought. When it applies, this is the cleanest way
-      to get a genuinely period-correct build running.
+      to get a period-correct build running.
     </p>
     <p>
-      <strong>For an arbitrary archived copy</strong> — one you didn't buy, downloaded
-      from the Internet&nbsp;Archive — you'll generally need a <strong>jailbroken device</strong>
+      <strong>For an archived copy you didn't buy</strong>, downloaded from the
+      Internet&nbsp;Archive, you'll generally need a <strong>jailbroken device</strong>
       running <a class="col-link" href="https://github.com/akemin-dayo/AppSync" rel="noopener">AppSync Unified</a>,
-      which lets iOS install the unsigned <code>.ipa</code> files the archive holds. One
-      caveat the archive is built around: many of these copies are still
-      FairPlay-encrypted and will install but refuse to launch — so check the install
-      status shown on each app's version list before you spend a download.
+      which lets iOS install unsigned <code>.ipa</code> files. Note that many of these
+      copies are still FairPlay-encrypted and will install but refuse to launch — check
+      the install status on each app's version list before downloading.
     </p>
 
     <h3 class="col-h3">Getting an old device jailbroken</h3>
     <p>
-      For the 32-bit devices most of this archive is aimed at — an iPhone 3G through a
-      5c, an original iPad — the tool worth knowing is
+      For the 32-bit devices most of this archive targets — iPhone 3G through 5c,
+      original iPad — the main tool is
       <a class="col-link" href="https://github.com/LukeZGD/Legacy-iOS-Kit" rel="noopener">Legacy iOS Kit</a>,
-      an open-source, all-in-one utility (macOS and Linux) that can restore, downgrade,
-      save SHSH blobs, and jailbreak legacy hardware — 32-bit devices on iOS roughly
-      3.1.3 through 9.3.4, plus some 64-bit A7–A11 models. Its wiki walks through the
-      jailbreak step by step; from there, AppSync Unified handles the archived
-      <code>.ipa</code> files.
+      an open-source utility (macOS and Linux) that can restore, downgrade, save SHSH
+      blobs, and jailbreak legacy hardware: 32-bit devices on roughly iOS 3.1.3 through
+      9.3.4, plus some 64-bit A7–A11 models. Its wiki walks through the jailbreak step
+      by step; from there, AppSync Unified handles the archived <code>.ipa</code>
+      files.
     </p>
     <p>
-      A few things worth setting expectations on: 32-bit apps won't run on iOS 11 or
-      later at all, so a period app wants a period device. Sideloading tools like
-      AltStore or Sideloadly are an option on newer hardware, but they re-sign apps on a
-      seven-day clock and need a computer to renew — for the classic devices this
-      archive serves, the jailbreak-plus-AppSync route is the durable one. And only
-      install apps you have a right to use; the binaries are hosted by the Internet
-      Archive, not by Legacy Store.
+      A few things to know: 32-bit apps won't run on iOS 11 or later, so a period app
+      needs a period device. Sideloading tools like AltStore or Sideloadly work on
+      newer hardware, but they re-sign apps on a seven-day clock and need a computer to
+      renew — for the classic devices this archive serves, jailbreak plus AppSync is
+      the durable route. And only install apps you have a right to use; the binaries
+      are hosted by the Internet Archive, not by Legacy Store.
     </p>
 
     <p class="col-outro">
-      Preservation only works because people keep copies. If you have old devices,
-      old backups, or an old iTunes library gathering dust, there's history in there
-      worth saving.
+      Preservation only works because people keep copies. If you have old devices, old
+      backups, or an old iTunes library sitting around, there's history in there worth
+      saving.
     </p>
   </div>
 

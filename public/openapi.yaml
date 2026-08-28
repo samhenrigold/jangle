@@ -388,7 +388,7 @@ paths:
             application/json:
               schema: { type: object }
         "503": { $ref: "#/components/responses/Error" }
-  /api/coverage:
+  /api/v1/coverage:
     get:
       summary: Usage, or a single coverage lookup by any identifier subset
       description: >
@@ -415,7 +415,7 @@ paths:
           headers:
             Cache-Control: { schema: { type: string }, description: "public, max-age=300 for a lookup; 3600 for usage" }
         "400": { $ref: "#/components/responses/Error" }
-        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
     post:
       summary: Batch coverage lookup
       description: >
@@ -453,12 +453,12 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/CoverageEntry" }
         "400": { $ref: "#/components/responses/Error" }
-        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
     options:
       summary: CORS preflight
       responses:
         "204": { description: No content }
-  /api/coverage/{bundle_id}/{version}:
+  /api/v1/coverage/{bundle_id}/{version}:
     get:
       summary: Coverage for one version, by bundle id and version (cacheable resource)
       parameters:
@@ -473,7 +473,7 @@ paths:
           headers:
             Cache-Control: { schema: { type: string }, description: "public, max-age=300" }
         "400": { $ref: "#/components/responses/Error" }
-        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
     options:
       summary: CORS preflight
       responses:
@@ -768,8 +768,8 @@ components:
       properties:
         bundle_id: { type: string, nullable: true }
         version: { type: string, nullable: true }
-        external_id: { type: integer, format: int64, nullable: true }
-        app_store_id: { type: integer, format: int64, nullable: true }
+        external_id: { type: string, nullable: true, description: "Serialized as a string (ids can exceed 2^53)." }
+        app_store_id: { type: string, nullable: true }
         copies:
           type: object
           description: >
