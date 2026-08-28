@@ -612,10 +612,10 @@ if (sizePoints.length >= 3) {
               var m = ua.match(/OS (\d+)_/);
               if (!m) return;
               var major = parseInt(m[1], 10);
-              var LEGACY_IOS_MAX = 12; /* iOS <=12 ~ real vintage hardware; 13+ is modern */
+              var LEGACY_IOS_MAX = 12;
               if (!(major > 0 && major <= LEGACY_IOS_MAX)) return;
               var s = location.search;
-              if (/[?&]dir=/.test(s)) return; /* user already chose a sort */
+              if (/[?&]dir=/.test(s)) return;
               var add = 'dir=desc';
               if (!/[?&]ios=/.test(s)) add += '&ios=' + major;
               location.replace(location.pathname + s + (s ? '&' : '?') + add);
@@ -1656,10 +1656,6 @@ if (sizePoints.length >= 3) {
     }
   </style>
 
-  <!-- Progressive enhancement. Deliberately old-WebKit-safe (iOS 4/5/6): no
-       const/let, no arrow functions, no template strings, no classList, no
-       forEach. If any of this is unsupported the script no-ops and the
-       server-rendered links keep working. -->
   <script is:inline>
     (function () {
       if (!document.querySelectorAll || !document.getElementsByTagName) return;
@@ -1684,10 +1680,6 @@ if (sizePoints.length >= 3) {
       ready(function () {
         var i;
 
-        // 1) Global "Show everything" toggle. With JS on, it works by setting
-        //    every copy-row's own .expanded flag (plus .show-everything for the
-        //    hidden versions) — so afterwards each row can still be collapsed or
-        //    expanded on its own.
         var versionsRoot = document.querySelector('.versions');
         var copyRows = document.querySelectorAll('.version[data-copies]');
         function setAllExpanded(on) {
@@ -1695,8 +1687,6 @@ if (sizePoints.length >= 3) {
             if (on) addClass(copyRows[k], 'expanded'); else removeClass(copyRows[k], 'expanded');
           }
         }
-        // Server ?all=1 renders everything up front; mirror it into per-row
-        // .expanded so the copies stay visible once JS takes over the CSS.
         if (versionsRoot && hasClass(versionsRoot, 'show-everything')) setAllExpanded(true);
 
         var everythingToggles = document.querySelectorAll('a.js-everything-toggle');
@@ -1719,18 +1709,13 @@ if (sizePoints.length >= 3) {
           })(everythingToggles[i]);
         }
 
-        // 1b) Per-row expand — clicking the TOP section (.v-lockup) of a version
-        //     row that has extra copies reveals that row's copies inline.
-        //     Delegated off the container. Clicks on Install/Download links pass
-        //     through; clicks on the already-revealed copies (.v-copies) do NOT
-        //     collapse the row (walk up hits .v-copies before .version).
         if (versionsRoot) {
           addClass(versionsRoot, 'js-copies');
           versionsRoot.onclick = function (e) {
             var t = e.target || e.srcElement;
             while (t && t !== versionsRoot) {
-              if (t.tagName === 'A' || t.tagName === 'BUTTON') return true; // let links/buttons work
-              if (hasClass(t, 'v-copies')) return true;                     // revealed copies aren't a toggle target
+              if (t.tagName === 'A' || t.tagName === 'BUTTON') return true;
+              if (hasClass(t, 'v-copies')) return true;
               if (t.getAttribute && t.getAttribute('data-copies') && hasClass(t, 'version')) {
                 if (hasClass(t, 'expanded')) removeClass(t, 'expanded'); else addClass(t, 'expanded');
                 if (e && e.preventDefault) e.preventDefault();
@@ -1742,8 +1727,6 @@ if (sizePoints.length >= 3) {
           };
         }
 
-        // 2) "Runs on" filter: hide versions whose minimum OS is newer than the
-        //    chosen (or auto-detected) major. The <select> filters in place.
         var iosSelect = document.querySelector('select.js-ios-select');
         var versionEls = document.querySelectorAll('.version');
 
@@ -1755,26 +1738,18 @@ if (sizePoints.length >= 3) {
             if (major != null && mm > 0 && mm > major) toHide.push(el);
             else { removeClass(el, 'v-hidden-os'); shown++; }
           }
-          // Never hide everything — a very old device still sees the full list.
           for (j = 0; j < toHide.length; j++) {
             if (shown === 0) removeClass(toHide[j], 'v-hidden-os');
             else addClass(toHide[j], 'v-hidden-os');
           }
         }
 
-        // The dropdown filters in place. Automatic device-based presetting is
-        // handled server-side instead: legacy iOS devices are redirected to an
-        // ?ios=<major> URL up front (see the head-of-body script), so the rows
-        // arrive already filtered and this only needs to honor manual changes.
         if (iosSelect) {
           iosSelect.onchange = function () {
             applyIos(iosSelect.value ? parseInt(iosSelect.value, 10) : null);
           };
         }
 
-        // 4) Screenshot-set picker — switch which archived listing capture's
-        //    strip is visible. Enabled here so no-JS users get an inert (not
-        //    misleading) control showing the one set they can actually see.
         var shotsPicker = document.querySelector('select.js-shots-picker');
         if (shotsPicker) {
           var shotSets = document.querySelectorAll('.shot-set');

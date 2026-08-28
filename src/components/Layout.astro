@@ -55,10 +55,6 @@ const NAV = [
       </>
     )}
     <title>{title}</title>
-    <!-- Tag <html> with the device type before paint, so device-specific CSS
-         (e.g. Install vs Download on app pages) applies without a flash. Pages
-         render identically for every device and edge-cache; this class is the
-         only per-device branch, done on the client. Old-WebKit-safe. -->
     <script is:inline>
       (function () {
         try {
@@ -91,7 +87,6 @@ const NAV = [
       </ul>
     </div>
 
-    <!-- Phone-only search strip (the sprite nav above is hidden < 768px) -->
     <form id="phonesearch" action="/search" method="get">
       <span class="search-wrapper">
         <span class="left"></span>
@@ -110,9 +105,6 @@ const NAV = [
       </div>
     </div>
 
-    <!-- Press "/" anywhere to jump to the search box (unless you're already
-         typing in a field). A keyboard nicety for desktop; touch devices never
-         reach it. Old-WebKit-safe (var, keyCode fallback, no ES6). -->
     <script is:inline>
       (function () {
         try {
@@ -124,8 +116,6 @@ const NAV = [
             if (tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable) return;
             var inputs = document.querySelectorAll('input[type="search"][name="q"]');
             for (var i = 0; i < inputs.length; i++) {
-              // Focus the one that's actually visible at this width (desktop
-              // header vs the phone strip); offsetParent is null when hidden.
               if (inputs[i].offsetParent !== null) {
                 e.preventDefault();
                 inputs[i].focus();
@@ -138,15 +128,12 @@ const NAV = [
       })();
     </script>
 
-    <!-- Search autocomplete: debounced fetch of /api/suggest under whichever
-         header search box is in use. Progressive enhancement — no fetch (old
-         WebKit) means the plain GET form works exactly as before. -->
     <script is:inline>
       (function () {
         try {
           if (typeof window.fetch !== 'function' || !document.querySelectorAll) return;
           var timer = null;
-          var open = null; // the currently-shown list, if any
+          var open = null;
           function close() {
             if (open && open.parentNode) open.parentNode.removeChild(open);
             open = null;
@@ -188,10 +175,6 @@ const NAV = [
               li.appendChild(a);
               ul.appendChild(li);
             }
-            // Fixed-position on <body>, anchored to the input's viewport rect.
-            // The header is overflow:hidden (float clearfix), so anything
-            // absolutely positioned inside it gets clipped — fixed on body
-            // escapes every ancestor's clipping and stacking context.
             var rect = input.getBoundingClientRect();
             ul.style.left = rect.left + 'px';
             ul.style.top = (rect.bottom + 2) + 'px';
@@ -208,7 +191,6 @@ const NAV = [
               fetch('/api/suggest?q=' + encodeURIComponent(q))
                 .then(function (r) { return r.json(); })
                 .then(function (body) {
-                  // Stale response guard: only render if the box still says q.
                   if (input.value.replace(/^\s+|\s+$/g, '') === q) show(input, body.suggestions || []);
                 })
                 .catch(function () {});
@@ -219,15 +201,12 @@ const NAV = [
             inputs[i].setAttribute('aria-expanded', 'false');
             inputs[i].addEventListener('input', onInput);
           }
-          // Click-away / Escape close. mousedown fires before the click's blur,
-          // so suggestion links still navigate.
           document.addEventListener('mousedown', function (e) {
             if (open && !open.contains(e.target)) close();
           });
           document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' || e.keyCode === 27) close();
           });
-          // Fixed positioning doesn't track the page — just close on scroll.
           window.addEventListener('scroll', close, true);
         } catch (e) {}
       })();

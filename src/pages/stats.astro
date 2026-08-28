@@ -200,9 +200,6 @@ if (stats) {
       <p class="stats-lede">Last updated <span id="as-of" data-iso={asOfIso}>{asOf}</span>.</p>
       {asOfIso && (
         <script is:inline>
-          // No Intl (unavailable before iOS 10) and no ES6 (no transpile pipeline —
-          // see astro.config.mjs) — plain Date methods + var/IIFE so this still runs
-          // on iOS 5/6. Swaps just this one span, not the whole page.
           (function () {
             try {
               var el = document.getElementById('as-of');
@@ -215,8 +212,6 @@ if (stats) {
               h = h % 12 || 12;
               var min = d.getMinutes();
               if (min < 10) min = '0' + min;
-              // Named zone (PDT, GMT+2, etc) where Intl exists (all iOS 10+ / modern
-              // browsers); a hand-rolled UTC offset covers iOS 5/6, which lack Intl.
               var tz;
               if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
                 try {
