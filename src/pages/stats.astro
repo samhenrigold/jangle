@@ -52,7 +52,8 @@ const asOfFmt = new Intl.DateTimeFormat('en-US', {
 
 let asOf = '';
 let asOfIso = '';
-let lastIngest = '';
+let lastIngestDate = '';
+let lastIngestSummary = '';
 let tiles: { n: string; label: string }[] = [];
 let charts: Record<string, string> = {};
 let records: { title: string; entries: { text: string; detail: string; href?: string; icon?: string }[] }[] = [];
@@ -70,7 +71,8 @@ if (stats) {
     const parts = [`${formatNumber(copies)} archived ${copies === 1 ? 'copy' : 'copies'}`];
     if (versions) parts.push(`${formatNumber(versions)} new version${versions === 1 ? '' : 's'}`);
     if (apps) parts.push(`${formatNumber(apps)} newly discovered app${apps === 1 ? '' : 's'}`);
-    lastIngest = `Last ingest on ${formatDate(stats.last_ingest_at)} added ${parts.join(', ')}.`;
+    lastIngestDate = formatDate(stats.last_ingest_at);
+    lastIngestSummary = parts.join(', ');
   }
 
   tiles = [
@@ -237,7 +239,9 @@ if (stats) {
           })();
         </script>
       )}
-      {lastIngest && <p class="stats-lede">{lastIngest}</p>}
+      {lastIngestSummary && (
+        <p class="stats-lede">Last ingest on {lastIngestDate} added <a href="/recent">{lastIngestSummary}</a>.</p>
+      )}
 
       <div class="tiles">
         {tiles.map((t) => (

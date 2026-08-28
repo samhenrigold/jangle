@@ -68,7 +68,7 @@ if (dbError) setDegraded(Astro.response);
       <DbError />
     ) : (
       <>
-        <SectionHeader title="Recently Added" level={1} detail="Versions in the order ingestion archived them, newest first." />
+        <SectionHeader title="Recently Added" level={1} />
         <ul class="applist">
           {rows.map((v: any) => {
             const a = v.apps;
