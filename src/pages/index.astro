@@ -155,12 +155,43 @@ const heroHref = heroSnapshot && heroType
   ? `/charts?${heroType.slug !== 'top-free' ? `type=${heroType.slug}&` : ''}date=${heroSnapshot.snapshot_date}`
   : '/charts';
 
+// Always the newest release's assets (GitHub redirects latest/download).
+const LT_DOWNLOADS = 'https://github.com/samhenrigold/LightTouchMac/releases/latest/download';
+
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);
 ---
 
 <Layout title="Legacy Store" activeTab="featured" description="Browse and install archived versions of classic iPhone and iPad apps, directly on your old iOS device.">
   <div class="content">
+    {/* Light Touch announcement. The page is edge-cached for everyone, so it
+        ships hidden and the script below reveals it on Mac desktop browsers
+        (iPadOS also says "Macintosh" — touch points tell them apart) until
+        dismissed. */}
+    <div id="lt-banner" class="lt-banner" style="display:none">
+      <button type="button" class="lt-close" aria-label="Dismiss">&times;</button>
+      <img class="lt-icon" src="/lighttouch/icon.png" srcset="/lighttouch/icon@2x.png 2x" width="57" height="57" alt="" />
+      <a class="lt-download" href={`${LT_DOWNLOADS}/LightTouchMac-universal.zip`}><img src="/lighttouch/download.png" srcset="/lighttouch/download@2x.png 2x" width="144" height="38" alt="Download" /></a>
+      <div class="lt-body">
+        <h3 class="lt-headline">Run classic iOS apps on your Mac.</h3>
+        <p class="lt-sub">Light Touch is a new iPod touch emulator,<br /> with Legacy Store built in. <a class="lt-more" href="https://github.com/samhenrigold/LightTouchMac">Learn more</a></p>
+      </div>
+    </div>
+    <script is:inline>
+      (function () {
+        try {
+          var b = document.getElementById('lt-banner');
+          if (!/Macintosh/.test(navigator.userAgent) || navigator.maxTouchPoints > 1) return;
+          if (window.localStorage && localStorage.getItem('lt-banner-dismissed')) return;
+          b.style.display = '';
+          b.getElementsByTagName('button')[0].onclick = function () {
+            b.style.display = 'none';
+            try { localStorage.setItem('lt-banner-dismissed', '1'); } catch (e) {}
+          };
+        } catch (e) {}
+      })();
+    </script>
+
     {dbError ? (
       <DbError />
     ) : (
@@ -237,6 +268,94 @@ if (dbError) setDegraded(Astro.response);
   </div>
 
   <style>
+    /* Light Touch banner — Apple's 2009 iTunes callout ("callout shadow" on
+       /itunes/what-is/: white fading down, 0 1px 2px shadow), a touch
+       brighter. The button is a pre-rendered Myriad image replicating the
+       iTunes 9 "Free download" promo button, as Apple shipped it. Sources: public/lighttouch/*.png. */
+    .lt-banner {
+      position: relative;
+      margin: 0 0 16px 0;
+      padding: 14px 36px 14px 16px;
+      border: 1px solid #e4e4e4;
+      border-radius: 5px;
+      background: #f8f8f8;
+      background-image: -webkit-linear-gradient(top, #fff 0%, #f8f8f8 100%);
+      background-image: linear-gradient(to bottom, #fff 0%, #f8f8f8 100%);
+      -webkit-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+      overflow: hidden;
+    }
+
+    /* Headline + two-line subline (~54px) centre on the 57px icon. */
+    .lt-icon {
+      float: left;
+      margin: 0 14px 0 0;
+      -webkit-filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+    }
+
+    /* Button body is image rows 1-34. */
+    .lt-download {
+      float: right;
+      margin: 11px 0 0 12px;
+    }
+
+    .lt-download img {
+      display: block;
+    }
+
+    .lt-download:active img {
+      opacity: 0.85;
+    }
+
+    .lt-body {
+      overflow: hidden;
+      padding-top: 1px;
+    }
+
+    .lt-headline {
+      margin: 0;
+      font-size: 17px;
+      line-height: 20px;
+      font-weight: bold;
+      letter-spacing: -0.01em;
+      color: #252525;
+    }
+
+    .lt-sub {
+      margin: 3px 0 0 0;
+      font-size: 12px;
+      line-height: 16px;
+      color: #555;
+    }
+
+    /* Apple's a.more: link text plus its 4x7 #08c triangle (morearrow_08c.gif,
+       redrawn antialiased at 2x so it's smooth on Retina). */
+    .lt-more {
+      white-space: nowrap;
+      padding-right: 10px;
+      background: url(/lighttouch/morearrow@2x.png) no-repeat 100% 50%;
+      -webkit-background-size: 4px 7px;
+      background-size: 4px 7px;
+    }
+
+    .lt-close {
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      padding: 0 4px;
+      border: 0;
+      background: none;
+      color: #b5bfc6;
+      font-size: 18px;
+      line-height: 18px;
+      cursor: pointer;
+    }
+
+    .lt-close:hover {
+      color: #474747;
+    }
+
     /* Featured collections — a card row that swipes sideways when narrow */
     .colx-scroll {
       margin: 0 0 6px 0;
