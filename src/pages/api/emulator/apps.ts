@@ -3,13 +3,18 @@ import { supabaseFor } from '../../../lib/supabase';
 import { json, fail, CORS } from '../../../lib/coverage';
 import { buildPrefixTsquery, clampPageSize, looksLikeBundleId, escapeLike } from '../../../lib/search';
 import { dedupeFilesByHash, sortGroupsByPreference } from '../../../lib/files';
-import { emulatorCompatible, emulatorMinOs } from '../../../lib/emulator';
+import { compatOf, defaultTarget, deviceFor, parseOs, DEVICE_MODELS, type Target } from '../../../lib/emulator';
 import { appTitleOf, APP_LIST_COLS, flattenAppRow } from '../../../lib/apps';
 
-// Catalog search for the LightTouch emulator (iPod touch 2G / iOS 3.1.3).
+// Catalog search for the Light Touch emulator.
 //
 //   GET /api/emulator/apps?q=<query>[&limit=25]   search, compatible apps only
 //   GET /api/emulator/apps?ipa_id=<id>            one record for a known copy
+//
+// Target (all optional; defaults are the shipped app's iPod touch 2G / 3.1.3):
+//   device=iPod1,1|iPod2,1|iPad1,1   os=<x.y.z>
+//   family=1|2|1,2        narrow to iPhone (1) / iPad (2) apps; default = all the device runs
+//   incompatible=include  keep the best copy of apps that don't qualify, with compat.reasons
 //
 // Each record is one app with its single best emulator-compatible archived
 // copy (newest compatible version, best copy within it per files.ts
@@ -19,14 +24,14 @@ import { appTitleOf, APP_LIST_COLS, flattenAppRow } from '../../../lib/apps';
 // archive.org via /ipa/<id>, which re-checks available/hidden at fetch time.
 
 const VERSION_FIELDS = 'id, app_id, version_string, minimum_os_version, device_family, release_date';
-const BIN_FIELDS = 'sha1, install_status, architectures, macho_min_os, hidden, device_family_macho, has_extensions, bundle_icon_sha256, itunes_artwork_sha256';
+const BIN_FIELDS = 'sha1, install_status, architectures, macho_min_os, hidden, device_family_macho, has_extensions, bundle_icon_sha256, itunes_artwork_sha256, armv6_isa_scan, required_capabilities, plist_min_os';
 // binaries ride along as a PostgREST embed via the ipa_files.binary_sha1 FK —
 // one round trip instead of a second chunked sweep over the sha1 set.
 const FILE_FIELDS = `id, app_version_id, filename, file_size, md5_hash, has_itunes_metadata, info_plist_path, binary_sha1, available, binaries!ipa_files_binary_sha1_fkey(${BIN_FIELDS})`;
 const CHUNK = 150; // keeps .in() filters under URL-length limits (app-page precedent)
 
-function record(origin: string, app: any, version: any, file: any, bin: any) {
-  const min = emulatorMinOs(version, bin);
+function record(origin: string, app: any, version: any, file: any, bin: any, t: Target) {
+  const compat = compatOf(version, file, bin, t);
   const iconSha = bin?.bundle_icon_sha256 || bin?.itunes_artwork_sha256;
   const live = typeof app?.icon_url === 'string' && /^https?:\/\//.test(app.icon_url) ? app.icon_url : null;
   return {
@@ -34,9 +39,14 @@ function record(origin: string, app: any, version: any, file: any, bin: any) {
     name: appTitleOf(app),
     developer: app.developer_artist_name ?? null,
     version: version.version_string ?? null,
-    min_os: min.os,
-    min_os_source: min.source,
+    min_os: compat.min_os,
+    min_os_source: compat.min_os_source,
     size: file.file_size ?? null,
+    // Digests of the .ipa file bytes as archived (archive.org's own md5/sha1):
+    // verify a download, or skip it when a library already holds these bytes.
+    md5: file.md5_hash ?? bin?.md5 ?? null,
+    sha1: bin?.sha1 ?? null,
+    compat,
     ipa_id: file.id,
     icon_url: iconSha ? `${origin}/icon/${iconSha}` : live,
     download_url: `${origin}/ipa/${file.id}`,
@@ -61,20 +71,43 @@ async function chunkedIn(
   return results.flat();
 }
 
-// Newest compatible version's best compatible copy, or null.
+// Newest compatible version's best compatible copy; with `fallback`, the
+// newest version's best copy of any kind when nothing qualifies.
 function bestCopy(
   versions: any[],
   filesByVersion: Map<any, any[]>,
-  binOf: (f: any) => any
+  binOf: (f: any) => any,
+  t: Target,
+  fallback: boolean
 ): { version: any; file: any; bin: any } | null {
+  let first: { version: any; file: any; bin: any } | null = null;
   for (const v of versions) {
-    const files = filesByVersion.get(v.id) || [];
-    const groups = dedupeFilesByHash(files).filter((g) => emulatorCompatible(v, g.file, binOf(g.file)));
+    const all = dedupeFilesByHash(filesByVersion.get(v.id) || []).filter((g) => !binOf(g.file)?.hidden);
+    const groups = all.filter((g) => compatOf(v, g.file, binOf(g.file), t).compatible);
+    if (fallback && !first && all.length) {
+      const f = sortGroupsByPreference(all, binOf, v.minimum_os_version)[0].file;
+      first = { version: v, file: f, bin: binOf(f) };
+    }
     if (!groups.length) continue;
     const best = sortGroupsByPreference(groups, binOf, v.minimum_os_version)[0];
     return { version: v, file: best.file, bin: binOf(best.file) };
   }
-  return null;
+  return first;
+}
+
+// The request's target device, or an error message.
+function targetOf(params: URLSearchParams): Target | string {
+  const d = defaultTarget();
+  const model = params.get('device');
+  const device = model === null ? d.device : deviceFor(model);
+  if (!device) return `device must be one of ${DEVICE_MODELS.join(', ')}`;
+  const osParam = params.get('os');
+  const os = osParam === null ? (model === null ? d.os : null) : parseOs(osParam);
+  if (!os) return model !== null && osParam === null ? 'os is required with device' : 'os must look like 4.2.1';
+  const fam = params.get('family');
+  const families = fam === null ? device.families : fam.split(',').filter((f) => device.families.includes(f));
+  if (!families.length) return `family must be among ${device.families.join(',')} for ${device.model}`;
+  return { device, os, families };
 }
 
 export const OPTIONS: APIRoute = () => new Response(null, { status: 204, headers: CORS });
@@ -83,6 +116,11 @@ export const GET: APIRoute = async (ctx) => {
   const origin = ctx.url.origin;
   const supabase = supabaseFor(ctx);
   const params = ctx.url.searchParams;
+  const t = targetOf(params);
+  if (typeof t === 'string') return fail(400, 'invalid_request', t);
+  const includeAll = params.get('incompatible') === 'include';
+  const target = { model: t.device.model, name: t.device.name, os: t.os.join('.'), archs: t.device.archs, families: t.families };
+  const reply = (apps: any[]) => json({ apps, target }, 200, 'public, max-age=300');
 
   try {
     // ---- single-copy lookup (the deep link's confirm sheet) ----
@@ -105,10 +143,12 @@ export const GET: APIRoute = async (ctx) => {
       if (ae) throw new Error(ae.message);
       if (!app) return fail(404, 'not_found', 'no such archived copy');
       const bin = (file as any).binaries || undefined;
-      if (!emulatorCompatible(version, file, bin)) {
-        return fail(404, 'not_compatible', 'this copy is not compatible with the emulator');
+      if (bin?.hidden) return fail(404, 'not_found', 'no such archived copy');
+      const rec = record(origin, flattenAppRow(app), version, file, bin, t);
+      if (!rec.compat.compatible && !includeAll) {
+        return fail(404, 'not_compatible', `not compatible with ${t.device.model} on ${target.os}: ${rec.compat.reasons.join(', ')}`);
       }
-      return json({ apps: [record(origin, flattenAppRow(app), version, file, bin)] }, 200, 'public, max-age=300');
+      return reply([rec]);
     }
 
     // ---- search / suggestions ----
@@ -117,7 +157,7 @@ export const GET: APIRoute = async (ctx) => {
     const q = (params.get('q') || '').trim();
     const limit = clampPageSize(params.get('limit'), 25, 50);
     const tsquery = q ? buildPrefixTsquery(q) : null;
-    if (q && !tsquery && !q.includes('.')) return json({ apps: [] }, 200, 'public, max-age=300');
+    if (q && !tsquery && !q.includes('.')) return reply([]);
 
     // Overfetch: many hits have no armv6/installable copy and are dropped
     // below. The suggested list needs the deepest pool — the most-archived
@@ -150,27 +190,27 @@ export const GET: APIRoute = async (ctx) => {
       apps.length = 0;
       apps.push(...unique);
     }
-    if (!apps.length) return json({ apps: [] }, 200, 'public, max-age=300');
+    if (!apps.length) return reply([]);
 
-    // Metadata min-OS > 3 can't pass the predicate regardless of the binary —
+    // Metadata min-OS above the target's major can't pass regardless of the binary —
     // cut those versions IN THE QUERY, not just client-side: PostgREST caps
     // each request at 1000 rows, and the apps in play here (most-archived =
     // most-versioned) blow through that, silently truncating the tail and
     // dropping whole apps. The lexicographic `lt.4` lets a stray "10.x"
-    // through, which the armv6 binary check below still rejects — the filter
+    // through, which compatOf below still rejects — the filter
     // is a cost cut, not the compatibility decision. Unknown min-OS stays:
     // the binary's macho_min_os may still qualify it.
     const versions = await chunkedIn(
       supabase, 'app_versions', VERSION_FIELDS, 'app_id', apps.map((a) => a.id),
-      (query) => query.or('minimum_os_version.is.null,minimum_os_version.lt.4')
+      (query) => (includeAll || t.os[0] >= 9 ? query : query.or(`minimum_os_version.is.null,minimum_os_version.lt.${t.os[0] + 1}`))
     );
     const eligible = versions
       .filter((v) => {
         const major = parseInt(String(v.minimum_os_version || '').split('.')[0], 10);
-        return !Number.isFinite(major) || major <= 3;
+        return includeAll || !Number.isFinite(major) || major <= t.os[0];
       })
       .sort((a, b) => String(b.release_date || '').localeCompare(String(a.release_date || '')));
-    if (!eligible.length) return json({ apps: [] }, 200, 'public, max-age=300');
+    if (!eligible.length) return reply([]);
 
     const files = await chunkedIn(supabase, 'ipa_files', FILE_FIELDS, 'app_version_id', eligible.map((v) => v.id));
     const binOf = (f: any) => f?.binaries || undefined;
@@ -190,11 +230,11 @@ export const GET: APIRoute = async (ctx) => {
 
     const out: any[] = [];
     for (const app of apps) {
-      const best = bestCopy(versionsByApp.get(app.id) || [], filesByVersion, binOf);
-      if (best) out.push(record(origin, app, best.version, best.file, best.bin));
+      const best = bestCopy(versionsByApp.get(app.id) || [], filesByVersion, binOf, t, includeAll);
+      if (best) out.push(record(origin, app, best.version, best.file, best.bin, t));
       if (out.length >= limit) break;
     }
-    return json({ apps: out }, 200, 'public, max-age=300');
+    return reply(out);
   } catch (err) {
     console.error('emulator apps error:', (err as any)?.message);
     return fail(502, 'upstream_error', 'catalog lookup failed');

@@ -914,3 +914,114 @@ $function$;
 -- popularity_score). Per-version icons, charts date-near icons, and the app
 -- header (large_icon_sha256) unchanged. Migration: rep_icon_sha256.
 -- ============================================================================
+
+-- ============================================================================
+-- Prefix search vs English stemming (2026-09-29) — APPLIED as migration
+-- search_prefix_tsquery_unstemmed.
+-- to_tsquery('english', 'laby:*') stems the partial word to 'labi':*, which
+-- can't prefix-match the indexed lexeme 'labyrinth' ("lab" worked, "laby"
+-- didn't). Each token now matches its stemmed OR unstemmed ('simple') form;
+-- tokens the english config drops (stop words) stay dropped, so results are
+-- a strict superset of before (laby: 5 → 34 hits incl. all 27 Labyrinths;
+-- angry bir: 59 → 60; lab, pokemon, doodl jum unchanged — verified in a
+-- rolled-back transaction against live data, then re-checked live after apply).
+-- Not covered: the /search page's catalog-only / catalog-seed branches use
+-- supabase-js .textSearch(), which still stems (secondary ghost lists).
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.prefix_tsquery(p_query text)
+ RETURNS tsquery
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT string_agg(format('(%s | %s)', e, to_tsquery('simple', t)::text), ' & ')::tsquery
+  FROM unnest(string_to_array(p_query, ' & ')) t, to_tsquery('english', t) q, CAST(q AS text) e
+  WHERE e <> ''
+$function$;
+
+-- search_apps: identical to live except the fts CTE's
+--   CROSS JOIN to_tsquery('english', coalesce(p_query, '')) q
+-- which becomes
+--   CROSS JOIN prefix_tsquery(p_query) q
+CREATE OR REPLACE FUNCTION public.search_apps(p_query text DEFAULT NULL::text, p_raw text DEFAULT NULL::text, p_genre_id bigint DEFAULT NULL::bigint, p_sort text DEFAULT 'relevance'::text, p_limit integer DEFAULT 20, p_offset integer DEFAULT 0, p_dev_ids bigint[] DEFAULT NULL::bigint[])
+ RETURNS TABLE(id bigint, bundle_id text, app_store_id bigint, app_store_name text, developer_id bigint, genre_id bigint, copyright text, icon_url text, display_name text, executable_name text, created_at timestamp with time zone, developer_artist_name text, genre_genre_name text, version_count bigint, first_version_date timestamp with time zone, oldest_icon_sha256 text, rank real, total bigint)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+WITH params AS (
+  SELECT lower(f_unaccent(coalesce(p_raw,''))) AS raw,
+         replace(replace(replace(lower(f_unaccent(coalesce(p_raw,''))),
+           '\', '\\'), '%', '\%'), '_', '\_') AS rawlike
+),
+fts AS (
+  SELECT a.id AS app_id, ts_rank(a.search_vector2, q) AS r,
+         0::real AS sim,
+         (lower(f_unaccent(coalesce(a.display_name,''))) = pr.raw
+          OR lower(f_unaccent(coalesce(a.app_store_name,''))) = pr.raw)::int AS is_exact,
+         (lower(f_unaccent(coalesce(a.display_name,''))) LIKE pr.rawlike || '%'
+          OR lower(f_unaccent(coalesce(a.app_store_name,''))) LIKE pr.rawlike || '%')::int AS is_pfx
+  FROM apps a CROSS JOIN prefix_tsquery(p_query) q CROSS JOIN params pr
+  WHERE p_query IS NOT NULL AND a.search_vector2 @@ q AND a.excluded IS NOT TRUE
+    AND (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+    AND (p_dev_ids IS NULL OR a.developer_id = ANY(p_dev_ids))
+),
+fuzzy AS (
+  SELECT app_id, r, sim, is_exact, is_pfx FROM (
+    SELECT a.id AS app_id, 0::real AS r,
+           greatest(similarity(f_unaccent(coalesce(a.display_name,'')), pr.raw),
+                    similarity(f_unaccent(coalesce(a.app_store_name,'')), pr.raw)) AS sim,
+           0 AS is_exact,
+           (lower(f_unaccent(coalesce(a.display_name,''))) LIKE pr.rawlike || '%'
+            OR lower(f_unaccent(coalesce(a.app_store_name,''))) LIKE pr.rawlike || '%')::int AS is_pfx,
+           a.version_count AS vc
+    FROM apps a CROSS JOIN params pr
+    WHERE p_raw IS NOT NULL AND pr.raw <> '' AND (SELECT count(*) FROM fts) < 5
+      AND (CASE WHEN length(pr.raw) <= 2
+                THEN f_unaccent(coalesce(a.display_name, a.app_store_name, '')) ILIKE pr.rawlike || '%'
+                ELSE f_unaccent(coalesce(a.display_name, a.app_store_name, '')) % pr.raw END)
+      AND a.excluded IS NOT TRUE
+      AND (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+      AND (p_dev_ids IS NULL OR a.developer_id = ANY(p_dev_ids))
+      AND NOT EXISTS (SELECT 1 FROM fts f WHERE f.app_id = a.id)
+    ORDER BY sim DESC, is_pfx DESC, vc DESC NULLS LAST
+    LIMIT 100
+  ) best
+),
+browse AS (
+  SELECT a.id AS app_id, 0::real AS r, 0::real AS sim, 0 AS is_exact, 0 AS is_pfx
+  FROM apps a
+  WHERE p_query IS NULL AND (p_raw IS NULL OR p_raw = '') AND a.excluded IS NOT TRUE
+    AND (p_genre_id IS NULL OR a.genre_id = p_genre_id)
+    AND (p_dev_ids IS NULL OR a.developer_id = ANY(p_dev_ids))
+)
+SELECT a.id, a.bundle_id, a.app_store_id, a.app_store_name, a.developer_id, a.genre_id,
+       a.copyright, a.live_icon_url, a.display_name, a.executable_name, a.created_at,
+       d.artist_name, g.genre_name, a.version_count::bigint, a.first_version_date,
+       coalesce(a.rep_icon_sha256, a.oldest_icon_sha256),
+       (m.is_exact*2 + m.is_pfx*3 + least(round(m.r*2), 1) + round(m.sim)
+        + ln(1 + coalesce(a.version_count, 0)))::real AS rank,
+       count(*) OVER () AS total
+FROM (SELECT * FROM fts UNION ALL SELECT * FROM fuzzy UNION ALL SELECT * FROM browse) m
+JOIN apps a ON a.id = m.app_id
+LEFT JOIN developers d ON a.developer_id = d.id
+LEFT JOIN genres g ON a.genre_id = g.id
+ORDER BY
+  CASE WHEN p_sort = 'relevance' THEN
+    m.is_exact*2 + m.is_pfx*3 + least(round(m.r*2), 1) + round(m.sim)
+    + ln(1 + coalesce(a.version_count, 0)) END DESC NULLS LAST,
+  CASE WHEN p_sort IN ('relevance','versions') THEN a.version_count END DESC NULLS LAST,
+  CASE WHEN p_sort = 'newest' THEN a.first_version_date END DESC NULLS LAST,
+  CASE WHEN p_sort = 'first_date' THEN a.first_version_date END ASC NULLS LAST,
+  a.display_name ASC, a.id ASC
+LIMIT p_limit OFFSET p_offset
+$function$;
+
+-- Device-compat derived columns (2026-09-29, branch lighttouch-api) — APPLIED
+-- as migration binaries_device_compat_derived (additive, nullable):
+--   binaries.armv6_isa_scan jsonb        ARMv7-only instruction density in the armv6
+--                                        slice (mini: device_compat.py at ingest,
+--                                        isa_backfill.py for the corpus)
+--   binaries.required_capabilities text[] Info.plist UIRequiredDeviceCapabilities
+--   binaries.plist_min_os text            the binary's own Info.plist MinimumOSVersion
+-- The two plist columns were backfilled in-DB from macho_load_commands->'plist_extras'.

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Legacy Store API
-  version: "2.0.0"
+  version: "2.1.0"
   description: >
     Open, read-only JSON API over the Legacy Store preservation archive of the iOS App
     Store's first ~15 years — apps, versions, archived .ipa copies, historical charts,
@@ -255,6 +255,90 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /api/emulator/apps:
+    get:
+      summary: Apps that run on a given old device (the Light Touch emulator's catalog)
+      description: >
+        One record per app with its single best archived copy that runs on the target
+        device: newest qualifying version, best copy within it. Not a v1 list endpoint
+        (envelope is {apps, target}, no paging) but it follows the same additive-only rule.
+        Compatibility is decided from the binary itself: its Mach-O slices and an
+        instruction scan of the armv6 slice, then its own Info.plist
+        (MinimumOSVersion, UIDeviceFamily, UIRequiredDeviceCapabilities), with store
+        metadata only as a fallback. Every record carries a compat object with those facts
+        and, when it doesn't qualify, the reasons. With no target parameters the target is
+        an iPod touch (2nd generation) on iOS 3.1.3.
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Search text; omit for the most-archived compatible apps. }
+        - { name: limit, in: query, schema: { type: integer, enum: [25, 50] } }
+        - { name: ipa_id, in: query, schema: { type: string }, description: "One known copy; 404 not_compatible (message lists the reasons) unless incompatible=include." }
+        - { name: device, in: query, schema: { type: string, enum: ["iPod1,1", "iPod2,1", "iPad1,1"] }, description: Model identifier. Requires os. Added in 2.1. }
+        - { name: os, in: query, schema: { type: string, example: "4.2.1" }, description: The device's iOS version. Added in 2.1. }
+        - name: family
+          in: query
+          schema: { type: string, example: "2" }
+          description: >
+            Comma list of UIDeviceFamily values to show (1 = iPhone/iPod touch, 2 = iPad);
+            default is everything the device runs (an iPad runs both). Added in 2.1.
+        - { name: incompatible, in: query, schema: { type: string, enum: [include] }, description: Also return apps with no qualifying copy (their newest copy, compat.compatible false). Added in 2.1. }
+      responses:
+        "200":
+          description: Matching apps.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  target:
+                    type: object
+                    properties:
+                      model: { type: string }
+                      name: { type: string }
+                      os: { type: string }
+                      archs: { type: array, items: { type: string } }
+                      families: { type: array, items: { type: string } }
+                  apps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ipa_id: { type: integer }
+                        bundle_id: { type: string, nullable: true }
+                        name: { type: string }
+                        developer: { type: string, nullable: true }
+                        version: { type: string, nullable: true }
+                        min_os: { type: string, nullable: true }
+                        min_os_source: { type: string, enum: [plist, metadata, macho, unknown] }
+                        size: { type: integer, nullable: true, description: .ipa size in bytes. }
+                        md5: { type: string, nullable: true, description: "md5 of the .ipa file bytes (the Internet Archive's). Added in 2.1." }
+                        sha1: { type: string, nullable: true, description: "sha1 of the .ipa file bytes — the content address shared by every identical copy. Added in 2.1." }
+                        icon_url: { type: string, nullable: true }
+                        download_url: { type: string }
+                        app_url: { type: string }
+                        compat:
+                          type: object
+                          description: Added in 2.1.
+                          properties:
+                            compatible: { type: boolean }
+                            reasons:
+                              type: array
+                              items: { type: string }
+                              description: >
+                                Empty when compatible. Values: quarantined, encrypted,
+                                not_analyzed, unavailable, no_<arch>_slice,
+                                armv6_slice_contains_armv7_code, requires_ios_<x.y>,
+                                unsupported_device_family, family_not_requested,
+                                capability:<key> (or capability:!<key>).
+                            architectures: { type: array, items: { type: string } }
+                            armv7_code: { type: boolean, nullable: true }
+                            min_os: { type: string, nullable: true }
+                            min_os_source: { type: string }
+                            device_family: { type: array, items: { type: string } }
+                            required_capabilities: { type: array, nullable: true, items: { type: string } }
+                            install_status: { type: string, nullable: true }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
   /api/v1/charts:
     get:
       summary: One archived chart snapshot with ranked positions
@@ -613,6 +697,23 @@ components:
               type: array
               nullable: true
               items: { type: integer }
+            armv7_code:
+              type: boolean
+              nullable: true
+              description: >
+                Derived from the binary: true when the armv6 slice actually contains ARMv7-only
+                instructions (a mislabelled build that won't run on an ARM11 / armv6-only device),
+                false when scanned clean, null when not scanned (no armv6 slice, encrypted, or
+                not yet analyzed). Added in 2.1.
+            plist_min_os: { type: string, nullable: true, description: "This binary's own Info.plist MinimumOSVersion. Added in 2.1." }
+            required_capabilities:
+              type: array
+              nullable: true
+              items: { type: string }
+              description: >
+                Info.plist UIRequiredDeviceCapabilities as a list; a dictionary entry set to false
+                (the device must NOT have it) is written "!key". null when the key is absent.
+                Added in 2.1.
             has_watch_app: { type: boolean, nullable: true }
             has_extensions: { type: boolean, nullable: true }
             retina_iphone: { type: boolean, nullable: true }

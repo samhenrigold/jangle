@@ -20,7 +20,7 @@ export const GET: APIRoute = async (ctx) => {
       .select(
         'id, app_version_id, filename, file_size, md5_hash, available, ' +
           'archive_items!ipa_files_archive_item_id_fkey(ia_item_id), ' +
-          'binaries!ipa_files_binary_sha1_fkey(sha1, install_status, architectures, macho_min_os, hidden, device_family_macho, has_watch_app, has_extensions, retina_iphone, retina_ipad, bundle_icon_sha256)'
+          'binaries!ipa_files_binary_sha1_fkey(sha1, install_status, architectures, macho_min_os, hidden, device_family_macho, has_watch_app, has_extensions, retina_iphone, retina_ipad, bundle_icon_sha256, armv6_isa_scan, required_capabilities, plist_min_os)'
       )
       .eq('id', id)
       .maybeSingle();
@@ -60,6 +60,11 @@ export const GET: APIRoute = async (ctx) => {
               architectures: bin.architectures ?? null,
               macho_min_os: bin.macho_min_os ?? null,
               device_family_macho: bin.device_family_macho ?? null,
+              // Derived from the binary at ingest (see lib/emulator.ts):
+              // true = the armv6 slice is really ARMv7 code; null = not scanned.
+              armv7_code: typeof bin.armv6_isa_scan?.armv7 === 'boolean' ? bin.armv6_isa_scan.armv7 : null,
+              plist_min_os: bin.plist_min_os ?? null,
+              required_capabilities: bin.required_capabilities ?? null,
               has_watch_app: bin.has_watch_app ?? null,
               has_extensions: bin.has_extensions ?? null,
               retina_iphone: bin.retina_iphone ?? null,
