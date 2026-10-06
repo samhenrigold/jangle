@@ -46,14 +46,24 @@ const ghostStoreIds = Array.from(new Set(
     .filter((n: number) => Number.isFinite(n))
 ));
 const ghostBundleByStoreId = new Map<number, string>();
+// Archived store-page metadata (Wayback/CC captures) for ghosts: earliest capture
+// with a title wins — the period-authentic seller name, no binary needed.
+const ghostSnapByStoreId = new Map<number, { title: string | null; seller: string | null }>();
 if (ghostStoreIds.length) {
-  const { data: stubRows, error: stubErr } = await supabase
-    .from('apps')
-    .select('app_store_id, bundle_id')
-    .in('app_store_id', ghostStoreIds);
+  const [{ data: stubRows, error: stubErr }, { data: snapRows, error: snapErr }] = await Promise.all([
+    supabase.from('apps').select('app_store_id, bundle_id').in('app_store_id', ghostStoreIds),
+    supabase.from('app_listing_snapshots').select('app_store_id, title, seller, captured_at')
+      .in('app_store_id', ghostStoreIds).not('title', 'is', null)
+      .order('captured_at', { ascending: true }),
+  ]);
   if (stubErr) console.error('ghost bundle-id lookup failed:', stubErr.message);
   else for (const r of stubRows || []) {
     if (r.bundle_id) ghostBundleByStoreId.set(Number(r.app_store_id), r.bundle_id);
+  }
+  if (snapErr) console.error('ghost snapshot lookup failed:', snapErr.message);
+  else for (const r of snapRows || []) {
+    const k = Number(r.app_store_id);
+    if (!ghostSnapByStoreId.has(k)) ghostSnapByStoreId.set(k, { title: r.title, seller: r.seller });
   }
 }
 
@@ -79,7 +89,7 @@ const items: Item[] = members.map((m: any) => {
       row: {
         ghost: true,
         display_name: m.label,
-        developer_artist_name: m.metadata?.developer || null,
+        developer_artist_name: m.metadata?.developer || (storeId != null && ghostSnapByStoreId.get(storeId)?.seller) || null,
         note: m.blurb || undefined,
         app_store_id: storeId ?? undefined,
         bundle_id: (storeId != null && ghostBundleByStoreId.get(storeId)) || undefined,
