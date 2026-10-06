@@ -23,6 +23,8 @@ export interface Device {
   archs: string[];        // slices the CPU executes
   families: string[];     // UIDeviceFamily values it runs
   caps: string[];         // UIRequiredDeviceCapabilities it satisfies
+  minOs: string;          // first iOS release it ran
+  maxOs: string;          // last iOS release it ran
 }
 
 // Every iPhone / iPod touch / iPad model id. Capabilities follow Apple's
@@ -107,6 +109,9 @@ const ROWS: [string, string, string, string][] = [
   ['iPhone18,4', 'iPhone Air', 'a12', PH7],
   ['iPhone18,1', 'iPhone 17 Pro', 'a12', PH7],
   ['iPhone18,2', 'iPhone 17 Pro Max', 'a12', PH7],
+  ['iPhone18,5', 'iPhone 17e', 'a12', PH7],
+  ['iPhone19,2', 'iPhone 18 Pro', 'a12', PH7],
+  ['iPhone19,3 iPhone19,7', 'iPhone 18 Pro Max', 'a12', PH7],
 
   ['iPod1,1', 'iPod touch (1st generation)', 'armv6', ''],
   ['iPod2,1', 'iPod touch (2nd generation)', 'armv6', IP2],
@@ -157,7 +162,88 @@ const ROWS: [string, string, string, string][] = [
   ['iPad16,1 iPad16,2', 'iPad mini (A17 Pro)', 'a12', PAD17],
   ['iPad16,3 iPad16,4', 'iPad Pro (11-inch) (M4)', 'a12', PRO17],
   ['iPad16,5 iPad16,6', 'iPad Pro (13-inch) (M4)', 'a12', PRO17],
+  ['iPad16,8 iPad16,9', 'iPad Air (11-inch) (M4)', 'a12', PAD17],
+  ['iPad16,10 iPad16,11', 'iPad Air (13-inch) (M4)', 'a12', PAD17],
+  ['iPad17,1 iPad17,2', 'iPad Pro (11-inch) (M5)', 'a12', PRO17],
+  ['iPad17,3 iPad17,4', 'iPad Pro (13-inch) (M5)', 'a12', PRO17],
 ];
+
+// [first, last] release each model ran, from AppleDB (api.appledb.dev/ios/main.json,
+// 2026-10-06): release builds only (no beta/rc/internal), counted for a model
+// only when AppleDB has an Apple download for it or lists it as factory-
+// installed. RSR suffixes ("26.3.1 (a)") fold to their base. Checked against
+// ipsw.me; every disagreement spot-checked came out AppleDB's way (factory
+// builds, the 32-bit 10.3.4 restores — confirmed from Apple's BuildManifests).
+// Models still getting updates need a re-capture when a newer iOS ships.
+const OS_RANGE: Record<string, [string, string]> = {
+  'iPhone1,1': ['1.0', '3.1.3'], 'iPhone1,2': ['2.0', '4.2.1'], 'iPhone2,1': ['3.0', '6.1.6'],
+  'iPhone3,1': ['4.0', '7.1.2'], 'iPhone3,2': ['6.0', '7.1.2'], 'iPhone3,3': ['4.2.5', '7.1.2'],
+  'iPhone4,1': ['5.0', '9.3.6'], 'iPhone5,1': ['6.0', '10.3.4'], 'iPhone5,2': ['6.0', '10.3.4'],
+  'iPhone5,3': ['7.0', '10.3.4'], 'iPhone5,4': ['7.0', '10.3.4'], 'iPhone6,1': ['7.0', '12.5.8'],
+  'iPhone6,2': ['7.0', '12.5.8'], 'iPhone7,1': ['8.0', '12.5.8'], 'iPhone7,2': ['8.0', '12.5.8'],
+  'iPhone8,1': ['9.0', '15.8.8'], 'iPhone8,2': ['9.0', '15.8.8'], 'iPhone8,4': ['9.3', '15.8.8'],
+  'iPhone9,1': ['10.0', '15.8.8'], 'iPhone9,2': ['10.0', '15.8.8'], 'iPhone9,3': ['10.0', '15.8.8'],
+  'iPhone9,4': ['10.0', '15.8.8'], 'iPhone10,1': ['11.0', '16.7.16'],
+  'iPhone10,2': ['11.0', '16.7.16'], 'iPhone10,3': ['11.0', '16.7.16'],
+  'iPhone10,4': ['11.0', '16.7.16'], 'iPhone10,5': ['11.0', '16.7.16'],
+  'iPhone10,6': ['11.0', '16.7.16'], 'iPhone11,2': ['12.0', '18.7.10'],
+  'iPhone11,4': ['12.0', '18.7.10'], 'iPhone11,6': ['12.0', '18.7.10'],
+  'iPhone11,8': ['12.0', '18.7.10'], 'iPhone12,1': ['13.0', '27.0.1'],
+  'iPhone12,3': ['13.0', '27.0.1'], 'iPhone12,5': ['13.0', '27.0.1'],
+  'iPhone12,8': ['13.4', '27.0.1'], 'iPhone13,1': ['14.1', '27.0.1'],
+  'iPhone13,2': ['14.1', '27.0.1'], 'iPhone13,3': ['14.1', '27.0.1'],
+  'iPhone13,4': ['14.1', '27.0.1'], 'iPhone14,2': ['15.0', '27.0.1'],
+  'iPhone14,3': ['15.0', '27.0.1'], 'iPhone14,4': ['15.0', '27.0.1'],
+  'iPhone14,5': ['15.0', '27.0.1'], 'iPhone14,6': ['15.4', '27.0.1'],
+  'iPhone14,7': ['16.0', '27.0.1'], 'iPhone14,8': ['16.0', '27.0.1'],
+  'iPhone15,2': ['16.0', '27.0.1'], 'iPhone15,3': ['16.0', '27.0.1'],
+  'iPhone15,4': ['17.0', '27.0.1'], 'iPhone15,5': ['17.0', '27.0.1'],
+  'iPhone16,1': ['17.0', '27.0.1'], 'iPhone16,2': ['17.0', '27.0.1'],
+  'iPhone17,1': ['18.0', '27.0.1'], 'iPhone17,2': ['18.0', '27.0.1'],
+  'iPhone17,3': ['18.0', '27.0.1'], 'iPhone17,4': ['18.0', '27.0.1'],
+  'iPhone17,5': ['18.3', '27.0.1'], 'iPhone18,1': ['26.0', '27.0.1'],
+  'iPhone18,2': ['26.0', '27.0.1'], 'iPhone18,3': ['26.0', '27.0.1'],
+  'iPhone18,4': ['26.0', '27.0.1'], 'iPhone18,5': ['26.3', '27.0.1'],
+  'iPhone19,2': ['27.0', '27.0.1'], 'iPhone19,3': ['27.0', '27.0.1'],
+  'iPhone19,7': ['27.0', '27.0.1'], 'iPod1,1': ['1.1', '3.1.3'], 'iPod2,1': ['2.1.1', '4.2.1'],
+  'iPod3,1': ['3.1.1', '5.1.1'], 'iPod4,1': ['4.1', '6.1.6'], 'iPod5,1': ['6.0', '9.3.5'],
+  'iPod7,1': ['8.4', '12.5.8'], 'iPod9,1': ['12.3', '15.8.8'], 'iPad1,1': ['3.2', '5.1.1'],
+  'iPad2,1': ['4.3', '9.3.5'], 'iPad2,2': ['4.3', '9.3.5'], 'iPad2,3': ['4.3', '9.3.6'],
+  'iPad2,4': ['5.1', '9.3.5'], 'iPad2,5': ['6.0', '9.3.5'], 'iPad2,6': ['6.0.1', '9.3.6'],
+  'iPad2,7': ['6.0.1', '9.3.6'], 'iPad3,1': ['5.1', '9.3.5'], 'iPad3,2': ['5.1', '9.3.6'],
+  'iPad3,3': ['5.1', '9.3.6'], 'iPad3,4': ['6.0', '10.3.4'], 'iPad3,5': ['6.0.1', '10.3.4'],
+  'iPad3,6': ['6.0.1', '10.3.4'], 'iPad4,1': ['7.0.3', '12.5.8'], 'iPad4,2': ['7.0.3', '12.5.8'],
+  'iPad4,3': ['7.1', '12.5.8'], 'iPad4,4': ['7.0.3', '12.5.8'], 'iPad4,5': ['7.0.3', '12.5.8'],
+  'iPad4,6': ['7.1', '12.5.8'], 'iPad4,7': ['8.0.2', '12.5.8'], 'iPad4,8': ['8.1', '12.5.8'],
+  'iPad4,9': ['8.1', '12.5.8'], 'iPad5,1': ['9.0', '15.8.8'], 'iPad5,2': ['9.0', '15.8.8'],
+  'iPad5,3': ['8.1', '15.8.8'], 'iPad5,4': ['8.1', '15.8.8'], 'iPad6,3': ['9.3', '16.7.16'],
+  'iPad6,4': ['9.3', '16.7.16'], 'iPad6,7': ['9.1', '16.7.16'], 'iPad6,8': ['9.1', '16.7.16'],
+  'iPad6,11': ['10.3', '16.7.16'], 'iPad6,12': ['10.3', '16.7.16'], 'iPad7,1': ['10.3', '17.7.11'],
+  'iPad7,2': ['10.3', '17.7.11'], 'iPad7,3': ['10.3', '17.7.11'], 'iPad7,4': ['10.3', '17.7.11'],
+  'iPad7,5': ['11.3', '17.7.11'], 'iPad7,6': ['11.3', '17.7.11'], 'iPad7,11': ['13.1', '18.7.10'],
+  'iPad7,12': ['13.1', '18.7.10'], 'iPad8,1': ['12.1', '26.7.1'], 'iPad8,2': ['12.1', '26.7.1'],
+  'iPad8,3': ['12.1', '26.7.1'], 'iPad8,4': ['12.1', '26.7.1'], 'iPad8,5': ['12.1', '26.7.1'],
+  'iPad8,6': ['12.1', '26.7.1'], 'iPad8,7': ['12.1', '26.7.1'], 'iPad8,8': ['12.1', '26.7.1'],
+  'iPad8,9': ['13.4', '27.0.1'], 'iPad8,10': ['13.4', '27.0.1'], 'iPad8,11': ['13.4', '27.0.1'],
+  'iPad8,12': ['13.4', '27.0.1'], 'iPad11,1': ['12.2', '26.7.1'], 'iPad11,2': ['12.2', '26.7.1'],
+  'iPad11,3': ['12.2', '26.7.1'], 'iPad11,4': ['12.2', '26.7.1'], 'iPad11,6': ['14.0', '26.7.1'],
+  'iPad11,7': ['14.0', '26.7.1'], 'iPad12,1': ['15.0', '27.0.1'], 'iPad12,2': ['15.0', '27.0.1'],
+  'iPad13,1': ['14.0', '27.0.1'], 'iPad13,2': ['14.0', '27.0.1'], 'iPad13,4': ['14.5', '27.0.1'],
+  'iPad13,5': ['14.5', '27.0.1'], 'iPad13,6': ['14.5', '27.0.1'], 'iPad13,7': ['14.5', '27.0.1'],
+  'iPad13,8': ['14.5', '27.0.1'], 'iPad13,9': ['14.5', '27.0.1'], 'iPad13,10': ['14.5', '27.0.1'],
+  'iPad13,11': ['14.5', '27.0.1'], 'iPad13,16': ['15.4', '27.0.1'], 'iPad13,17': ['15.4', '27.0.1'],
+  'iPad13,18': ['16.0', '27.0.1'], 'iPad13,19': ['16.0', '27.0.1'], 'iPad14,1': ['15.0', '27.0.1'],
+  'iPad14,2': ['15.0', '27.0.1'], 'iPad14,3': ['16.0', '27.0.1'], 'iPad14,4': ['16.0', '27.0.1'],
+  'iPad14,5': ['16.0', '27.0.1'], 'iPad14,6': ['16.0', '27.0.1'], 'iPad14,8': ['17.4', '27.0.1'],
+  'iPad14,9': ['17.4', '27.0.1'], 'iPad14,10': ['17.4', '27.0.1'], 'iPad14,11': ['17.4', '27.0.1'],
+  'iPad15,3': ['18.3', '27.0.1'], 'iPad15,4': ['18.3', '27.0.1'], 'iPad15,5': ['18.3', '27.0.1'],
+  'iPad15,6': ['18.3', '27.0.1'], 'iPad15,7': ['18.3', '27.0.1'], 'iPad15,8': ['18.3', '27.0.1'],
+  'iPad16,1': ['18.0', '27.0.1'], 'iPad16,2': ['18.0', '27.0.1'], 'iPad16,3': ['17.4', '27.0.1'],
+  'iPad16,4': ['17.4', '27.0.1'], 'iPad16,5': ['17.4', '27.0.1'], 'iPad16,6': ['17.4', '27.0.1'],
+  'iPad16,8': ['26.3', '27.0.1'], 'iPad16,9': ['26.3', '27.0.1'], 'iPad16,10': ['26.3', '27.0.1'],
+  'iPad16,11': ['26.3', '27.0.1'], 'iPad17,1': ['26.0', '27.0.1'], 'iPad17,2': ['26.0', '27.0.1'],
+  'iPad17,3': ['26.0', '27.0.1'], 'iPad17,4': ['26.0', '27.0.1'],
+};
 
 function capsOf(tier: string, hw: string): string[] {
   const archs = TIERS[tier];
@@ -173,7 +259,13 @@ function capsOf(tier: string, hw: string): string[] {
 
 const DEVICES: Device[] = ROWS.flatMap(([ids, name, tier, hw]) => ids.split(' ').map((model) => ({
   model, name, archs: TIERS[tier], families: model.startsWith('iPad') ? ['1', '2'] : ['1'], caps: capsOf(tier, hw),
+  minOs: OS_RANGE[model][0], maxOs: OS_RANGE[model][1],
 })));
+
+// Whether the device ever ran this iOS version (an iPhone 4 never ran 2.x).
+export function runsOs(d: Device, os: number[]): boolean {
+  return !osLess(os, parseOs(d.minOs)!) && !osLess(parseOs(d.maxOs)!, os);
+}
 
 // What the shipped (0928d) app asks for without saying so.
 export const DEFAULT_DEVICE = 'iPod2,1';

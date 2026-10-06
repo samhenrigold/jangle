@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import { buildPrefixTsquery, clampPage, clampPageSize, looksLikeBundleId, escapeLike } from '../src/lib/search.ts';
 import { compareVersionLike } from '../src/lib/sorting.ts';
-import { emulatorCompatible, compatOf, deviceFor, parseOs, type Target } from '../src/lib/emulator.ts';
+import { emulatorCompatible, compatOf, deviceFor, parseOs, runsOs, type Target } from '../src/lib/emulator.ts';
 import { dedupeFilesByHash } from '../src/lib/files.ts';
 
 test('buildPrefixTsquery: tokenizes, prefix-stars, AND-joins', () => {
@@ -146,6 +146,11 @@ test('compatOf: modern model ids, 32-bit cut at iOS 11', () => {
   assert.deepEqual(compatOf({}, file, v7, target('iPhone6,1', '11.0')).reasons, ['no_arm64_slice']);
   assert.deepEqual(compatOf({}, file, v7, target('iPad13,18', '10.0')).reasons, ['capability:gps']);
   assert.equal(deviceFor('iPhone99,1'), null);
+  assert.equal(runsOs(deviceFor('iPhone3,1')!, parseOs('2.2')!), false);
+  assert.equal(runsOs(deviceFor('iPhone3,1')!, parseOs('7.1.2')!), true);
+  assert.equal(runsOs(deviceFor('iPhone3,1')!, parseOs('8.0')!), false);
+  assert.equal(runsOs(deviceFor('iPhone3,3')!, parseOs('4.2.5')!), true);   // CDMA iPhone 4's factory build
+  assert.equal(runsOs(deviceFor('iPhone5,3')!, parseOs('10.3.4')!), true);  // 32-bit GPS-fix restore
 });
 
 test('compatOf: arch and UIRequiredDeviceCapabilities', () => {

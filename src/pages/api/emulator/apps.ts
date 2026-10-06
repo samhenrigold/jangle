@@ -3,7 +3,7 @@ import { supabaseFor } from '../../../lib/supabase';
 import { json, fail, CORS } from '../../../lib/coverage';
 import { buildPrefixTsquery, clampPageSize, looksLikeBundleId, escapeLike } from '../../../lib/search';
 import { dedupeFilesByHash, sortGroupsByPreference } from '../../../lib/files';
-import { compatOf, defaultTarget, deviceFor, parseOs, type Target } from '../../../lib/emulator';
+import { compatOf, defaultTarget, deviceFor, parseOs, runsOs, type Target } from '../../../lib/emulator';
 import { appTitleOf, APP_LIST_COLS, flattenAppRow } from '../../../lib/apps';
 
 // Catalog search for the Light Touch emulator.
@@ -104,6 +104,9 @@ function targetOf(params: URLSearchParams): Target | string {
   const osParam = params.get('os');
   const os = osParam === null ? (model === null ? d.os : null) : parseOs(osParam);
   if (!os) return model !== null && osParam === null ? 'os is required with device' : 'os must look like 4.2.1';
+  if (!runsOs(device, os)) {
+    return `${device.model} (${device.name}) ran iOS ${device.minOs} through ${device.maxOs}`;
+  }
   const fam = params.get('family');
   const families = fam === null ? device.families : fam.split(',').filter((f) => device.families.includes(f));
   if (!families.length) return `family must be among ${device.families.join(',')} for ${device.model}`;
