@@ -190,7 +190,7 @@ const jsonLd = {
     <h2 class="dev-h2">Find what runs on an old device</h2>
     <p>
       <code>/api/emulator/apps?device=iPod2,1&amp;os=4.2.1</code> returns apps with an archived
-      copy that runs on that device (<code>iPod1,1</code>, <code>iPod2,1</code>, <code>iPad1,1</code>),
+      copy that runs on that device (any iPhone, iPod touch or iPad model id),
       judged from the binary itself: its CPU slices, an instruction scan that catches ARMv7 code
       shipped under an armv6 label, and its own Info.plist minimum OS, device family and
       required capabilities. Each record's <code>compat</code> object says why;

@@ -3,7 +3,7 @@ import { supabaseFor } from '../../../lib/supabase';
 import { json, fail, CORS } from '../../../lib/coverage';
 import { buildPrefixTsquery, clampPageSize, looksLikeBundleId, escapeLike } from '../../../lib/search';
 import { dedupeFilesByHash, sortGroupsByPreference } from '../../../lib/files';
-import { compatOf, defaultTarget, deviceFor, parseOs, DEVICE_MODELS, type Target } from '../../../lib/emulator';
+import { compatOf, defaultTarget, deviceFor, parseOs, type Target } from '../../../lib/emulator';
 import { appTitleOf, APP_LIST_COLS, flattenAppRow } from '../../../lib/apps';
 
 // Catalog search for the Light Touch emulator.
@@ -12,7 +12,7 @@ import { appTitleOf, APP_LIST_COLS, flattenAppRow } from '../../../lib/apps';
 //   GET /api/emulator/apps?ipa_id=<id>            one record for a known copy
 //
 // Target (all optional; defaults are the shipped app's iPod touch 2G / 3.1.3):
-//   device=iPod1,1|iPod2,1|iPad1,1   os=<x.y.z>
+//   device=<any iPhone/iPod/iPad model id, e.g. iPod2,1>   os=<x.y.z>
 //   family=1|2|1,2        narrow to iPhone (1) / iPad (2) apps; default = all the device runs
 //   incompatible=include  keep the best copy of apps that don't qualify, with compat.reasons
 //
@@ -100,7 +100,7 @@ function targetOf(params: URLSearchParams): Target | string {
   const d = defaultTarget();
   const model = params.get('device');
   const device = model === null ? d.device : deviceFor(model);
-  if (!device) return `device must be one of ${DEVICE_MODELS.join(', ')}`;
+  if (!device) return 'device must be an iPhone, iPod touch or iPad model id like iPod2,1';
   const osParam = params.get('os');
   const os = osParam === null ? (model === null ? d.os : null) : parseOs(osParam);
   if (!os) return model !== null && osParam === null ? 'os is required with device' : 'os must look like 4.2.1';

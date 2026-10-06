@@ -139,6 +139,15 @@ test('compatOf: families — iPad runs both, family= narrows, iPod never runs iP
   assert.deepEqual(compatOf({}, file, ipod, target('iPod2,1', '4.2.1')).reasons, ['unsupported_device_family']);
 });
 
+test('compatOf: modern model ids, 32-bit cut at iOS 11', () => {
+  const file = { available: true };
+  const v7 = { install_status: 'installable', architectures: ['armv7'], required_capabilities: ['gps', 'front-facing-camera'] };
+  assert.equal(compatOf({}, file, v7, target('iPhone6,1', '10.3.3')).compatible, true);
+  assert.deepEqual(compatOf({}, file, v7, target('iPhone6,1', '11.0')).reasons, ['no_arm64_slice']);
+  assert.deepEqual(compatOf({}, file, v7, target('iPad13,18', '10.0')).reasons, ['capability:gps']);
+  assert.equal(deviceFor('iPhone99,1'), null);
+});
+
 test('compatOf: arch and UIRequiredDeviceCapabilities', () => {
   const file = { available: true };
   const base = { install_status: 'installable', plist_min_os: '3.0' };
