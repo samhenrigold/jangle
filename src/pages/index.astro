@@ -155,8 +155,8 @@ const heroHref = heroSnapshot && heroType
   ? `/charts?${heroType.slug !== 'top-free' ? `type=${heroType.slug}&` : ''}date=${heroSnapshot.snapshot_date}`
   : '/charts';
 
-// Always the newest release's assets (GitHub redirects latest/download).
-const LT_DOWNLOADS = 'https://github.com/samhenrigold/LightTouchMac/releases/latest/download';
+// Always the newest DMG (the Amore API redirects to the latest release).
+const LT_DOWNLOAD = 'https://api.amore.computer/v1/apps/gold.samhenri.LightTouchMac/download';
 
 // A transient DB failure must not render as a cacheable empty page.
 if (dbError) setDegraded(Astro.response);
@@ -171,7 +171,7 @@ if (dbError) setDegraded(Astro.response);
     <div id="lt-banner" class="lt-banner" style="display:none">
       <button type="button" class="lt-close" aria-label="Dismiss">&times;</button>
       <img class="lt-icon" src="/lighttouch/icon.png" srcset="/lighttouch/icon@2x.png 2x" width="57" height="57" alt="" />
-      <a class="lt-download" href={`${LT_DOWNLOADS}/LightTouchMac-universal.zip`}><img src="/lighttouch/download.png" srcset="/lighttouch/download@2x.png 2x" width="144" height="38" alt="Download" /></a>
+      <a class="lt-download" href={LT_DOWNLOAD}><img src="/lighttouch/download.png" srcset="/lighttouch/download@2x.png 2x" width="144" height="38" alt="Download" /></a>
       <div class="lt-body">
         <h3 class="lt-headline">Run classic iOS apps on your Mac.</h3>
         <p class="lt-sub">Light Touch is a new iPod touch emulator,<br /> with Legacy Store built in. <a class="lt-more" href="https://github.com/samhenrigold/LightTouchMac">Learn more</a></p>
