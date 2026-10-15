@@ -1,0 +1,34 @@
+# Uptime check: every 10 minutes, fetch a few key URLs and fail (→ GitHub emails
+# the repo owner) if any is down or wrong. One check cache-busts an app page so
+# it exercises Pages Functions + Supabase, not just a cached copy at the edge.
+# NB: GitHub disables scheduled workflows after 60 days with no repo activity —
+# re-enable from the Actions tab if that ever happens.
+name: Uptime
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check key URLs
+        run: |
+          fail=0
+          check() { # url expected-status grep-pattern
+            for try in 1 2 3; do
+              code=$(curl -s -o body -w '%{http_code}' --max-time 20 "$1") || code=000
+              if [ "$code" = "$2" ] && grep -q "$3" body; then echo "ok   $code $1"; return 0; fi
+              sleep 10
+            done
+            echo "::error::FAIL $code $1 (wanted $2 + /$3/)"; fail=1
+          }
+          check "https://legacystore.app/" 200 "Legacy Store"
+          check "https://legacystore.app/app/343200656?uptime=$(date +%s)" 200 "Angry Birds"
+          check "https://legacystore.app/api/v1/stats" 200 '"apps"'
+          check "https://legacystore.app/sitemap.xml" 200 "sitemapindex"
+          check "https://legacystore.app/icon/c7588f2067574578e92da61b0ccb87fc8a06dd5595d51ada20b023f31c8cfd24" 200 ""
+          exit $fail
