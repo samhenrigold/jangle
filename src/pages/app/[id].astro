@@ -550,7 +550,9 @@ let jsonLd: any = null;
 if (appData && !dbError) {
   const canonicalUrl = `${SITE_ORIGIN}/app/${appData.app_store_id || appData.id}`;
   const minOsNums = versions.map((v: any) => parseFloat(v.minimum_os_version)).filter((n: number) => Number.isFinite(n));
-  const firstShot = screenshotSets[0]?.shots?.[0]?.src;
+  // The thumb, not the master: /screen/<sha> is robots-disallowed and WAF-blocked
+  // for crawlers; /screen/t/ is allowed for both.
+  const firstShot = screenshotSets[0]?.shots?.[0]?.thumb;
   const app: any = {
     '@type': 'SoftwareApplication',
     name: appTitle,
