@@ -46,6 +46,10 @@ export function setCacheHeaders(response: Response | { headers: Headers }, cdnSe
   const stale = `stale-while-revalidate=${STALE_WHILE_REVALIDATE}, stale-if-error=${STALE_IF_ERROR}`;
   response.headers.set('Cache-Control', `public, max-age=${browserSeconds}, ${stale}`);
   response.headers.set('Cloudflare-CDN-Cache-Control', `public, max-age=${cdn}, ${stale}`);
+  // Purged after each production deploy (.github/workflows/purge-html.yml) so
+  // cached pages never point at rotated asset hashes; icons/screens untouched.
+  // Cloudflare strips Cache-Tag before the response leaves the edge.
+  response.headers.set('Cache-Tag', 'html');
 }
 
 // Marks a degraded response (transient DB failure) as uncacheable and 503. The

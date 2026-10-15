@@ -1,0 +1,53 @@
+# After Cloudflare Pages finishes deploying a push to main, purge cached HTML
+# (responses tagged `Cache-Tag: html` by setCacheHeaders in src/lib/http.ts).
+# Cached pages reference content-hashed /_astro assets that a deploy replaces;
+# purging them on deploy is what lets MAX_HTML_CDN_SECONDS be long.
+#
+# Needs repo secret CF_PURGE_TOKEN: a Cloudflare API token with
+#   Zone → Cache Purge (legacystore.app) + Account → Cloudflare Pages: Read.
+name: Purge HTML cache after deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: purge-html
+  cancel-in-progress: true
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CF_TOKEN: ${{ secrets.CF_PURGE_TOKEN }}
+      ACCOUNT: 0d38cb2a177f041c5ff883a3d395e9ec
+      ZONE: 42e3d560c6ae6121293018516cd1808a
+    steps:
+      - name: Skip if the token secret isn't configured
+        if: env.CF_TOKEN == ''
+        run: echo "::warning::CF_PURGE_TOKEN not set; skipping HTML purge"
+
+      - name: Wait for the Pages production deploy of this commit
+        if: env.CF_TOKEN != ''
+        run: |
+          for i in $(seq 1 60); do
+            st=$(curl -fsS -H "Authorization: Bearer $CF_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/pages/projects/jangle/deployments?env=production&per_page=10" \
+              | jq -r --arg sha "$GITHUB_SHA" '[.result[] | select(.deployment_trigger.metadata.commit_hash == $sha)][0] | if . == null then "pending" else .latest_stage.name + ":" + .latest_stage.status end')
+            echo "attempt $i: $st"
+            case "$st" in
+              deploy:success) exit 0 ;;
+              *:failure|*:canceled) echo "deploy did not succeed"; exit 1 ;;
+            esac
+            sleep 20
+          done
+          echo "timed out waiting for deploy"; exit 1
+
+      - name: Purge cached HTML
+        if: env.CF_TOKEN != ''
+        run: |
+          curl -fsS -X POST -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
+            --data '{"tags":["html"]}' | jq -e '.success'
