@@ -468,6 +468,19 @@ const developerName = appData?.developers?.artist_name;
 // internal developer_id (which 301s to the artist_id URL anyway).
 const developerSlug = appData?.developers?.artist_id ?? appData?.developer_id;
 const versionNoun = versions.length === 1 ? 'archived version' : 'archived versions';
+// Search-facing title: people look for "<app> old version ios 6", so name the
+// count and the iOS span the archived versions require (min-OS majors).
+const osMajors = versions
+  .map((v: any) => parseInt(String(v.minimum_os_version || ''), 10))
+  .filter((n: number) => n > 0 && n < 40);
+const osSpan = osMajors.length
+  ? (Math.min(...osMajors) === Math.max(...osMajors)
+      ? `iOS ${Math.min(...osMajors)}`
+      : `iOS ${Math.min(...osMajors)}–${Math.max(...osMajors)}`)
+  : '';
+const pageTitle = appData && versions.length
+  ? `${appTitle} — ${versions.length === 1 ? 'Old Version' : `${versions.length} Old Versions`}${osSpan ? ` for ${osSpan}` : ''} — Legacy Store`
+  : `${appTitle} — Legacy Store`;
 
 // --- Left-rail product lockup (iTunes Preview style) -----------------------
 
@@ -577,7 +590,7 @@ if (sizePoints.length >= 3) {
 ---
 
 <Layout
-  title={`${appTitle} — Legacy Store`}
+  title={pageTitle}
   activeTab="none"
   description={appData ? `${appTitle}${developerName ? ` by ${developerName}` : ''} — ${versions.length} ${versionNoun} for old iOS devices, installable directly on iPhone, iPad, and iPod touch.` : 'Legacy Store'}
   canonicalPath={appData ? `/app/${appData.app_store_id || appData.id}` : ''}

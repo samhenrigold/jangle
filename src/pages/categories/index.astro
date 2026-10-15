@@ -7,6 +7,7 @@ import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { iconSrc, appIconSrc } from '../../lib/icons';
 import { getAppIcons } from '../../lib/appicons';
+import { IOS_LANDING_MAJORS } from '../../lib/sitemap';
 
 setCacheHeaders(Astro.response, 86400);
 
@@ -61,6 +62,7 @@ if (dbError) setDegraded(Astro.response);
         ))}
       </ul>
     )}
+    <p class="by-ios">Browse by iOS version: {IOS_LANDING_MAJORS.map((m) => <a href={`/ios/${m}`}>iOS {m}</a>)}</p>
   </div>
 
   <style>
@@ -136,5 +138,8 @@ if (dbError) setDegraded(Astro.response);
     .chevron {
       display: none;
     }
+
+    .by-ios { margin: 0 0 20px; font-size: 12px; }
+    .by-ios a { margin-left: 8px; }
   </style>
 </Layout>

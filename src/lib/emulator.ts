@@ -262,6 +262,14 @@ const DEVICES: Device[] = ROWS.flatMap(([ids, name, tier, hw]) => ids.split(' ')
   minOs: OS_RANGE[model][0], maxOs: OS_RANGE[model][1],
 })));
 
+// Distinct device names whose final iOS release was in this major (e.g. 6 →
+// iPhone 3GS, iPod touch 4G…), with that last release. For /ios/<N> pages.
+export function devicesEndingOn(major: number): { name: string; maxOs: string }[] {
+  const seen = new Map<string, string>();
+  for (const d of DEVICES) if (parseInt(d.maxOs, 10) === major && !seen.has(d.name)) seen.set(d.name, d.maxOs);
+  return Array.from(seen, ([name, maxOs]) => ({ name, maxOs }));
+}
+
 // Whether the device ever ran this iOS version (an iPhone 4 never ran 2.x).
 export function runsOs(d: Device, os: number[]): boolean {
   return !osLess(os, parseOs(d.minOs)!) && !osLess(parseOs(d.maxOs)!, os);

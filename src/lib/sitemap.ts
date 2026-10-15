@@ -32,6 +32,16 @@ export async function fetchCollectionSlugs(supabase: any): Promise<string[]> {
   return (data || []).map((c: any) => c.slug);
 }
 
+// /ios/<N> landing pages (src/pages/ios/[major].astro) — one list, so the page
+// and the sitemap can't drift.
+export const IOS_LANDING_MAJORS = [2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+// Hand-maintained top-level pages, emitted in the first child sitemap.
+export const STATIC_PATHS = [
+  '/', '/charts', '/categories', '/most-archived', '/recent', '/stats', '/api',
+  ...IOS_LANDING_MAJORS.map((m) => `/ios/${m}`),
+];
+
 // Shared cache headers for every sitemap response (browser-short, edge-long).
 // Split headers, not s-maxage — s-maxage disables stale-while-revalidate /
 // stale-if-error at the shared cache (RFC 9111 §4.2.4; see lib/http.ts), and

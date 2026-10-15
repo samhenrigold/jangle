@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { supabaseFor } from '../lib/supabase';
 import { SITE_ORIGIN as SITE } from '../lib/http';
-import { fetchSitemapSlugs, fetchCollectionSlugs, SITEMAP_CHUNK, SITEMAP_HEADERS } from '../lib/sitemap';
+import { fetchSitemapSlugs, fetchCollectionSlugs, SITEMAP_CHUNK, SITEMAP_HEADERS, STATIC_PATHS } from '../lib/sitemap';
 
 // A child sitemap: /sitemap-<n>.xml carries the n-th SITEMAP_CHUNK slice of the
 // app slugs (see the index at /sitemap.xml). The first child also emits the
@@ -25,6 +25,7 @@ export const GET: APIRoute = async (ctx) => {
     if (page === 1) {
       const collectionSlugs = await fetchCollectionSlugs(supabase);
       extra =
+        STATIC_PATHS.map((p) => `<url><loc>${SITE}${p}</loc></url>`).join('') +
         `<url><loc>${SITE}/collections</loc></url>` +
         collectionSlugs.map((s) => `<url><loc>${SITE}/collections/${s}</loc></url>`).join('');
     }
