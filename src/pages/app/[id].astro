@@ -769,7 +769,11 @@ if (sizePoints.length >= 3) {
                 <div class="shots-strip">
                   {s.shots.map((sh) => (
                     <a class="shot" href={sh.src} target="_blank" rel="noopener" style={`width:${sh.w}px`}>
-                      <img src={sh.src} width={sh.w} height={SHOT_H} loading="lazy" alt="Screenshot" />
+                      {/* Only the active set gets a real src. Hidden sets carry
+                          data-src (promoted by the picker JS): old iOS Safari
+                          ignores loading=lazy and was fetching every master of
+                          all ~40 sets on each page view. */}
+                      <img src={i === 0 ? sh.src : undefined} data-src={i === 0 ? undefined : sh.src} width={sh.w} height={SHOT_H} loading="lazy" alt="Screenshot" />
                     </a>
                   ))}
                 </div>
@@ -1757,8 +1761,14 @@ if (sizePoints.length >= 3) {
           shotsPicker.onchange = function () {
             var sel = shotsPicker.value;
             for (var s = 0; s < shotSets.length; s++) {
-              if (shotSets[s].getAttribute('data-shot-set') === sel) addClass(shotSets[s], 'is-active');
-              else removeClass(shotSets[s], 'is-active');
+              if (shotSets[s].getAttribute('data-shot-set') === sel) {
+                var imgs = shotSets[s].getElementsByTagName('img');
+                for (var k = 0; k < imgs.length; k++) {
+                  var ds = imgs[k].getAttribute('data-src');
+                  if (ds) { imgs[k].setAttribute('src', ds); imgs[k].removeAttribute('data-src'); }
+                }
+                addClass(shotSets[s], 'is-active');
+              } else removeClass(shotSets[s], 'is-active');
             }
           };
         }
