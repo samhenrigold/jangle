@@ -14,12 +14,12 @@ export const SITE_ORIGIN = 'https://legacystore.app';
 // pre-launch beta with infrequent manual deploys), and per-page TTLs below 1h
 // (e.g. search at 600) are now honored as authored rather than clamped.
 //
-// To lift this to 86400 (categories/stats/colophon are genuinely daily) without
-// any skew risk, purge the edge cache on deploy, e.g. in the deploy step:
-//   curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
-//     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-//     --data '{"purge_everything":true}'
-const MAX_HTML_CDN_SECONDS = 3600;
+// Lifted to 86400 (2026-10-15) now that every production deploy purges cached
+// HTML by tag (Cache-Tag: html below; .github/workflows/purge-html.yml), which
+// closes the post-deploy skew window. Per-page TTLs below a day (e.g. search at
+// 600) are still honored as authored. If that workflow is ever disabled, drop
+// this back to 3600.
+const MAX_HTML_CDN_SECONDS = 86400;
 
 // How long a stale (expired) copy may still be served.
 //   • stale-while-revalidate covers the normal refresh gap: the edge returns the

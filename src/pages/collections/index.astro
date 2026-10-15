@@ -7,7 +7,7 @@ import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { appIconSrc, iconShaOf } from '../../lib/icons';
 
-setCacheHeaders(Astro.response, 3600);
+setCacheHeaders(Astro.response, 86400); // archive data changes at ingest; deploys purge (purge-html.yml)
 
 const supabase = supabaseFor(Astro);
 let dbError = false;

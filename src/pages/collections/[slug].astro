@@ -22,7 +22,7 @@ if (!collection && !dbError) {
   return Astro.rewrite('/404');
 }
 
-setCacheHeaders(Astro.response, 3600);
+setCacheHeaders(Astro.response, 86400); // archive data changes at ingest; deploys purge (purge-html.yml)
 
 // Members in curated order, with their app (and optional pinned version)
 // embedded — editorial-scale, one round trip. oldest_icon_sha256 rides along

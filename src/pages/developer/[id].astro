@@ -71,7 +71,7 @@ if (developer?.artist_id != null) {
   }
 }
 
-setCacheHeaders(Astro.response, 3600);
+setCacheHeaders(Astro.response, 86400); // archive data changes at ingest; deploys purge (purge-html.yml)
 
 // All apps by this developer, most-preserved first. Keyed by the internal id so
 // the artist_id and internal-id URLs share one cache entry.

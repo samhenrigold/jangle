@@ -395,7 +395,7 @@ const currentDir = coerceDir(searchParams.get('dir') || 'asc');
 // The page is rendered identically for every device (no User-Agent sniffing),
 // so it edge-caches. The old auto "hide newer than your iOS" filter is now an
 // explicit ?ios=<major> choice — a distinct, cacheable URL per selection.
-if (!dbError) setCacheHeaders(Astro.response, 3600);
+if (!dbError) setCacheHeaders(Astro.response, 86400); // archive data changes at ingest; deploys purge (purge-html.yml)
 
 // By default we show only installable, available versions (best copy each).
 // ?all=1 ("Show everything") reveals every copy, plus unavailable and

@@ -23,7 +23,7 @@ const MAJORS = IOS_LANDING_MAJORS;
 const major = Number(Astro.params.major);
 if (!MAJORS.includes(major)) return Astro.rewrite('/404');
 
-setCacheHeaders(Astro.response, 3600);
+setCacheHeaders(Astro.response, 86400); // archive data changes at ingest; deploys purge (purge-html.yml)
 
 const PAGE_SIZE = 50;
 const page = clampPage(new URL(Astro.request.url).searchParams.get('page'));

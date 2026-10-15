@@ -46,7 +46,7 @@ if (!genre && !dbError) {
   return Astro.rewrite('/404');
 }
 
-setCacheHeaders(Astro.response, 3600);
+setCacheHeaders(Astro.response, 86400); // archive data changes at ingest; deploys purge (purge-html.yml)
 
 // Count+list (+ era icons) and the charts teaser are independent — run the
 // chains concurrently instead of stacking four round trips.
