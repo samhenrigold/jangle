@@ -284,13 +284,13 @@ const loadInCollections = async () => {
 // image loads — otherwise width:auto collapses to ~0 and the strip jumps as
 // images arrive. Portrait iPhone default when a master lacks dimensions.
 const SHOT_H = 260;
-type Shot = { src: string; w: number };
+type Shot = { src: string; thumb: string; w: number };
 type ShotSet = { date: string; label: string; version: string | null; shots: Shot[] };
 let screenshotSets: ShotSet[] = [];
 const loadScreenshots = async () => {
   if (!appStoreId) return;
-  // v2: shots carry box width
-  const { data: sets } = await cached<ShotSet[]>(`shotsets:v2:${appStoreId}`, 30 * 60 * 1000, async () => {
+  // v3: shots carry box width + thumb url
+  const { data: sets } = await cached<ShotSet[]>(`shotsets:v3:${appStoreId}`, 30 * 60 * 1000, async () => {
     const { data, error } = await supabase.rpc('get_app_screenshots', {
       p_app_store_id: appStoreId,
       p_max_sets: 40,
@@ -307,7 +307,7 @@ const loadScreenshots = async () => {
               if (!s || !s.sha) return null;
               const w = Number(s.w), h = Number(s.h);
               const boxW = w > 0 && h > 0 ? Math.round(SHOT_H * w / h) : Math.round(SHOT_H * 0.5625);
-              return { src: `/screen/${s.sha}`, w: boxW };
+              return { src: `/screen/${s.sha}`, thumb: `/screen/t/${s.sha}`, w: boxW };
             })
             .filter(Boolean) as Shot[],
         }))
@@ -773,7 +773,7 @@ if (sizePoints.length >= 3) {
                           data-src (promoted by the picker JS): old iOS Safari
                           ignores loading=lazy and was fetching every master of
                           all ~40 sets on each page view. */}
-                      <img src={i === 0 ? sh.src : undefined} data-src={i === 0 ? undefined : sh.src} width={sh.w} height={SHOT_H} loading="lazy" alt="Screenshot" />
+                      <img src={i === 0 ? sh.thumb : undefined} data-src={i === 0 ? undefined : sh.thumb} width={sh.w} height={SHOT_H} loading="lazy" alt="Screenshot" />
                     </a>
                   ))}
                 </div>
