@@ -63,6 +63,11 @@ const NAV = [
             d.className += (d.className ? ' ' : '') + 'is-ios';
             var m = ua.match(/OS (\d+)_/);
             if (m) d.setAttribute('data-ios', m[1]);
+            // itms-services (over-the-air install) arrived in iOS 4.
+            if (m && +m[1] < 4) d.className += ' no-ota';
+            // One-finger scrolling of overflow boxes arrived in iOS 5; before
+            // that they need a two-finger drag, so sideways strips wrap instead.
+            if (m && +m[1] < 5) d.className += ' no-oscroll';
           } else {
             d.className += (d.className ? ' ' : '') + 'is-desktop';
           }
@@ -94,6 +99,16 @@ const NAV = [
         <span class="right"></span>
       </span>
     </form>
+
+    {/* Phones: an iOS 6 segmented control replaces the header nav (CSS shows
+        it under 768px). Same NAV, so the two never drift; Search is left out
+        because the search field sits right above it, Collections because the
+        home page's Collections shelf covers it. */}
+    <div id="segnav">
+      {NAV.filter((n) => n.key !== 'search' && n.key !== 'collections').map((n) => (
+        <a href={n.href} class={activeTab === n.key ? 'seg active' : 'seg'}>{n.label}</a>
+      ))}
+    </div>
 
     <div id="main">
       <div id="content">
@@ -266,6 +281,71 @@ const NAV = [
       .search-suggest a:hover .ss-type { color: #d8eafd; border-color: #7db8e8; }
     </style>
 
+    {/* Lazy images for every browser: loading="lazy" is iOS 15.4+ and
+        IntersectionObserver 12.2+, so below-the-fold images carry
+        data-lazy-src and this promotes them as they near the viewport. Pre-iOS 8
+        WebKit fires scroll only when a scroll ends — one check per swipe. */}
+    <script is:inline>
+      (function () {
+        try {
+          var pending = [], timer = null;
+          function check() {
+            timer = null;
+            var limit = (window.innerHeight || 480) * 2.5, left = [];
+            for (var i = 0; i < pending.length; i++) {
+              var img = pending[i];
+              if (img.getBoundingClientRect().top < limit) {
+                img.src = img.getAttribute('data-lazy-src');
+                img.removeAttribute('data-lazy-src');
+              } else left.push(img);
+            }
+            pending = left;
+            if (!pending.length) {
+              window.removeEventListener('scroll', soon, false);
+              window.removeEventListener('resize', soon, false);
+            }
+          }
+          function soon() { if (!timer) timer = setTimeout(check, 50); }
+          function init() {
+            var all = document.getElementsByTagName('img');
+            for (var i = 0; i < all.length; i++) if (all[i].getAttribute('data-lazy-src')) pending.push(all[i]);
+            if (!pending.length) return;
+            window.addEventListener('scroll', soon, false);
+            window.addEventListener('resize', soon, false);
+            window.addEventListener('orientationchange', soon, false);
+            check();
+          }
+          document.addEventListener('DOMContentLoaded', init, false);
+        } catch (e) {}
+      })();
+    </script>
+
+    {/* App-list rows carrying data-os-picks (edge-cached pages): turn on the
+        Install button (Download on iOS ≤ 3) for this device's iOS version. */}
+    <script is:inline>
+      (function () {
+        try {
+          var n = document.documentElement.getAttribute('data-ios');
+          if (!n || !document.querySelectorAll) return;
+          var noOta = +n < 4, base = location.protocol + '//' + location.host;
+          var rows = document.querySelectorAll('li[data-os-picks]');
+          for (var i = 0; i < rows.length; i++) {
+            var li = rows[i], picks = li.getAttribute('data-os-picks').split(';');
+            for (var j = 0; j < picks.length; j++) {
+              var p = picks[j].split(',');
+              if (p[0] !== n) continue;
+              li.querySelector('.row-install').href = 'itms-services://?action=download-manifest&url=' + encodeURIComponent(base + '/manifest/' + p[1] + '.plist');
+              li.querySelector('.row-download').href = '/ipa/' + p[1];
+              li.querySelector('.meta-install').innerHTML = '';
+              li.querySelector('.meta-install').appendChild(document.createTextNode('Version ' + decodeURIComponent(p[2])));
+              li.className += ' has-install';
+              break;
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
+
     <div id="globalfooter">
       <p class="gf-buy">A metadata-only preservation archive by <a href="https://samhenri.gold/">Sam&nbsp;Henri&nbsp;Gold</a>. App binaries are hosted by the <a href="https://archive.org/" rel="noopener">Internet&nbsp;Archive</a>, not here.</p>
       <ul class="gf-links piped">
@@ -277,5 +357,6 @@ const NAV = [
         <li><a href="https://github.com/samhenrigold/jangle" rel="noopener">Source</a></li>
       </ul>
     </div>
+
   </body>
 </html>

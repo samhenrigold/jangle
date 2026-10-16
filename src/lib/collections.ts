@@ -7,10 +7,10 @@ import { cacheGet, cacheSet, cached } from './cache';
 // scale (dozens of rows), one round trip. Members are pre-filtered to
 // non-excluded apps and sorted by position.
 export async function fetchCollectionsWithMembers(supabase: any): Promise<{ data: any[] | null; error: any }> {
-  return cached<any[]>('collections_index_v2', 10 * 60 * 1000, async () => {
+  return cached<any[]>('collections_index_v3', 10 * 60 * 1000, async () => {
     const { data, error } = await supabase
       .from('collections')
-      .select('slug, title, subtitle, series, sort_order, collection_members(position, apps!collection_members_app_id_fkey(rep_icon_sha256, oldest_icon_sha256, icon_url:live_icon_url, excluded))')
+      .select('slug, title, subtitle, series, sort_order, featured_rank, collection_members(position, apps!collection_members_app_id_fkey(rep_icon_sha256, oldest_icon_sha256, icon_url:live_icon_url, excluded, version_count))')
       .order('sort_order', { ascending: true, nullsFirst: false });
     if (error) return { data: null, error };
     return {
@@ -58,4 +58,24 @@ export async function fetchCollectionMembers(supabase: any, collectionId: number
       .order('position', { ascending: true });
     return { data: error ? null : (data || []).filter((m: any) => !m.apps || !m.apps.excluded), error };
   });
+}
+
+// The per-iOS "Apps for iOS N" collections (/collections/ios-N), from
+// app_ios_install: app count plus the top few icons (the builds you'd get).
+export async function fetchIosCollections(supabase: any, majors: number[]): Promise<{ major: number; count: number; icons: string[] }[]> {
+  const { data } = await cached<{ major: number; count: number; icons: string[] }[]>('ios_collections_v1', 10 * 60 * 1000, async () => {
+    try {
+    const rows = await Promise.all(majors.map(async (n) => {
+      const { data, count, error } = await supabase.from('app_ios_install')
+        .select('icon_sha256', { count: 'exact' }).eq('os_major', n)
+        .order('version_count', { ascending: false }).order('app_id', { ascending: true }).limit(8);
+      if (error) throw new Error(error.message);
+      return { major: n, count: count || 0, icons: (data || []).map((r: any) => r.icon_sha256).filter(Boolean).slice(0, 4) };
+    }));
+    return { data: rows, error: null };
+    } catch (error) {
+      return { data: null, error }; // decorative: callers drop the rows
+    }
+  });
+  return data || [];
 }

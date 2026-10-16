@@ -163,7 +163,7 @@ const og = collection
       <DbError />
     ) : (
       <>
-        <SectionHeader title={title} level={1} detail={collection.subtitle || undefined} />
+        <SectionHeader title={title} level={1} />
         {collection.description && <div class="col-desc" set:html={collection.description} />}
 
         {groups.map((g) => (

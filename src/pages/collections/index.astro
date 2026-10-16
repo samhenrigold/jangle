@@ -2,10 +2,11 @@
 import { supabaseFor } from '../../lib/supabase';
 import Layout from '../../components/Layout.astro';
 import DbError from '../../components/DbError.astro';
-import { fetchCollectionsWithMembers } from '../../lib/collections';
+import { fetchCollectionsWithMembers, fetchIosCollections } from '../../lib/collections';
 import { formatNumber } from '../../lib/format';
 import { setCacheHeaders, setDegraded } from '../../lib/http';
 import { appIconSrc, iconShaOf } from '../../lib/icons';
+import { IOS_LANDING_MAJORS } from '../../lib/sitemap';
 
 setCacheHeaders(Astro.response, 86400); // archive data changes at ingest; deploys purge (purge-html.yml)
 
@@ -15,10 +16,11 @@ let dbError = false;
 // Published collections (RLS hides drafts) with their members embedded — the
 // whole table is editorial-scale (dozens of rows), so one round trip covers
 // the row strips and counts without an RPC.
-type CollectionRow = { slug: string; title: string; subtitle: string | null; series: string | null; count: number; icons: string[] };
+type CollectionRow = { href: string; slug: string; title: string; subtitle: string | null; series: string | null; count: number; icons: string[] };
 const { data: rawCollections, error: colErr } = await fetchCollectionsWithMembers(supabase);
 if (colErr) dbError = true;
 const collections: CollectionRow[] = (rawCollections || []).map((c: any) => ({
+  href: `/collections/${c.slug}`,
   slug: c.slug,
   title: c.title,
   subtitle: c.subtitle,
@@ -30,12 +32,24 @@ const collections: CollectionRow[] = (rawCollections || []).map((c: any) => ({
     .slice(0, 4),
 }));
 
+// "Apps by iOS Version" — the /collections/ios-N pages as a collection
+// series, so desktop visitors find them too. Text-only rows: nine strips of
+// the same top apps read as repetition.
+const iosRows: CollectionRow[] = (await fetchIosCollections(supabase, IOS_LANDING_MAJORS)).map((r) => ({
+  href: `/collections/ios-${r.major}`, slug: `ios-${r.major}`, title: `Apps for iOS ${r.major}`,
+  subtitle: null, series: 'Apps by iOS Version', count: r.count, icons: [],
+}));
+
 // Flatten into a render list that inserts a subhead each time a new series
 // begins (collections without a series render standalone, no header).
 type Item = { header: string } | { col: CollectionRow };
 const renderItems: Item[] = [];
 let lastSeries: string | null = null;
-for (const c of collections || []) {
+// The iOS series goes after the leading standalone collections (Featured…),
+// which have no header of their own and would otherwise read as part of it.
+const lead = (collections || []).findIndex((c) => c.series);
+const cut = lead < 0 ? (collections || []).length : lead;
+for (const c of [...(collections || []).slice(0, cut), ...iosRows.filter((r) => r.count), ...(collections || []).slice(cut)]) {
   if (c.series && c.series !== lastSeries) renderItems.push({ header: c.series });
   renderItems.push({ col: c });
   lastSeries = c.series || null;
@@ -56,16 +70,20 @@ if (dbError) setDegraded(Astro.response);
             <li class="col-series"><h2 class="series-label">{item.header}</h2></li>
           ) : (
             <li class="col">
-              <a href={`/collections/${item.col.slug}`} class="col-link">
+              <a href={item.col.href} class={item.col.icons.length ? 'col-link' : 'col-link text-only'}>
                 <span class="col-count">{formatNumber(item.col.count)} apps</span>
-                <span class="col-icons">
-                  {item.col.icons.map((src) => (
-                    <span class="col-icon"><img src={src} alt="" width="40" height="40" loading="lazy" /><span class="icon-mask"></span></span>
-                  ))}
-                </span>
+                {/* Three icons fanned out. Background images, not <img>: iOS ≤ 4
+                    won't clip an <img> to its border-radius, and the usual
+                    white corner mask would bite into the icon underneath. */}
+                {item.col.icons.length > 0 && (
+                  <span class="col-fan">
+                    {item.col.icons.slice(0, 3).map((src) => (
+                      <span class="fan-icon" style={`background-image:url(${src})`}></span>
+                    ))}
+                  </span>
+                )}
                 <span class="col-info">
                   <span class="col-title">{item.col.title}</span>
-                  {item.col.subtitle && <span class="col-sub">{item.col.subtitle}</span>}
                 </span>
               </a>
             </li>
@@ -115,49 +133,51 @@ if (dbError) setDegraded(Astro.response);
     .col-link {
       display: block;
       padding: 8px 2px;
-      min-height: 40px;
+      min-height: 48px;
       text-decoration: none;
       overflow: hidden;
     }
+
+    .col-link.text-only { min-height: 0; }
+    .col-link.text-only .col-info { padding-top: 0; }
+    .col-link.text-only .col-count { padding-top: 0; }
 
     .col-link:hover {
       text-decoration: none;
       background-color: #eaf3f8;
     }
 
-    /* Strip of the first few member icons, glossed like everything else */
-    .col-icons {
+    /* Fanned stack: the first icon in front, the next two tilted behind it. */
+    .col-fan {
       float: left;
-      margin-right: 12px;
-    }
-
-    .col-icon {
       position: relative;
-      float: left;
-      width: 40px;
-      height: 40px;
-      margin-right: 4px;
-      background: transparent url('/icon-placeholder.png') no-repeat;
-      background-size: 100% 100%;
+      width: 78px;
+      height: 48px;
+      margin: 0 12px 0 2px;
     }
 
-    .col-icon img {
-      display: block;
+    .fan-icon {
+      position: absolute;
+      top: 4px;
       width: 40px;
       height: 40px;
+      background: #d8d8d8 no-repeat center center;
+      -webkit-background-size: 40px 40px;
+      background-size: 40px 40px;
+      -webkit-border-radius: 9px;
+      border-radius: 9px;
+      -webkit-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
     }
 
-    .col-icon .icon-mask {
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-size: 100% 100%;
-    }
+    .fan-icon:nth-child(1) { left: 19px; z-index: 3; }
+    .fan-icon:nth-child(2) { left: 0; z-index: 1; -webkit-transform: rotate(-12deg); transform: rotate(-12deg); }
+    .fan-icon:nth-child(3) { left: 38px; z-index: 2; -webkit-transform: rotate(12deg); transform: rotate(12deg); }
 
     .col-info {
       display: block;
       overflow: hidden;
-      padding-top: 3px;
+      padding-top: 6px;
     }
 
     .col-title {
@@ -168,22 +188,13 @@ if (dbError) setDegraded(Astro.response);
       line-height: 18px;
     }
 
-    .col-sub {
-      display: block;
-      color: #898989;
-      font-size: 11px;
-      line-height: 16px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
     .col-count {
       float: right;
       margin: 0 4px 0 10px;
       color: #898989;
       font-size: 11px;
-      line-height: 40px;
+      line-height: 18px;
+      padding-top: 6px;
     }
 
     .col-empty {

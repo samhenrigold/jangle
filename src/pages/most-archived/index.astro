@@ -47,7 +47,7 @@ if (dbError) setDegraded(Astro.response);
       <DbError />
     ) : (
       <>
-        <SectionHeader title="Top 25 Most Archived" level={1} detail="Ranked by how many versions the archive holds — not by popularity." />
+        <SectionHeader title="Top 25 Most Archived" level={1} />
         <AppList list={topChartsApps} startRank={offset + 1} peakLines={peakLines} iconShas={iconShas} />
 
         {totalPages > 1 && <Pagination page={page} totalPages={totalPages} hrefFor={(p) => `/most-archived?page=${p}${pageSize !== 25 ? `&per_page=${pageSize}` : ''}`} nextLabel={`Next ${pageSize}`} />}

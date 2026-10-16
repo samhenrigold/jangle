@@ -207,3 +207,16 @@ export async function resolveApp(
   }
   return { app: null, dbError: false };
 }
+
+// app_ios_install rows → per app "major,ipaFileId,version;…" (version URI-encoded)
+// for AppList's data-os-picks. The Layout script picks the visitor's major on
+// edge-cached pages, where the server can't know it.
+export function encodeOsPicks(rows: { app_id: any; os_major: any; ipa_file_id: any; version_string: any }[]): Map<number, string> {
+  const out = new Map<number, string[]>();
+  for (const r of rows) {
+    const k = Number(r.app_id);
+    if (!out.has(k)) out.set(k, []);
+    out.get(k)!.push(`${r.os_major},${r.ipa_file_id},${encodeURIComponent(r.version_string || '')}`);
+  }
+  return new Map([...out].map(([k, v]) => [k, v.join(';')]));
+}

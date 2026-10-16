@@ -102,8 +102,12 @@ export async function serveR2Image(
         headers: {
           'Content-Type': ct,
           'X-Content-Type-Options': 'nosniff',
-          // Content-addressed → truly immutable; cache as hard as possible.
-          'Cache-Control': 'public, max-age=604800, s-maxage=31536000, immutable',
+          // Content-addressed → truly immutable; cache as hard as possible. Old
+          // Mobile Safari ignores `immutable` and revalidates on reload, so a
+          // year-long max-age plus a validator (the sha itself) lets those
+          // revalidations come back as bodiless 304s from the edge.
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          ETag: `"${sha}"`,
         },
       });
     } catch {

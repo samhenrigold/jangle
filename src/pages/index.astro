@@ -12,7 +12,6 @@ import {
   getChartTypes,
   getSnapshotIndex,
   getSnapshotPositions,
-  getPeakLines,
   getArtworkFates,
   chartRowIcon,
   dedupeByDate,
@@ -22,6 +21,9 @@ import {
   type ArtworkFate,
 } from '../lib/timemachine';
 import { getIconsNearDate } from '../lib/appicons';
+import { fetchCollectionsWithMembers, fetchIosCollections } from '../lib/collections';
+import { IOS_LANDING_MAJORS } from '../lib/sitemap';
+import { encodeOsPicks } from '../lib/apps';
 
 setCacheHeaders(Astro.response, 3600);
 
@@ -30,7 +32,7 @@ let dbError = false;
 
 let featuredApps: any[] | undefined;
 let iconShas: Map<number, string> | undefined;
-let peakLines: Map<number, string> | undefined;
+let osPicks: Map<number, string> | undefined;
 let heroSnapshot: any = null;
 let heroType: any = null;
 let heroEntries: any[] = [];
@@ -40,7 +42,7 @@ let heroYearsAgo = 0;
 
 // Featured: the 'featured' editorial collection (collections table) — the
 // hand-picked list that used to live in src/lib/featured.ts. The only chain
-// allowed to set dbError; peak badges chain onto it since they need the ids.
+// allowed to set dbError; the per-iOS install picks chain onto it.
 const loadFeatured = async () => {
   const { data: featured, error } = await cached<any[]>('featured_apps_v4', 10 * 60 * 1000, async () => {
     const { data, error } = await supabase
@@ -71,9 +73,14 @@ const loadFeatured = async () => {
       .filter((a: any) => iconShaOf(a))
       .map((a: any) => [Number(a.id), iconShaOf(a)!] as [number, string])
   );
-  // Peak-chart badges — best-effort decoration on top of the list.
-  const ids = featuredApps.map((a: any) => Number(a.app_store_id)).filter((n: number) => n > 0);
-  if (ids.length) peakLines = (await getPeakLines(supabase, ids, 'featured')) || undefined;
+  // Install buttons: each app's build for every iOS 2–10 (app_ios_install);
+  // the page is edge-cached, so the visitor's own pick happens client-side.
+  const ids = featuredApps.map((a: any) => Number(a.id));
+  if (ids.length) {
+    const { data: picks } = await cached<any[]>(`featured_os_picks:${ids.join(',')}`, 10 * 60 * 1000, async () =>
+      supabase.from('app_ios_install').select('app_id, os_major, ipa_file_id, version_string').in('app_id', ids));
+    osPicks = encodeOsPicks(picks || []);
+  }
 };
 
 // "This week, years ago" module (plan 010 charts): deterministic per calendar
@@ -117,38 +124,38 @@ const loadHero = async () => {
   }
 };
 
-// Featured collections teaser: editorial collections flagged for the landing
-// page (featured_rank). Decorative — a failure drops the module, never 503s.
-type HomeCollection = { slug: string; title: string; subtitle: string | null; icons: string[] };
+// Collections shelf: one Apple Design Awards year and one iPhone ad campaign,
+// re-picked each UTC day (only collections with more than three members in
+// the archive), then the editorial picks flagged featured_rank that belong to
+// no series (Superlatives). Decorative — a failure drops the module, never 503s.
+type HomeCollection = { slug: string; title: string; icons: string[] };
 let homeCollections: HomeCollection[] = [];
+const DAILY_SERIES = ['Apple Design Award Winners', 'iPhone Commercials'];
 const loadCollections = async () => {
-  const { data: cols } = await cached<HomeCollection[]>('home_collections_v2', 10 * 60 * 1000, async () => {
-    const { data, error } = await supabase
-      .from('collections')
-      .select('slug, title, subtitle, featured_rank, collection_members(position, apps!collection_members_app_id_fkey(rep_icon_sha256, oldest_icon_sha256, icon_url:live_icon_url, excluded))')
-      .not('featured_rank', 'is', null)
-      .order('featured_rank', { ascending: true })
-      .limit(3);
-    if (error || !data) return { data: null, error };
-    return {
-      data: data.map((c: any) => ({
-        slug: c.slug,
-        title: c.title,
-        subtitle: c.subtitle,
-        icons: (c.collection_members || [])
-          .filter((m: any) => m.apps && !m.apps.excluded)
-          .sort((x: any, y: any) => x.position - y.position)
-          .map((m: any) => appIconSrc(iconShaOf(m.apps), m.apps.icon_url))
-          .filter(Boolean)
-          .slice(0, 4),
-      })),
-      error: null,
-    };
+  const { data: all } = await fetchCollectionsWithMembers(supabase);
+  if (!all) return;
+  const day = Math.floor(Date.now() / 86400000);
+  const archived = (c: any) => c.collection_members.filter((m: any) => Number(m.apps.version_count) > 0);
+  const picks: any[] = DAILY_SERIES.map((series, salt) => {
+    const pool = all.filter((c: any) => c.series === series && archived(c).length > 3);
+    // ponytail: Knuth multiplicative hash of the day — stable all day, no state.
+    return pool.length ? pool[(Math.imul(day + salt * 7919, 2654435761) >>> 0) % pool.length] : null;
   });
-  homeCollections = cols || [];
+  const flagged = all.filter((c: any) => c.featured_rank != null && !c.series)
+    .sort((x: any, y: any) => x.featured_rank - y.featured_rank);
+  homeCollections = [...picks, ...flagged].filter(Boolean).map((c: any) => ({
+    slug: c.slug,
+    title: c.title,
+    icons: archived(c).map((m: any) => appIconSrc(iconShaOf(m.apps), m.apps.icon_url)).filter(Boolean).slice(0, 4),
+  }));
 };
 
-await Promise.all([loadFeatured(), loadHero(), loadCollections()]);
+// "Apps for your iPod (iOS N)": one card per iOS version, all shipped hidden
+// (the page is edge-cached for everyone); the script reveals the visitor's.
+let iosCards: { major: number; count: number; icons: string[] }[] = [];
+const loadIosCards = async () => { iosCards = (await fetchIosCollections(supabase, IOS_LANDING_MAJORS)).filter((r) => r.count); };
+
+await Promise.all([loadFeatured(), loadHero(), loadCollections(), loadIosCards()]);
 
 const heroDateLabel = heroSnapshot ? formatDate(heroSnapshot.snapshot_date) : '';
 const heroHref = heroSnapshot && heroType
@@ -196,14 +203,37 @@ if (dbError) setDegraded(Astro.response);
       <DbError />
     ) : (
       <>
-        {homeCollections.length > 0 && (
+        {(homeCollections.length > 0 || iosCards.length > 0) && (
           <>
-            <SectionHeader title="Collections">
+            <SectionHeader title="Collections" class="sh-top">
               <a href="/collections">See all</a>
             </SectionHeader>
             {/* A row of cards; narrow screens swipe it sideways. inline-block +
                 overflow-x is the old-WebKit-safe way to get a card carousel. */}
             <div class="colx-scroll">
+              {/* Icons carry data-src: only the revealed card's load. */}
+              {iosCards.map((c) => (
+                <a class="colx-card colx-ios" data-ios-major={String(c.major)} href={`/collections/ios-${c.major}`} style="display:none">
+                  <span class="colx-icons">
+                    {c.icons.map((sha) => (
+                      <span class="colx-icon"><img data-src={`/icon/${sha}`} alt="" width="40" height="40" /><span class="icon-mask"></span></span>
+                    ))}
+                  </span>
+                  <span class="colx-title">Apps for your <span class="colx-device">iPhone</span> (iOS {c.major})</span>
+                </a>
+              ))}
+              {/* Everyone else (desktop, iOS 11+) leads with iOS 6, the era's
+                  peak; the script swaps it for the visitor's own card on old iOS. */}
+              {iosCards.filter((c) => c.major === 6).map((c) => (
+                <a class="colx-card colx-ios6" href="/collections/ios-6">
+                  <span class="colx-icons">
+                    {c.icons.map((sha) => (
+                      <span class="colx-icon"><img src={`/icon/${sha}`} alt="" width="40" height="40" loading="lazy" /><span class="icon-mask"></span></span>
+                    ))}
+                  </span>
+                  <span class="colx-title">Apps for iOS 6</span>
+                </a>
+              ))}
               {homeCollections.map((c) => (
                 <a class="colx-card" href={`/collections/${c.slug}`}>
                   <span class="colx-icons">
@@ -212,10 +242,29 @@ if (dbError) setDegraded(Astro.response);
                     ))}
                   </span>
                   <span class="colx-title">{c.title}</span>
-                  {c.subtitle && <span class="colx-sub">{c.subtitle}</span>}
                 </a>
               ))}
             </div>
+            <script is:inline>
+              (function () {
+                try {
+                  var n = document.documentElement.getAttribute('data-ios');
+                  if (!n) return;
+                  var cards = document.querySelectorAll('.colx-ios');
+                  for (var i = 0; i < cards.length; i++) {
+                    var c = cards[i];
+                    if (c.getAttribute('data-ios-major') !== n) continue;
+                    var dev = (navigator.userAgent.match(/iPad|iPod|iPhone/) || ['iPhone'])[0];
+                    c.querySelector('.colx-device').innerHTML = dev;
+                    var imgs = c.getElementsByTagName('img');
+                    for (var j = 0; j < imgs.length; j++) imgs[j].src = imgs[j].getAttribute('data-src');
+                    c.style.display = '';
+                    var six = document.querySelector('.colx-ios6');
+                    if (six) six.style.display = 'none';
+                  }
+                } catch (e) {}
+              })();
+            </script>
           </>
         )}
 
@@ -261,8 +310,8 @@ if (dbError) setDegraded(Astro.response);
           </>
         )}
 
-        <SectionHeader title="Featured" detail="greatest hits from the archive" />
-        <AppList list={featuredApps} peakLines={peakLines} iconShas={iconShas} />
+        <SectionHeader title="Featured" />
+        <AppList list={featuredApps} osPicks={osPicks} iconShas={iconShas} />
       </>
     )}
   </div>
@@ -359,6 +408,7 @@ if (dbError) setDegraded(Astro.response);
     /* Featured collections — a card row that swipes sideways when narrow */
     .colx-scroll {
       margin: 0 0 6px 0;
+      font-size: 0; /* no whitespace gaps between the inline-block cards */
       white-space: nowrap;
       overflow-x: auto;
       overflow-y: hidden;
@@ -368,10 +418,12 @@ if (dbError) setDegraded(Astro.response);
     .colx-card {
       display: inline-block;
       vertical-align: top;
-      width: 31.5%;
-      min-width: 210px;
-      margin-right: 1.9%;
-      padding: 12px 14px;
+      /* 4 × 23% + 3 × 2.666% = 100% */
+      width: 23%;
+      min-width: 200px;
+      margin-right: 2.666%;
+      font-size: 12px;
+      padding: 12px 10px;
       background: #F3F9FD;
       border-radius: 4px;
       white-space: normal;
@@ -400,7 +452,7 @@ if (dbError) setDegraded(Astro.response);
       float: left;
       width: 40px;
       height: 40px;
-      margin-right: 6px;
+      margin-right: 5px;
       background: transparent url('/icon-placeholder.png') no-repeat;
       background-size: 100% 100%;
     }
@@ -426,16 +478,6 @@ if (dbError) setDegraded(Astro.response);
       font-weight: bold;
       line-height: 17px;
       color: #298cda;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .colx-sub {
-      display: block;
-      color: #898989;
-      font-size: 11px;
-      line-height: 15px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -484,9 +526,10 @@ if (dbError) setDegraded(Astro.response);
       background-color: #eaf3f8;
     }
 
+    /* Shrink-to-fit, so "1"–"10" hug the row's left edge. */
     .hero-rank {
       float: left;
-      width: 20px;
+      min-width: 8px;
       margin-right: 8px;
       line-height: 29px;
       text-align: right;

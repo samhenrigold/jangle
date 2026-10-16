@@ -5,6 +5,12 @@ import { appTitleOf } from '../lib/apps';
 // startRank: when set, rows are numbered from it (charts / category "top" lists).
 // peakLines: optional map of app_store_id → "Peaked at #1 Top Paid · Dec 2010"
 // badge text sourced from the archived charts (plan 010).
+// osPicks: optional map of internal app id -> encodeOsPicks() string — the
+// Install/Download button is filled client-side for the visitor's iOS (by
+// the Layout script) on edge-cached pages like the home page.
+// installs: optional map of internal app id -> { href, dlHref, version } — an
+// itms-services Install button beside the row on iOS, a plain .ipa Download
+// on desktop (/collections/ios-N pages, where the visitor's intent is known).
 // iconShas: optional map of internal app id -> representative icon sha256 (period-
 // authentic icon extracted from the app's earliest binary); when present it
 // wins over the modern iTunes CDN icon_url.
@@ -17,7 +23,8 @@ import { appTitleOf } from '../lib/apps';
 // - ghost: true renders a non-linked, greyed row for an app the archive
 //   doesn't hold (unpreserved award winners, commercial cameos). Ghost notes
 //   render outside any link, so media is fine there.
-const { list = [], startRank, peakLines, iconShas } = Astro.props;
+const { list = [], startRank, peakLines, iconShas, installs, osPicks } = Astro.props;
+const EAGER = 8; // rows whose icons load without waiting for scroll
 ---
 <ul class="applist">
   {list.map((a: any, i: number) => {
@@ -25,6 +32,8 @@ const { list = [], startRank, peakLines, iconShas } = Astro.props;
     const oldSha = iconShas && a.id != null ? iconShas.get(Number(a.id)) : null;
     const icon = ghost ? null : appIconSrc(oldSha, a.icon_url);
     const count = a.version_count == null ? null : Number(a.version_count);
+    const install = installs && a.id != null ? installs.get(Number(a.id)) : null;
+    const picks = !install && osPicks && a.id != null ? osPicks.get(Number(a.id)) : null;
     const peak = peakLines && a.app_store_id ? peakLines.get(Number(a.app_store_id)) : null;
     const inner = (
       <>
@@ -32,7 +41,9 @@ const { list = [], startRank, peakLines, iconShas } = Astro.props;
         {/* The corner mask only goes over a real square icon; a missing icon
             shows the already-rounded placeholder, so no mask (its opaque
             corners would mismatch the background). */}
-        <span class="icon">{icon ? <><img src={icon} alt="" width="60" height="60" loading="lazy" decoding="async" /><span class="icon-mask"></span></> : null}</span>
+        {/* The first screenful loads at once; the rest wait for the lazy
+            script in Layout (old iOS ignores loading="lazy"). */}
+        <span class="icon">{icon ? <><img src={i < EAGER ? icon : undefined} data-lazy-src={i < EAGER ? undefined : icon} alt="" width="60" height="60" decoding="async" /><span class="icon-mask"></span></> : null}</span>
         <span class="chevron">&#8250;</span>
         {ghost && <span class="count"><span class="count-label ghost-tag">not yet archived</span></span>}
         {count != null && count > 0 && (
@@ -41,6 +52,8 @@ const { list = [], startRank, peakLines, iconShas } = Astro.props;
         <span class="info">
           <span class="name">{appTitleOf(a)}</span>
           {a.developer_artist_name && <span class="meta">{a.developer_artist_name}</span>}
+          {install && <span class="meta meta-install">Version {install.version}</span>}
+          {picks && <span class="meta meta-install"></span>}
           {!ghost && a.bundle_id && <span class="meta meta-bundle">{a.bundle_id}</span>}
           {peak && <span class="peak">{peak}</span>}
           {a.note && <span class="app-note" set:html={a.note} />}
@@ -48,10 +61,14 @@ const { list = [], startRank, peakLines, iconShas } = Astro.props;
       </>
     );
     return (
-    <li class={ghost ? 'app app-ghost' : 'app'} data-app-store-id={a.app_store_id || undefined} data-bundle-id={a.bundle_id || undefined}>
+    <li class={ghost ? 'app app-ghost' : install ? 'app has-install' : 'app'} data-os-picks={picks || undefined} data-app-store-id={a.app_store_id || undefined} data-bundle-id={a.bundle_id || undefined}>
       {ghost
         ? <span class="app-link">{inner}</span>
         : <a class="app-link" href={`/app/${a.app_store_id ? a.app_store_id : a.id}`}>{inner}</a>}
+      {install && <a class="wsfbtn row-install" href={install.href}>Install</a>}
+      {install && <a class="wsfbtn row-download" href={install.dlHref}>Download</a>}
+      {picks && <a class="wsfbtn row-install">Install</a>}
+      {picks && <a class="wsfbtn row-download">Download</a>}
     </li>
     );
   })}

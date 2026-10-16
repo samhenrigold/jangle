@@ -317,10 +317,19 @@ const loadScreenshots = async () => {
   });
   screenshotSets = sets || [];
 };
+// Desktop Download menu: this app's newest build per iOS 2–10 (app_ios_install).
+let osPickRows: any[] = [];
+const loadOsPicks = async () => {
+  const { data } = await cached<any[]>(`ospicks:${appData.id}`, 30 * 60 * 1000, async () =>
+    supabase.from('app_ios_install').select('os_major, ipa_file_id, version_string')
+      .eq('app_id', appData.id).order('os_major', { ascending: true }));
+  osPickRows = data || [];
+};
+
 const setLabel = (s: ShotSet) => s.label + (s.version ? ` · v${s.version}` : '');
 
 if (appData) {
-  await Promise.all([loadCore(), loadHistory(), loadSubgenre(), loadMoreFromDev(), loadInCollections(), loadScreenshots()]);
+  await Promise.all([loadCore(), loadHistory(), loadSubgenre(), loadMoreFromDev(), loadInCollections(), loadScreenshots(), loadOsPicks()]);
 }
 
 // Fold raw chart rows into one group per (chart type, device, genre): peak,
@@ -523,6 +532,24 @@ const versionRows = buildVersionRows(sortedVersions, {
 // icon-bearing sibling's bundle icon along the timeline — see fillNearestSiblingIcons.
 fillNearestSiblingIcons(versionRows, filtered, chronoDateOf);
 
+// Desktop "Download" menu entries, newest first: runs of iOS versions that
+// share one build merge ("iOS 6–10"), then the newest installable build
+// overall when it needs a later iOS than 10.
+const dlMenu: { lo: number; hi: number; plus?: boolean; href: string; ver: string }[] = [];
+for (const r of osPickRows) {
+  const last = dlMenu[dlMenu.length - 1];
+  if (last && last.href === `/ipa/${r.ipa_file_id}`) { last.hi = r.os_major; continue; }
+  dlMenu.push({ lo: r.os_major, hi: r.os_major, href: `/ipa/${r.ipa_file_id}`, ver: r.version_string || '' });
+}
+{
+  const newest = (currentDir === 'asc' ? [...versionRows].reverse() : versionRows)
+    .find((r: any) => r.primary && !r.hideByDefault && !r.encryptedOnly && !r.ipadOnly);
+  if (newest && newest.primary.ipaRedirect !== dlMenu[dlMenu.length - 1]?.href && (newest.minosMajor || 0) > 10) {
+    dlMenu.push({ lo: newest.minosMajor, hi: newest.minosMajor, plus: true, href: newest.primary.ipaRedirect, ver: newest.versionLabel });
+  }
+}
+dlMenu.reverse();
+
 // The Retina/Non-Retina marker only earns its place as a contrast. If every
 // version reads as full "Retina" (no non-Retina and no idiom-asymmetric build),
 // the badge is redundant on each row — drop it app-wide. Any variation
@@ -649,7 +676,18 @@ if (sizePoints.length >= 3) {
           {appData.developer_id && (
             <a class="view-more" href={`/developer/${developerSlug}`}>View More By This Developer</a>
           )}
+          {/* iOS-only header Install: the script below points it at the newest
+              version this device can run (69% of installs pick exactly that),
+              and reveals it. Hidden until then, so no-JS and desktop never see it. */}
+          <div class="hero-install">
+            <a class="wsfbtn hero-btn" href="#versions">Install</a>
+            <span class="hero-meta"><span class="hero-ver"></span><a class="hero-others" href="#versions">Other versions<span class="tri"></span></a></span>
+          </div>
         </div>
+
+        {/* iOS ≤ 3 only (html.no-ota): up top, before the screenshots, since
+            it changes what the page's buttons do. */}
+        <div class="jb-notice ota-no">iOS 3 can’t install from Safari. You can still download the IPA file, but you’re on your own after that.</div>
 
         {/* Left rail: the product lockup (artwork + metadata) and, when the
             Wayback data has one, the era Customer Ratings box. */}
@@ -661,30 +699,47 @@ if (sizePoints.length >= 3) {
             {isUniversalApp && (
               <div class="fat-binary-blurb"><span class="fat-binary-badge">&nbsp;</span><span>This app is designed for both iPhone and iPad</span></div>
             )}
-            <ul class="list">
-              {lockupPrice && <li><div class="price">{lockupPrice}</div></li>}
-              {genreName && appData.genre_id && (
-                <li class="genre"><span class="label">Category: </span><a href={`/categories/${appData.genre_id}`}>{genreName}</a></li>
+              {/* Desktop only: a Download button whose popover lists the newest
+                  build for each iOS. No popover support → the [popover]
+                  attribute is ignored and the list simply shows as links. */}
+              {dlMenu.length > 0 && (
+                <div class="dl-menu">
+                  <button type="button" class="wsfbtn dl-btn" popovertarget="dl-list" aria-haspopup="true">Download<span class="tri"></span></button>
+                  <ul class="dl-list" id="dl-list" popover>
+                    {dlMenu.map((d) => (
+                      <li><a href={d.href}>
+                        <span class="dl-os">iOS {d.lo}{d.plus ? ' and later' : d.hi !== d.lo ? `–${d.hi}` : ''}</span>
+                        <span class="dl-ver">Version {d.ver}</span>
+                      </a></li>
+                    ))}
+                    <li class="dl-all"><a href="#versions">All versions</a></li>
+                  </ul>
+                </div>
               )}
-              {subgenre && <li class="genre"><span class="label">Subgenre: </span>{subgenre}</li>}
+            <ul class="list">
+              {lockupPrice && <li><span class="label phone-only">Price</span><div class="price">{lockupPrice}</div></li>}
+              {genreName && appData.genre_id && (
+                <li class="genre"><span class="label">Category</span><a href={`/categories/${appData.genre_id}`}>{genreName}</a></li>
+              )}
+              {subgenre && <li class="genre"><span class="label">Subgenre</span>{subgenre}</li>}
               {appData.original_release_date && (
                 <li title="When the app first appeared on the App Store (may predate our earliest archived copy)">
-                  <span class="label">First released: </span>{formatDate(appData.original_release_date)}</li>
+                  <span class="label">First released</span>{formatDate(appData.original_release_date)}</li>
               )}
-              <li><span class="label">Versions: </span>{versions.length} archived</li>
+              <li><span class="label">Versions</span>{versions.length} archived</li>
               {installableVersionCount > 0 && (
-                <li><span class="label">Installable: </span>{installableVersionCount} of {versions.length}</li>
+                <li><span class="label">Installable</span>{installableVersionCount} of {versions.length}</li>
               )}
               {appData.is_available === false && (
-                <li class="availability"><span class="label">Availability: </span>Removed from the App Store</li>
+                <li class="availability"><span class="label">Availability</span>Removed from the App Store</li>
               )}
               {appData.is_available === true && appData.app_store_id && Number(appData.app_store_id) !== 0 && (
-                <li class="availability"><span class="label">Availability: </span><a href={`https://apps.apple.com/app/id${appData.app_store_id}`} rel="noopener">Still on the App Store &#8599;</a></li>
+                <li class="availability"><span class="label">Availability</span><a href={`https://apps.apple.com/app/id${appData.app_store_id}`} rel="noopener">Still on the App Store</a></li>
               )}
-              {developerName && <li><span class="label">Seller: </span>{developerName}</li>}
-              <li class="copyright" title={appData.bundle_id}>{appData.bundle_id}</li>
+              {developerName && <li class="seller"><span class="label">Seller</span>{developerName}</li>}
+              <li class="copyright" title={appData.bundle_id}><span class="label phone-only">Bundle ID</span>{appData.bundle_id}</li>
             </ul>
-            <p><span class="app-requirements">Requirements: </span>{requirementsText}</p>
+            <p class="requirements"><span class="app-requirements">Requirements</span>{requirementsText}</p>
           </div>
 
           {lockupStars && (
@@ -765,7 +820,7 @@ if (sizePoints.length >= 3) {
             <div class="shots-head">
               {screenshotSets.length > 1 ? (
                 <label class="shots-pick-wrap">
-                  <span class="shots-pick-label">Listing from</span>
+                  <span class="shots-pick-label">Screenshots from</span>
                   {/* The <select> is itself the date/version label. Disabled
                       until JS enables it, so no-JS users see the (accurate)
                       caption for the one set they can see, not a dead control. */}
@@ -797,7 +852,7 @@ if (sizePoints.length >= 3) {
           </div>
         )}
         <div class="filter-bar">
-          <a class="filter-chip" href={sortToggleHref()}>Sort by Date <span class="sort-tri">{currentDir === 'asc' ? '▴' : '▾'}</span></a>
+          <a class="filter-chip" href={sortToggleHref()}>Sort by Date<span class={currentDir === 'asc' ? 'tri up' : 'tri'}></span></a>
           {iosMajors.length > 1 && (
             <form class="filter-runs" method="get" action={pathname}>
               {currentDir === 'desc' && <input type="hidden" name="dir" value="desc" />}
@@ -825,11 +880,11 @@ if (sizePoints.length >= 3) {
             (i.e. everywhere the Download button ISN'T), so it mirrors the
             .navbtn-install visibility rule in the is:global block below. Sits
             right above the version list, where the Install buttons live. */}
-        <div class="jb-notice">To install apps directly onto this device, it must be jailbroken with AppSync installed.</div>
+        <div class="jb-notice ota-yes">To install apps directly onto this device, it must be jailbroken with AppSync installed.</div>
 
-        <div class={showEverything ? 'versions show-everything' : 'versions'}>
+        <div id="versions" class={showEverything ? 'versions show-everything' : 'versions'} data-order={currentDir}>
           {versionRows.map((row: any) => (
-            <div class={row.hideByDefault ? 'version v-hidden-default' : 'version'} id={`v${row.v.id}`} data-minos={row.minosMajor != null && row.minosMajor > 0 ? String(row.minosMajor) : undefined} data-copies={row.extras.length > 0 ? String(row.extras.length + 1) : undefined}>
+            <div class={row.hideByDefault ? 'version v-hidden-default' : 'version'} id={`v${row.v.id}`} data-minos={row.minosMajor != null && row.minosMajor > 0 ? String(row.minosMajor) : undefined} data-minos-full={row.minosFull || undefined} data-ipad-only={row.ipadOnly ? '1' : undefined} data-copies={row.extras.length > 0 ? String(row.extras.length + 1) : undefined}>
               {/* Lockup: masked icon + stacked title/meta on the left; the best
                   copy's action button opposite, with size + badge stacked under
                   it. Universal apps get the fat-binary "+" on the button. */}
@@ -859,7 +914,7 @@ if (sizePoints.length >= 3) {
                       {row.primary.ipaUrl ? (
                         <span class="file-buttons">
                           <a class={`wsfbtn wsfbtn-primary navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(row.primary.manifestUrl)}`}>Install</a>
-                          <a class={`wsfbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={row.primary.ipaUrl} download>Download</a>
+                          <a class={`wsfbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={row.primary.ipaUrl} data-ipa-href={row.primary.ipaRedirect} download>Download</a>
                         </span>
                       ) : (
                         <span class="file-buttons"><span class="wsfbtn wsfbtn-disabled" aria-disabled="true">Download</span></span>
@@ -889,7 +944,7 @@ if (sizePoints.length >= 3) {
                         <span class="file-actions">
                           <span class="file-buttons">
                             <a class={`wsfbtn wsfbtn-primary navbtn-install${row.isUniversal ? ' nav-universal' : ''}`} href={`itms-services://?action=download-manifest&url=${encodeURIComponent(c.manifestUrl)}`}>Install</a>
-                            <a class={`wsfbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={c.ipaUrl} download>Download</a>
+                            <a class={`wsfbtn navbtn-alt${row.isUniversal ? ' nav-universal' : ''}`} href={c.ipaUrl} data-ipa-href={c.ipaRedirect} download>Download</a>
                           </span>
                         </span>
                       )}
@@ -1096,16 +1151,19 @@ if (sizePoints.length >= 3) {
     /* Only the selected capture's strip is shown; JS swaps .is-active. */
     .shot-set { display: none; }
     .shot-set.is-active { display: block; }
+    /* Inline-block cells in a nowrap row, not flex: iOS ≤ 6 has no flexbox,
+       and as inline <a>s the shots ignored their width and stretched. */
     .shots-strip {
-      display: flex;
-      gap: 10px;
+      white-space: nowrap;
       overflow-x: auto;
       padding: 2px 2px 10px;
       scroll-snap-type: x mandatory;
       -webkit-overflow-scrolling: touch;
     }
     .shot {
-      flex: 0 0 auto;
+      display: inline-block;
+      vertical-align: top;
+      margin-right: 10px;
       scroll-snap-align: start;
       border-radius: 9px;
       overflow: hidden;
@@ -1134,12 +1192,6 @@ if (sizePoints.length >= 3) {
     .filter-chip {
       color: #298cda;
       font-weight: bold;
-    }
-
-    .sort-tri {
-      font-size: 9px;
-      vertical-align: 1px;
-      margin-left: 1px;
     }
 
     .filter-label {
@@ -1653,6 +1705,31 @@ if (sizePoints.length >= 3) {
     .report-buttons .wsfbtn { margin-left: 8px; }
     /* .wsfbtn is authored for anchors; drop native chrome on the <button>. */
     button.wsfbtn { -webkit-appearance: none; appearance: none; background: transparent; }
+
+    /* Phones. iOS 4–6 only have the 2009 flexbox (-webkit-box), which ignores
+       min-width:0 — the version text column collapsed to a word per line and
+       long copy filenames pushed rows off-screen. Plain positioning instead:
+       icon pinned left, actions pinned right, text in the padded middle. */
+    @media screen and (max-width: 767px) {
+      .versions { padding: 4px 8px; }
+      .version { padding: 10px 0; }
+      .v-lockup { display: block; min-height: 40px; padding: 0 84px 0 50px; }
+      .v-icon { position: absolute; left: 0; top: 0; margin: 0; }
+      .file-actions { position: absolute; right: 0; top: 0; margin: 0; }
+      .fa-line { display: block; }
+      .fa-meta { display: block; margin: 4px 0 0; }
+      .fa-meta .file-stat-size, .fa-meta .chip { display: inline; }
+      .file-actions .wsfbtn { margin-left: 0; }
+      .js-copies .version[data-copies] .more-copies { margin-top: 3px; }
+      .v-copies { margin: 8px 0 0; }
+      .version.expanded .v-extra, .show-everything:not(.js-copies) .v-extra { display: block; }
+      .file-row { position: relative; min-height: 25px; padding: 8px 84px 8px 0; }
+      .file-row .file-actions { top: 8px; }
+
+      /* One screenshot never wider than the column; the strip still swipes. */
+      .shot { max-width: 88%; }
+      .shot img { width: 100%; height: auto; max-height: 260px; }
+    }
     /* Honeypot: off-screen, never shown to humans. */
     .report-hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
   </style>
@@ -1672,6 +1749,74 @@ if (sizePoints.length >= 3) {
 
     html.is-desktop .jb-notice {
       display: none;
+    }
+
+    /* Header Install (filled + revealed by the script below, iOS only):
+       the iOS 6 App Store's blue lockup button. */
+    .hero-install { display: none; }
+    html.is-ios .hero-install.is-ready { display: block; clear: both; padding-top: 10px; }
+    /* The site's own period button asset (.wsfbtn), just larger. */
+    #main #content #title a.hero-btn { height: 29px; line-height: 29px; padding: 0 22px; font-size: 14px; }
+    .hero-meta { display: inline-block; vertical-align: middle; margin-left: 10px; font-size: 11px; line-height: 15px; color: #808080; }
+    .hero-ver, #main #content #title a.hero-others { display: block; }
+
+    /* Desktop Download menu (<details>): the hero button, opening a list of
+       the newest build per iOS. */
+    .dl-menu { display: none; }
+    html.is-desktop .dl-menu { display: block; clear: both; margin: 0 0 12px; }
+    #main #content .dl-btn { height: 29px; line-height: 29px; padding: 0 18px 0 22px; font-size: 14px; font-family: inherit; -webkit-appearance: none; appearance: none; background: transparent; }
+    .dl-btn .tri { margin-left: 5px; }
+    /* Baseline (no popover support): a plain list of links under the button. */
+    .dl-list { margin: 8px 0 0; padding: 0; list-style: none; }
+    /* Popover: a dropdown panel (centred by the UA where anchors aren't
+       supported)… */
+    @supports selector(:popover-open) {
+      .dl-list { min-width: 240px; margin: auto; padding: 4px 0; background: #fff; border: 1px solid #b3b3b3; border-radius: 6px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25); }
+    }
+    /* …anchored under the button where CSS anchor positioning exists. */
+    @supports (anchor-name: --a) {
+      .dl-btn { anchor-name: --dl-btn; }
+      .dl-list { position-anchor: --dl-btn; inset: auto; top: anchor(bottom); left: anchor(left); margin: 4px 0 0; }
+    }
+    #main #content .dl-list a { display: block; padding: 5px 12px; overflow: hidden; color: #333; font-size: 12px; white-space: nowrap; }
+    #main #content .dl-list a:hover { background: #298cda; color: #fff; text-decoration: none; }
+    .dl-list .dl-os { font-weight: bold; }
+    .dl-list .dl-ver { float: right; margin-left: 18px; color: #898989; }
+    .dl-list a:hover .dl-ver { color: #d8eafd; }
+    .dl-list .dl-all { margin-top: 4px; padding-top: 4px; border-top: 1px solid #e3e3e3; }
+    #main #content .dl-list .dl-all a { color: #298cda; }
+    #main #content #title a.hero-others { font-weight: bold; }
+
+    @media screen and (max-width: 767px) {
+      /* Icon moved beside the title by the script (iOS 6 header lockup). */
+      #content #title.has-art { padding-left: 86px; min-height: 76px; }
+      #main #content #title .title-art { position: absolute; left: 0; top: 2px; margin: 0; }
+      #main #content #title .title-art div.artwork { width: 74px; height: 74px; background: transparent url('/icon-placeholder.png') 0 0 no-repeat; background-size: 74px 74px; }
+      #main #content #title div.lockup.application div.artwork > img.artwork { width: 74px; height: 74px; }
+      #main #content #title div.lockup.application div.artwork > span.mask { width: 76px; height: 77px; background-size: 76px 77px; }
+      #main #content #title.has-art h1 { font-size: 18px; line-height: 22px; }
+      #main #content #title.has-art h2 { font-size: 13px; line-height: 17px; }
+      #content #title.has-art .view-more { display: none; }
+      #content #title.has-art .hero-install.is-ready { padding-top: 6px; }
+      /* The lockup list sits under the header now that the art moved out. */
+      #content #title.has-art ~ #left-stack .lockup ul.list { overflow: visible; }
+      #main #content .center-stack .screenshots { margin-bottom: 14px; }
+      #content #title.has-art .hero-meta { display: block; margin: 5px 0 0; }
+      #main #content #title.has-art { margin-bottom: 12px; }
+      #content #title.has-art ~ #left-stack { margin-bottom: 0; }
+      /* Info table moved under the description (iOS 6 "Information"). */
+      .phone-info { margin: 0 0 18px; padding-top: 10px; border-top: 1px solid #e3e3e3; }
+      #main #content .phone-info h4 { margin: 0 0 6px; font-size: 13px; color: #474747; }
+      /* Label | value rows (iOS 6 "Information"). Each li is a table row; its
+         unwrapped value text becomes an anonymous cell. */
+      .phone-info ul.list, .phone-info p.requirements { display: table; width: 100%; margin: 0; padding: 0; list-style: none; table-layout: fixed; }
+      .phone-info ul.list li { display: table-row; }
+      .phone-info .label, .phone-info .app-requirements { display: table-cell; width: 96px; padding: 4px 8px 4px 0; color: #898989; font-weight: normal; vertical-align: baseline; }
+      .phone-info ul.list li, .phone-info p.requirements { line-height: 17px; color: #474747; }
+      .phone-info ul.list li .price { display: table-cell; padding: 4px 0; font-weight: normal; }
+      .phone-info ul.list li.seller, .phone-info .fat-binary-blurb { display: none; }
+      #main #content .phone-info ul.list li.copyright { width: auto; color: #474747; word-wrap: break-word; white-space: normal; }
+      #main #content .phone-info p { margin: 0; color: #474747; }
     }
 
     /* Long descriptions collapse to 5 lines behind an iOS 6-style "More ▾"
@@ -1727,6 +1872,89 @@ if (sizePoints.length >= 3) {
 
       ready(function () {
         var i;
+
+        // Header Install (iOS only): the newest version whose known minimum OS
+        // this device meets. Rows render oldest-first unless data-order=desc;
+        // legacy devices arrive pre-filtered newest-first (redirect above).
+        var hero = document.querySelector('.hero-install');
+        var vroot = document.getElementById('versions');
+        var iosMajor = parseInt(document.documentElement.getAttribute('data-ios'), 10);
+        // iOS ≤ 3 can't install over the air: the header offers the .ipa.
+        var noOta = iosMajor > 0 && iosMajor < 4;
+        if (noOta) {
+          var alts = document.querySelectorAll('a.navbtn-alt[data-ipa-href]');
+          for (i = 0; i < alts.length; i++) alts[i].href = alts[i].getAttribute('data-ipa-href');
+        }
+        // "4_2_1" / "4.3" → comparable [4, 2, 1].
+        function osParts(str) {
+          var p = String(str).split(/[._]/), out = [];
+          for (var q = 0; q < 3; q++) out.push(parseInt(p[q], 10) || 0);
+          return out;
+        }
+        function osLE(a, b) {
+          for (var q = 0; q < 3; q++) if (a[q] !== b[q]) return a[q] < b[q];
+          return true;
+        }
+        var uaOs = navigator.userAgent.match(/OS (\d+(?:_\d+)*)/);
+        var isIpad = /iPad/.test(navigator.userAgent);
+        if (hero && vroot && iosMajor > 0 && uaOs) {
+          var devOs = osParts(uaOs[1]);
+          var vrows = vroot.querySelectorAll('.version'), picks = [], vr, vmin, vbtn, vfull;
+          for (i = 0; i < vrows.length; i++) {
+            vr = vrows[i];
+            vmin = parseInt(vr.getAttribute('data-minos'), 10);
+            vfull = vr.getAttribute('data-minos-full');
+            vbtn = vr.querySelector(noOta ? '.v-lockup a.navbtn-alt' : '.v-lockup a.navbtn-install');
+            if (!vbtn || hasClass(vr, 'v-hidden-default') || !(vmin > 0)) continue;
+            if (!osLE(osParts(vfull || vmin), devOs)) continue;
+            if (!isIpad && vr.getAttribute('data-ipad-only')) continue;
+            picks.push([vr, vbtn, vfull || String(vmin)]);
+          }
+          if (picks.length) {
+            var pick = vroot.getAttribute('data-order') === 'desc' ? picks[0] : picks[picks.length - 1];
+            var vlabel = pick[0].querySelector('.v-title strong');
+            var heroBtn = hero.getElementsByTagName('a')[0];
+            heroBtn.href = pick[1].href;
+            if (noOta) heroBtn.innerHTML = 'Download';
+            hero.querySelector('.hero-ver').appendChild(document.createTextNode(
+              (vlabel ? (vlabel.textContent || vlabel.innerText) + ' \u00b7 ' : '') + 'iOS ' + pick[2] + ' or later'));
+            addClass(hero, 'is-ready');
+          }
+        }
+
+        // Phones: the iOS 6 App Store order — icon beside the title and Install,
+        // screenshots before the description, side-rail extras at the end.
+        // Moves existing nodes (no duplicate markup); desktop is untouched.
+        if ((window.innerWidth || document.documentElement.clientWidth) < 768) {
+          var titleEl = document.getElementById('title');
+          var artEl = document.querySelector('#left-stack .lockup div.artwork');
+          if (titleEl && artEl) {
+            var artWrap = document.createElement('div');
+            artWrap.className = 'lockup application title-art';
+            artWrap.appendChild(artEl);
+            titleEl.insertBefore(artWrap, titleEl.firstChild);
+            addClass(titleEl, 'has-art');
+            // No ratings box on phones (the rating history section covers it).
+            var ratingsBox = document.querySelector('#left-stack .customer-ratings');
+            if (ratingsBox) ratingsBox.parentNode.removeChild(ratingsBox);
+          }
+          var shotsEl = document.querySelector('.center-stack .screenshots');
+          var descEl = document.querySelector('.center-stack .app-description');
+          if (shotsEl && descEl) descEl.parentNode.insertBefore(shotsEl, descEl);
+          var centerEl = document.querySelector('.center-stack');
+          var lockEl = document.querySelector('#left-stack .lockup');
+          var filterEl = document.querySelector('.center-stack .filter-bar');
+          if (lockEl && filterEl) {
+            var info = document.createElement('div');
+            info.className = 'phone-info';
+            info.innerHTML = '<h4>Information</h4>';
+            while (lockEl.firstChild) info.appendChild(lockEl.firstChild);
+            lockEl.parentNode.removeChild(lockEl);
+            filterEl.parentNode.insertBefore(info, filterEl);
+          }
+          var railExtras = document.querySelectorAll('#left-stack .in-collections, #left-stack .report-box');
+          for (i = 0; centerEl && i < railExtras.length; i++) centerEl.appendChild(railExtras[i]);
+        }
 
         var versionsRoot = document.querySelector('.versions');
         var copyRows = document.querySelectorAll('.version[data-copies]');
@@ -1807,17 +2035,37 @@ if (sizePoints.length >= 3) {
           if (desc.scrollHeight <= desc.clientHeight + 24) {
             removeClass(desc, 'is-clamped');
           } else {
+            // Snap the clip to the last whole line: paragraph gaps aren't a
+            // whole line tall, so the plain 5-line max-height cut mid-line.
+            var limit = desc.clientHeight, paras = desc.getElementsByTagName('p'), cut = 0;
+            var lh = parseFloat(window.getComputedStyle(desc, null).lineHeight) || 19.5;
+            for (var pi = 0; pi < paras.length; pi++) {
+              var top = paras[pi].offsetTop, bottom = top + paras[pi].offsetHeight;
+              if (top >= limit) break;
+              cut = bottom <= limit ? bottom : top + Math.floor((limit - top) / lh) * lh;
+            }
+            if (cut > 0) desc.style.maxHeight = cut + 'px';
             var more = document.createElement('a');
             more.href = '#';
             more.className = 'desc-more';
-            more.innerHTML = 'More &#9662;';
+            more.innerHTML = 'More<span class="tri"></span>';
             more.onclick = function () {
               removeClass(desc, 'is-clamped');
+              desc.style.maxHeight = '';
               more.parentNode.removeChild(more);
               return false;
             };
             desc.parentNode.insertBefore(more, desc.nextSibling);
           }
+        }
+
+        // Desktop Download popover: close once a build is picked (light
+        // dismiss already handles outside clicks and Escape).
+        var dlList = document.getElementById('dl-list');
+        if (dlList && dlList.hidePopover) {
+          dlList.addEventListener('click', function (e) {
+            if (e.target.closest('a')) dlList.hidePopover();
+          });
         }
 
         var shotsPicker = document.querySelector('select.js-shots-picker');

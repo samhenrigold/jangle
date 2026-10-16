@@ -99,8 +99,9 @@ em { font-style: italic; }
   border-radius: 11px;
 }
 
-/* Phone-only search strip (our responsive addition; hidden on desktop) */
+/* Phone-only search strip + segmented nav (our responsive additions; hidden on desktop) */
 #phonesearch { display: none; }
+#segnav { display: none; }
 
 /* ----------------------------------------------------- #productheader ---- */
 /* Wordmark row: on the original this held the "iTunes Preview" logo and
@@ -190,6 +191,11 @@ em { font-style: italic; }
 #main #content #left-stack div.lockup .list .price { color: #515151; font-weight: bold; display: block; margin-bottom: .3em; }
 #main #content #left-stack div.lockup ul.list li { line-height: 18px; }
 #main #content #left-stack div.lockup ul.list li .label { font-weight: bold; color: #6e6e6e; }
+/* Labels carry no colon in the markup (the phone Information table doesn't
+   want one); the desktop lockup adds it back. Phone-only labels stay hidden. */
+#main #content #left-stack div.lockup ul.list li .label:after,
+#main #content #left-stack span.app-requirements:after { content: ": "; }
+.phone-only { display: none; }
 #main #content #left-stack div.lockup ul.list li.copyright { width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #main #content #left-stack div.app-rating { margin-bottom: 2em; }
 #main #content #left-stack span.app-requirements { font-weight: bold; }
@@ -331,6 +337,8 @@ em { font-style: italic; }
 
 /* Section headers — the swoosh-title look, standalone */
 .section-header { margin: 22px 0 8px 0; }
+/* A page's first header: the panel's own top padding is gap enough. */
+.section-header.sh-top { margin-top: 0; }
 .section-title { display: inline; margin: 0; font-size: 1.4em; line-height: 18px; font-weight: bold; color: #474747; }
 .section-detail { display: inline; margin-left: 10px; color: #898989; font-size: 11px; line-height: 18px; }
 
@@ -369,6 +377,38 @@ a.app-link:hover { text-decoration: none; background-color: #eaf3f8; }
 .app-ghost .name { color: #898989; }
 .app-ghost .icon { opacity: 0.7; }
 .ghost-tag { white-space: nowrap; }
+/* Disclosure triangle drawn with borders (the ▾ glyph renders at a few px
+   on iOS 3). Border colour defaults to the text colour. */
+.tri { display: inline-block; width: 0; height: 0; margin-left: 3px; vertical-align: middle; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid; }
+.tri.up { border-top: 0; border-bottom: 5px solid; }
+/* Row action (/collections/ios-N): Install (itms-services) on iOS, Download (.ipa) on
+   desktop. Either one, plus its "Version x" line, replaces the version count. */
+.row-install, .row-download, .meta-install { display: none; }
+html.is-ios .has-install .row-install,
+html.is-desktop .has-install .row-download,
+html.no-ota .has-install .row-download { display: block; position: absolute; top: 50%; right: 6px; margin-top: -13px; }
+.has-install { position: relative; }
+html.is-ios .has-install .count, html.is-desktop .has-install .count { display: none; }
+html.is-ios .has-install .meta-install, html.is-desktop .has-install .meta-install { display: block; }
+html.is-ios .has-install .app-link { padding-right: 82px; }
+html.is-desktop .has-install .app-link { padding-right: 100px; }
+html.is-ios .has-install .info, html.is-desktop .has-install .info { padding-top: 5px; }
+.has-install .meta-bundle { display: none; }
+/* iOS ≤ 3 has no itms-services (OTA install arrived in iOS 4): Download
+   (.ipa, for on-device installer tools) takes Install's place everywhere.
+   html.no-ota is set by the head script in Layout. */
+html.no-ota .navbtn-install, html.no-ota .row-install { display: none !important; }
+html.is-ios.no-ota .navbtn-alt { display: inline-block; }
+html.no-ota .has-install .app-link { padding-right: 100px; }
+.ota-no { display: none; }
+html.no-ota .ota-yes { display: none; }
+html.no-ota .ota-no { display: block; clear: both; }
+
+/* iOS ≤ 4 (html.no-oscroll): overflow boxes only scroll with two fingers,
+   so the sideways strips wrap into rows instead. */
+html.no-oscroll .colx-scroll, html.no-oscroll .shots-strip, html.no-oscroll .ios-nav { white-space: normal; overflow: visible; }
+html.no-oscroll .colx-card { width: 100%; min-width: 0; margin: 0 0 8px; }
+html.no-oscroll .shot { margin-bottom: 10px; }
 
 /* Install-status chip */
 /* Install-status label — flat coloured text, not a pill (rounded pills weren't
@@ -455,15 +495,67 @@ input, select, button { font: 11px "Lucida Grande", "Lucida Sans Unicode", Arial
   #main #content #left-stack div.lockup ul.list, #main #content #left-stack div.fat-binary-blurb { overflow: hidden; }
   #main #content #left-stack div.lockup > p { clear: both; padding-top: 8px; }
 
+  /* The header nav moves to the bottom tab bar on phones. */
+  #productheader ul { display: none; }
+  #productheader { padding-top: .5em; }
+
+  /* Wordmark and search share one row; the tab strip sits under them. */
+  /* No top padding: the search strip's top margin collapses through <body>
+     and already pushes this float down by the same 10px. */
+  #productheader { float: left; width: auto; margin: 0; padding: 0 10px 0 12px; }
+  #productheader h2 { float: none; height: 24px; line-height: 24px; margin: 0 !important; }
+  #productheader h2 img { display: block; width: 128px; height: 24px; margin-top: 3px; }
+  #phonesearch { overflow: hidden; margin: 10px 12px 8px 0; }
+  /* Height from padding + line-height (16 + 2×6 + 2 = 30): iOS 3 top-aligns
+     the text in a fixed-height field. */
+  #phonesearch .search-wrapper input { height: auto; padding-top: 6px; padding-bottom: 6px; line-height: 16px; }
+
+  /* iOS 6 segmented control (bordered style): light gradient segments,
+     the selected one blue. Corners on the end cells, since old WebKit
+     won't clip table cells to a rounded parent. */
+  #segnav {
+    display: table; table-layout: fixed; clear: both; border-collapse: separate;
+    width: 100%; margin: 2px 0 10px; padding: 0 12px;
+    -webkit-box-sizing: border-box; box-sizing: border-box;
+  }
+  #segnav .seg {
+    display: table-cell; height: 30px; vertical-align: middle; text-align: center;
+    padding: 0 2px; border: 1px solid #8d8d8d; border-left-width: 0;
+    color: #4a4a4a; font-size: 12px; font-weight: bold; text-decoration: none;
+    text-shadow: 0 1px 0 #fff; white-space: nowrap; overflow: hidden;
+    background: #f0f0f0;
+    background: -webkit-gradient(linear, left top, left bottom, from(#fff), to(#dcdcdc));
+    background: linear-gradient(#fff, #dcdcdc);
+  }
+  /* Per-corner longhands: iOS 3's -webkit-border-radius shorthand reads
+     "5px 0 0 5px" as something else entirely. */
+  #segnav .seg:first-child { border-left-width: 1px; -webkit-border-top-left-radius: 5px; -webkit-border-bottom-left-radius: 5px; border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
+  #segnav .seg:last-child { -webkit-border-top-right-radius: 5px; -webkit-border-bottom-right-radius: 5px; border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
+  #segnav .seg.active {
+    color: #fff; text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.35); border-color: #2d5fa8;
+    background: #2f7be0;
+    background: -webkit-gradient(linear, left top, left bottom, from(#5d9ff2), color-stop(0.5, #3a87ec), color-stop(0.5, #2c76e0), to(#2468d2));
+    background: linear-gradient(#5d9ff2, #3a87ec 50%, #2c76e0 50%, #2468d2);
+  }
+
   /* Search page: the Power Search panel's Title/Keywords field replaces the
      top search strip on phones. */
   body.search-page #phonesearch { display: none; }
+
+  /* App lists: a narrower rank gutter, and no bundle id line (it only ever
+     showed truncated at this width). */
+  .app-link { padding: 8px 4px; }
+  /* Shrink-to-fit: 1–2 digit ranks hug the edge; 3-digit ranks (page 3+)
+     grow instead of overflowing into the icon. */
+  .rank { width: auto; min-width: 14px; margin: 0 6px 0 -4px; }
+  .info .meta-bundle { display: none; }
+  .info { padding-top: 12px; }
 
   #globalfooter { margin: 18px 8px 0; }
   #globalfooter p.gf-buy { float: none; width: auto; margin: 12px 3px 6px; }
   #globalfooter .gf-links { float: none; margin: 0 3px 9px; }
   #globalfooter ul.piped a { padding-left: 0; margin-left: 0; border-left: 0; }
-  #globalfooter ul.piped a + a { padding-left: 1.5em; margin-left: 1.5em; border-left: 1px solid #d0d0d0; }
+  #globalfooter ul.piped li + li a { padding-left: 1em; margin-left: 1em; border-left: 1px solid #d0d0d0; }
 }
 
 /* =========================================================================
@@ -488,7 +580,6 @@ body.charts-landing #main #content a:hover { color: #fff; }
 
 body.charts-landing .charts-title { margin: 0 0 6px 0; }
 body.charts-landing .charts-title img { display: block; }
-body.charts-landing .charts-intro { color: #808080; font-size: 18px; line-height: 24px; font-weight: normal; margin-bottom: 0; }
 
 /* Pill subnav — one dark bar, chart types on top, device pills on their own
    row below (separated by a hairline). */
@@ -547,7 +638,6 @@ body.charts-landing .db-error { background: #333; color: #b1b3b6; }
 @media screen and (max-width: 767px) {
   body.charts-landing #main #content .padder { padding: 20px 14px 24px; }
   body.charts-landing .charts-title img { width: 158px; height: 22px; }
-  body.charts-landing .charts-intro { font-size: 13px; line-height: 18px; }
   body.charts-landing .subnav { margin-top: 16px; padding: 8px 10px 4px; }
   body.charts-landing .subnav li { margin: 0 4px 4px 0; padding: 3px 12px; }
   /* Two across on phones — 100px icons plus the rank gutter always fit */

@@ -221,6 +221,8 @@ export function describeCopy(f: any, withFilename: boolean, binaryOf: (f: any) =
     encrypted: bin?.install_status === 'encrypted',
     ipaUrl,
     manifestUrl: `${origin}/manifest/${f.id}.plist`,
+    // Steers to an archive.org node old iOS can handshake (see /ipa/[id].ts).
+    ipaRedirect: `/ipa/${f.id}`,
   };
 }
 
@@ -301,7 +303,10 @@ export function buildVersionRows(
           ? 'This version is no longer available on archive.org'
           : 'No file in the archive for this version')
       : null;
-    return { v, versionLabel, showBuild, vIconSha, metaLines, minosMajor, isUniversal, hideByDefault, encryptedOnly, primary, extras, nofileText };
+    // Full min OS + target idioms, for the client-side "newest that runs here" pick.
+    const minosFull = String(v.minimum_os_version || machoMinOs || '') || null;
+    const ipadOnly = (binFam.length ? binFam : df).join(',') === '2';
+    return { v, versionLabel, showBuild, vIconSha, metaLines, minosMajor, minosFull, ipadOnly, isUniversal, hideByDefault, encryptedOnly, primary, extras, nofileText };
   });
 }
 

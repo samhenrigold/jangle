@@ -119,7 +119,7 @@ const genreName = genre?.genre_name || 'Category';
 
         {genreCharts.length > 0 && (
           <>
-            <SectionHeader title="Charts" detail={`archived ${genreName} charts`} />
+            <SectionHeader title="Charts" />
             <div class="genre-charts">
               {genreCharts.map((row) => (
                 <div class="genre-chart-row">
@@ -132,7 +132,6 @@ const genreName = genre?.genre_name || 'Category';
                 </div>
               ))}
             </div>
-            <p class="genre-chart-note">Real {genreName} Top Charts from Apple's RSS feeds, archived by the Wayback Machine.</p>
           </>
         )}
       </>
@@ -179,13 +178,6 @@ const genreName = genre?.genre_name || 'Category';
       font-size: 12px;
       font-weight: bold;
       line-height: 20px;
-    }
-
-    .genre-chart-note {
-      margin: 6px 0 0 0;
-      color: #a9b4bc;
-      font-size: 10px;
-      line-height: 15px;
     }
   </style>
 </Layout>

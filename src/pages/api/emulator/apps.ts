@@ -23,7 +23,7 @@ import { appTitleOf, APP_LIST_COLS, flattenAppRow } from '../../../lib/apps';
 // Like every public surface: a link, not a proxy — download_url 302s to
 // archive.org via /ipa/<id>, which re-checks available/hidden at fetch time.
 
-const VERSION_FIELDS = 'id, app_id, version_string, minimum_os_version, device_family, release_date';
+const VERSION_FIELDS = 'id, app_id, version_string, minimum_os_version, device_family, release_date, estimated_release_date';
 const BIN_FIELDS = 'sha1, install_status, architectures, macho_min_os, hidden, device_family_macho, has_extensions, bundle_icon_sha256, itunes_artwork_sha256, armv6_isa_scan, required_capabilities, plist_min_os';
 // binaries ride along as a PostgREST embed via the ipa_files.binary_sha1 FK —
 // one round trip instead of a second chunked sweep over the sha1 set.
@@ -169,6 +169,37 @@ export const GET: APIRoute = async (ctx) => {
     // and bundle-id words via search_vector2) so the old dev/bundle-append
     // lookups are gone; a dotted query still gets a bundle_id substring
     // append below, since the tsquery folds dots away.
+    // No query on iOS 2–10 = the storefront's default view, from the same
+    // per-iOS picks that back the /collections/ios-N pages (app_ios_install: each app's
+    // newest build for that major's devices, ranked by versions archived).
+    // compatOf still makes the final call for the exact device/OS.
+    const major = t.os[0];
+    if (!q && !includeAll && major >= 2 && major <= 10) {
+      const { data: picks, error: pe } = await supabase
+        .from('app_ios_install').select('app_id, ipa_file_id').eq('os_major', major)
+        .order('version_count', { ascending: false }).order('app_id', { ascending: true })
+        .limit(limit * 2);
+      if (pe) throw new Error(pe.message);
+      if (!picks?.length) return reply([]);
+      const files = await chunkedIn(supabase, 'ipa_files', FILE_FIELDS, 'id', picks.map((p: any) => p.ipa_file_id));
+      const versions = await chunkedIn(supabase, 'app_versions', VERSION_FIELDS, 'id', files.map((f) => f.app_version_id));
+      const appRows = await chunkedIn(supabase, 'apps', APP_LIST_COLS, 'id', picks.map((p: any) => p.app_id));
+      const fileById = new Map(files.map((f) => [f.id, f]));
+      const versionById = new Map(versions.map((v) => [v.id, v]));
+      const appById = new Map(appRows.map((a) => [a.id, flattenAppRow(a)]));
+      const out: any[] = [];
+      for (const p of picks) {
+        const file = fileById.get(p.ipa_file_id);
+        const version = file && versionById.get(file.app_version_id);
+        const app = appById.get(p.app_id);
+        if (!file || !version || !app) continue;
+        const rec = record(origin, app, version, file, file.binaries || undefined, t);
+        if (rec.compat.compatible) out.push(rec);
+        if (out.length >= limit) break;
+      }
+      return reply(out);
+    }
+
     const { data: hits, error: se } = await supabase.rpc('search_apps', {
       p_query: tsquery,
       p_raw: q || null,
@@ -212,7 +243,8 @@ export const GET: APIRoute = async (ctx) => {
         const major = parseInt(String(v.minimum_os_version || '').split('.')[0], 10);
         return includeAll || !Number.isFinite(major) || major <= t.os[0];
       })
-      .sort((a, b) => String(b.release_date || '').localeCompare(String(a.release_date || '')));
+      // release_date is true-or-null (mostly null), so lead with the estimate.
+      .sort((a, b) => String(b.estimated_release_date || b.release_date || '').localeCompare(String(a.estimated_release_date || a.release_date || '')));
     if (!eligible.length) return reply([]);
 
     const files = await chunkedIn(supabase, 'ipa_files', FILE_FIELDS, 'app_version_id', eligible.map((v) => v.id));
