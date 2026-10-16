@@ -1673,6 +1673,35 @@ if (sizePoints.length >= 3) {
     html.is-desktop .jb-notice {
       display: none;
     }
+
+    /* Long descriptions collapse to 5 lines behind an iOS 6-style "More ▾"
+       (added by the script below — without JS the full text shows). Global:
+       the link is created at runtime, so it has no scoped-style attribute. */
+    .app-description.is-clamped {
+      max-height: 7.5em;
+      overflow: hidden;
+      position: relative;
+      margin-bottom: 0;
+    }
+    .app-description.is-clamped:after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 1.5em;
+      background: -webkit-gradient(linear, left top, left bottom, from(rgba(255, 255, 255, 0)), to(#fff));
+      background: linear-gradient(rgba(255, 255, 255, 0), #fff);
+    }
+    #main #content .center-stack a.desc-more {
+      display: block;
+      margin: 2px 0 18px;
+      padding: 4px 0;
+      text-align: right;
+      font-size: 13px;
+      font-weight: bold;
+      text-decoration: none;
+    }
   </style>
 
   <script is:inline>
@@ -1767,6 +1796,28 @@ if (sizePoints.length >= 3) {
           iosSelect.onchange = function () {
             applyIos(iosSelect.value ? parseInt(iosSelect.value, 10) : null);
           };
+        }
+
+        // Collapse a long description to 5 lines with "More ▾". Only when the
+        // full text runs more than ~1 line past the clamp, so "More" never
+        // reveals a single line.
+        var desc = document.querySelector('.app-description');
+        if (desc) {
+          addClass(desc, 'is-clamped');
+          if (desc.scrollHeight <= desc.clientHeight + 24) {
+            removeClass(desc, 'is-clamped');
+          } else {
+            var more = document.createElement('a');
+            more.href = '#';
+            more.className = 'desc-more';
+            more.innerHTML = 'More &#9662;';
+            more.onclick = function () {
+              removeClass(desc, 'is-clamped');
+              more.parentNode.removeChild(more);
+              return false;
+            };
+            desc.parentNode.insertBefore(more, desc.nextSibling);
+          }
         }
 
         var shotsPicker = document.querySelector('select.js-shots-picker');
